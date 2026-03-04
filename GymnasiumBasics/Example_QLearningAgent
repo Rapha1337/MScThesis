@@ -1,0 +1,223 @@
+from collections import defaultdict
+from tqdm import tqdm 
+from matplotlib import pyplot as plt
+import gymnasium as gym
+import numpy as np
+
+class BlackjackAgent:
+    def __init__(
+        self,
+        env: gym.Env,
+        learning_rate: float,
+        initial_epsilon: float,
+        epsilon_decay: float,
+        final_epsilon: float,
+        discount_factor: float = 0.95,
+    ):
+        """Initialisiert einen Q-Learning-Agenten.
+
+        Argumente:
+            env: Die Trainingsumgebung
+            learning_rate: Wie schnell die Q-Werte aktualisiert werden (0-1)
+            initial_epsilon: Anfangswert der Explorationsrate (typischerweise 1.0)
+            epsilon_decay: Betrag, um den epsilon pro Episode reduziert wird
+            final_epsilon: Minimale Explorationsrate (typischerweise 0.1)
+            discount_factor: Gewichtung zukünftiger Belohnungen (0-1)
+        """
+        self.env = env
+
+        # Q-Tabelle: bildet (Zustand, Aktion) auf erwartete Belohnung ab
+        # defaultdict erstellt automatisch Einträge mit Nullen für neue Zustände
+        self.q_values = defaultdict(lambda: np.zeros(env.action_space.n))
+
+        self.lr = learning_rate
+        self.discount_factor = discount_factor  # Wie sehr zukünftige Belohnungen gewichtet werden
+
+        # Explorationsparameter
+        self.epsilon = initial_epsilon
+        self.epsilon_decay = epsilon_decay
+        self.final_epsilon = final_epsilon
+
+        # Lernfortschritt verfolgen
+        self.training_error = []
+
+    def get_action(self, obs: tuple[int, int, bool]) -> int:
+        """Wählt eine Aktion mit der Epsilon-Greedy-Strategie.
+
+        Gibt zurück:
+            aktion: 0 (passen) oder 1 (ziehen)
+        """
+        # Mit Wahrscheinlichkeit epsilon: erkunden (zufällige Aktion)
+        if np.random.random() < self.epsilon:
+            return self.env.action_space.sample()
+
+        # Mit Wahrscheinlichkeit (1-epsilon): ausnutzen (beste bekannte Aktion)
+        else:
+            return int(np.argmax(self.q_values[obs]))
+
+    def update(
+        self,
+        obs: tuple[int, int, bool],
+        action: int,
+        reward: float,
+        terminated: bool,
+        next_obs: tuple[int, int, bool],
+    ):
+        """Aktualisiert den Q-Wert basierend auf Erfahrung.
+
+        Dies ist der Kern des Q-Learnings: Lernen aus (Zustand, Aktion, Belohnung, nächster Zustand)
+        """
+        # Was ist das Beste, das wir im nächsten Zustand erreichen könnten?
+        # (Null, falls Episode beendet — keine zukünftigen Belohnungen möglich)
+        future_q_value = (not terminated) * np.max(self.q_values[next_obs])
+
+        # Wie sollte der Q-Wert sein? (Bellman-Gleichung)
+        target = reward + self.discount_factor * future_q_value
+
+        # Wie falsch war unsere aktuelle Schätzung?
+        temporal_difference = target - self.q_values[obs][action]
+
+        # Aktualisiere unsere Schätzung in Richtung des Fehlers
+        # Lernrate steuert, wie große Schritte wir machen
+        self.q_values[obs][action] = (
+            self.q_values[obs][action] + self.lr * temporal_difference
+        )
+
+        # Lernfortschritt verfolgen (nützlich zum Debuggen)
+        self.training_error.append(temporal_difference)
+
+    def decay_epsilon(self):
+        """Reduziert die Explorationsrate nach jeder Episode."""
+        self.epsilon = max(self.final_epsilon, self.epsilon - self.epsilon_decay)
+
+# Trainings-Hyperparameter
+learning_rate = 0.01        # Wie schnell gelernt wird (höher = schneller, aber weniger stabil)
+n_episodes = 100_000        # Anzahl Hände zum Üben
+start_epsilon = 1.0         # Beginne mit 100% zufälligen Aktionen
+epsilon_decay = start_epsilon / (n_episodes / 2)  # Erkunden über die Zeit reduzieren
+final_epsilon = 0.1         # Immer etwas Exploration beibehalten
+
+# Umgebung und Agent erstellen
+env = gym.make("Blackjack-v1", sab=False)
+env = gym.wrappers.RecordEpisodeStatistics(env, buffer_length=n_episodes)
+
+agent = BlackjackAgent(
+    env=env,
+    learning_rate=learning_rate,
+    initial_epsilon=start_epsilon,
+    epsilon_decay=epsilon_decay,
+    final_epsilon=final_epsilon,
+)
+
+# Trainingsschleife
+for episode in tqdm(range(n_episodes)):
+    # Eine neue Hand starten
+    obs, info = env.reset()
+    done = False
+
+    # Eine vollständige Hand spielen
+    while not done:
+        # Agent wählt Aktion (anfänglich zufällig, wird allmählich intelligenter)
+        action = agent.get_action(obs)
+
+        # Aktion ausführen und Ergebnis beobachten
+        next_obs, reward, terminated, truncated, info = env.step(action)
+
+        # Aus dieser Erfahrung lernen
+        agent.update(obs, action, reward, terminated, next_obs)
+
+        # Zum nächsten Zustand wechseln
+        done = terminated or truncated
+        obs = next_obs
+
+    # Explorationsrate reduzieren (Agent wird weniger zufällig über Zeit)
+    agent.decay_epsilon()
+
+#Trainingsresultate visualisieren
+def get_moving_avgs(arr, window, convolution_mode):
+    """Berechnet den gleitenden Durchschnitt zur Glättung verrauschter Daten."""
+    return np.convolve(
+        np.array(arr).flatten(),
+        np.ones(window),
+        mode=convolution_mode
+    ) / window
+
+# Über ein 500-Episoden-Fenster glätten
+rolling_length = 500
+fig, axs = plt.subplots(ncols=3, figsize=(12, 5))
+
+# Episoden-Belohnungen (Win/Loss-Performance)
+# env.return_queue kommt vom RecordEpisodeStatistics Wrapper und enthält die Belohnungen pro Episode
+axs[0].set_title("Episode rewards")
+reward_moving_average = get_moving_avgs(
+    env.return_queue,
+    rolling_length,
+    "valid"
+)
+axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
+axs[0].set_ylabel("Average Reward")
+axs[0].set_xlabel("Episode")
+
+# Episoden-Längen (Anzahl Aktionen pro Hand)
+# env.length_queue kommt ebenfalls vom RecordEpisodeStatistics Wrapper
+axs[1].set_title("Episode lengths")
+length_moving_average = get_moving_avgs(
+    env.length_queue,
+    rolling_length,
+    "valid"
+)
+axs[1].plot(range(len(length_moving_average)), length_moving_average)
+axs[1].set_ylabel("Average Episode Length")
+axs[1].set_xlabel("Episode")
+
+# Trainingsfehler (wie stark der Agent noch lernt)
+# Für den Trainingsfehler verwenden wir 'same', damit die Länge des Outputs der Eingabelänge ähnelt
+axs[2].set_title("Training Error")
+training_error_moving_average = get_moving_avgs(
+    agent.training_error,
+    rolling_length,
+    "same"
+)
+axs[2].plot(range(len(training_error_moving_average)), training_error_moving_average)
+axs[2].set_ylabel("Temporal Difference Error")
+axs[2].set_xlabel("Step")
+
+plt.tight_layout()
+plt.show()
+
+# Teste den trainierten Agenten
+def test_agent(agent, env, num_episodes=1000):
+    """Teste die Leistung des Agenten ohne Lernen und ohne Exploration."""
+    total_rewards = []
+
+    # Vorübergehend Exploration deaktivieren für den Test
+    old_epsilon = agent.epsilon
+    agent.epsilon = 0.0  # rein ausnutzen
+
+    for _ in range(num_episodes):
+        obs, info = env.reset()
+        episode_reward = 0
+        done = False
+
+        # Eine Episode vollständig durchspielen
+        while not done:
+            action = agent.get_action(obs)
+            obs, reward, terminated, truncated, info = env.step(action)
+            episode_reward += reward
+            done = terminated or truncated
+
+        total_rewards.append(episode_reward)
+
+    # Ursprünglichen Epsilon-Wert wiederherstellen
+    agent.epsilon = old_epsilon
+
+    win_rate = np.mean(np.array(total_rewards) > 0)
+    average_reward = np.mean(total_rewards)
+
+    print(f"Testergebnisse über {num_episodes} Episoden:")
+    print(f"Gewinnrate: {win_rate:.1%}")
+    print(f"Durchschnittliche Belohnung: {average_reward:.3f}")
+    print(f"Standardabweichung: {np.std(total_rewards):.3f}")
+
+# Agent testen
+test_agent(agent, env)

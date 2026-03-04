@@ -1,0 +1,33 @@
+import gymnasium as gym
+
+# Environment wird kreiert. Wagen welcher einen Stab balancieren muss.
+env = gym.make("CartPole-v1", render_mode="human")
+
+# Environment muss erst resettet werden. Liefert die erste Beobachtung über den Zustand des Environments zurück (+Info).
+observation, info = env.reset()
+# observation: Was der Agent sieht - hier: [cart_position, cart_velocity, pole_angle, pole_angular_velocity]
+# info: Zusätzliche Informationen über den Zustand des Environments.
+
+print(f"Starting observation: {observation}")
+# Beispielausgabe: [ 0.01234567 -0.00987654  0.02345678  0.01456789]
+# [cart_position, cart_velocity, pole_angle, pole_angular_velocity]
+
+episode_over = False
+total_reward = 0
+
+while not episode_over:
+    # Aktion wählen: 0 = Wagen nach links schieben, 1 = Wagen nach rechts schieben
+    action = env.action_space.sample()  # Zufällige Aktion entweder nach links oder rechts schieben.
+
+    # Aktion ausführen und sehen, was passiert
+    observation, reward, terminated, truncated, info = env.step(action)
+
+    # reward: +1 für jeden Schritt, den der Pol aufrecht bleibt
+    # terminated: True, wenn der Pol zu weit kippt (Agent hat versagt)
+    # truncated: True, wenn wir das Zeitlimit (500 Schritte) erreicht haben
+
+    total_reward += reward
+    episode_over = terminated or truncated
+
+print(f"Episode finished! Total reward: {total_reward}")
+env.close()
