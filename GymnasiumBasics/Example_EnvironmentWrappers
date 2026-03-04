@@ -1,0 +1,14 @@
+import gymnasium as gym
+from gymnasium.wrappers import FlattenObservation
+
+# Wir starten mit einbe Environment, das Bilder als Beobachtungen zurückgibt.CarRacing-v3 gibt 96x96 RGB-Bilder zurück.
+env = gym.make("CarRacing-v3")
+env.observation_space.shape
+(96, 96, 3)  # 96x96 RGB Bilder
+
+# Environment wird gewrappt, um die Beobachtungen in ein 1D-Array umzuwandeln.
+wrapped_env = FlattenObservation(env)
+wrapped_env.observation_space.shape
+(27648,)  # Alle Pixel in einem einzigen Array
+
+# Dies erleichtert die Verwendung mit Algorithmen, die 1D-Eingaben erwarten

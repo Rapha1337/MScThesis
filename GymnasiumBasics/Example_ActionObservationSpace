@@ -1,0 +1,10 @@
+import gymnasium as gym
+
+# Action space: Diskret - 2 mögliche Aktionen: 0 (links schieben) oder 1 (rechts schieben)
+env = gym.make("CartPole-v1")
+print(f"Action space: {env.action_space}")  # Discrete(2)
+print(f"Sample action: {env.action_space.sample()}")  # 0 or 1
+
+# Observation space: Kontinuierlich - 4 Werte: [cart_position, cart_velocity, pole_angle, pole_angular_velocity]
+print(f"Observation space: {env.observation_space}")  # Box mit Grenzen für die 4 Werte:  Box([-4.8, -inf, -0.418, -inf], [4.8, inf, 0.418, inf])
+print(f"Sample observation: {env.observation_space.sample()}")  # Zufällige gültige Beobachtung
