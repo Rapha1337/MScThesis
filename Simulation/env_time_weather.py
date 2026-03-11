@@ -66,8 +66,7 @@ class TimeWeatherEnv(gym.Env):
 
     def step(self, action: int):
         # 1) Reward berechnen (Schritte pro Zeitschritt)
-        steps = self._simulate_steps(action=action, hour=self._hour, temp=self._temp)
-        reward = float(steps)
+        reward = 0.0
 
         # 2) Zeit fortschreiben
         self._hour += self.sample_rate_hours
@@ -84,12 +83,12 @@ class TimeWeatherEnv(gym.Env):
             # bei Episode-Ende: letzte gültige Observation zurückgeben
             obs = np.array([23.0, self._temp], dtype=np.float32)
 
-        info = {"steps": steps}
+        info = {}
         return obs, reward, terminated, truncated, info
 
     def _compute_temp(self, hour: int) -> float:
         """
-        Sehr einfache Tageskurve:
+        Einfache Tageskurve:
         - Peak am Nachmittag (~15 Uhr)
         - plus stündliches Noise
         """
@@ -97,31 +96,3 @@ class TimeWeatherEnv(gym.Env):
         diurnal = 3.0 * np.cos(phase)  # Amplitude 3°C
         noise = float(self._rng.normal(0.0, 1.5))
         return float(self._base_temp + diurnal + noise)
-
-    def _simulate_steps(self, action: int, hour: int, temp: float) -> int:
-        """
-        Super einfache Schritte-Logik (nur für den Start!):
-        - action=0: wenige Schritte
-        - action=1: mehr Schritte
-        - nachts (0-6 Uhr): weniger Schritte unabhängig von action
-        - sehr extremes Wetter (temp < 0 oder > 30): etwas weniger Schritte
-        """
-        if action not in (0, 1):
-            raise ValueError("Action must be 0 or 1.")
-
-        # Basis-Schritte abhängig von Aktion
-        if action == 0:
-            base = self._rng.normal(80, 30)     # inaktiv
-        else:
-            base = self._rng.normal(600, 150)   # aktiv
-
-        # Nacht-Dämpfung
-        if 0 <= hour <= 6:
-            base *= 0.2
-
-        # Wetter-Dämpfung
-        if temp < 0 or temp > 30:
-            base *= 0.7
-
-        return int(max(0, base))
-    
