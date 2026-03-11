@@ -7,15 +7,11 @@ from gymnasium import spaces
 
 class TimeWeatherEnv(gym.Env):
     """
-    Stündliche Wetterumgebung (Temperatur + Niederschlag) für RL-Experimente.
+    Wetter- und Zeit-Environment für stündliche Simulationen über mehrere Monate/Jahre.
 
-    Modellidee (einfach, aber nachvollziehbar):
-    1) Niederschlags-Auftreten über 2-Zustands-Markov-Kette (trocken/nass).
-    2) Niederschlags-Menge in nassen Stunden über Gamma-Verteilung.
-    3) Temperatur über deterministische Monats-/Tageskomponente + AR(1)-Residuum.
-
-    Die Aktion ist aktuell exogen (hat keinen Einfluss auf das Wetter), damit das
-    Environment als Wetter-"Hintergrundprozess" in Agenten-Simulationen genutzt werden kann.
+    1) Niederschlags-Auftreten über 2-Zustands-Markov-Kette nach Gabriell und Neummann (1962).
+    2) Niederschlags-Menge in nassen Stunden über Gamma-Verteilung nach Wilks (1999).
+    3) Temperatur über deterministische Monats-/Tageskomponente + AR(1)-Residuum nach Wilks (1999).
     """
 
     metadata = {"render_modes": []}
@@ -32,24 +28,29 @@ class TimeWeatherEnv(gym.Env):
         Args:
             month: Startmonat der Simulation (1..12).
             sample_rate_hours: Wie viele Stunden ein `step()` weiterspringt.
-            horizon_hours: Episodenlänge in Stunden (z. B. 8760 für ~1 Jahr).
+            horizon_hours: Episodenlänge in Stunden
         """
         super().__init__()
 
         # Eingabevalidierung, damit später keine stillen Fehler entstehen.
         assert 1 <= month <= 12
         assert sample_rate_hours >= 1
-        assert horizon_hours >= 24
+        assert horizon_hours >= 8760
 
         # Konfiguration, die von außen gesetzt wird.
         self.month = month
         self.sample_rate_hours = sample_rate_hours
         self.horizon_hours = horizon_hours
 
-        # Dummy-Actions (Wetter ist exogen und nicht vom Agent steuerbar).
+        # Dummy-Actionspace (hat keinen Einfluss auf die Simulation)
         self.action_space = spaces.Discrete(2)
 
-        # Observation-Format:
+        # Observation-Space::
+        # hour_of_day: 0..23
+        # month_norm: 0..1 (normalisierte Monatszahl)
+        # temperature_C: -40..50 (realistische Temperaturskala)
+        # precip_mm: 0..120 (realistische Niederschlagsskala pro Stunde)
+        # wet_flag: 0 oder 1 (trocken oder nass)
         # [hour_of_day, month_norm, temperature_C, precip_mm, wet_flag]
         self.observation_space = spaces.Box(
             low=np.array([0.0, 0.0, -40.0, 0.0, 0.0], dtype=np.float32),
@@ -57,79 +58,78 @@ class TimeWeatherEnv(gym.Env):
             dtype=np.float32,
         )
 
-        # Monats-Mitteltemperaturen (hier fixe, beispielhafte Werte).
-        # Diese bilden den "langsamen" Jahresgang ab.
-        self._month_mean_temp = {
-            1: 0.3,
-            2: 0.5,
-            3: 4.6,
-            4: 8.7,
-            5: 10.7,
-            6: 17.7,
-            7: 16.4,
-            8: 16.9,
-            9: 13.1,
-            10: 7.9,
-            11: 3.1,
-            12: 1.5,
-        }
+        # Monatliche Mittelwerte für die Temperatur (in °C) Quelle: Klimanormwerte Bern/Zollkikofen 1991-2920.
+        _month_mean_temp = {
+                1: 0.2,   
+                2: 1.1,   
+                3: 5.2,   
+                4: 9.0,   
+                5: 13.2,  
+                6: 16.8,  
+                7: 18.8,  
+                8: 18.4,  
+                9: 14.1,  
+                10: 9.5,  
+                11: 4.2,  
+                12: 0.9   
+            }
 
-        # Markov-OCCURRENCE-Parameter für Niederschlag pro Monat:
-        # p01: P(nass | vorher trocken)
-        # p11: P(nass | vorher nass)
+        # Markov-OCCURRENCE-Parameter für Niederschlag pro Monat. Schätzung aus Klimanormwerte Bern/Zollkikofen 1991-2920.
+        # p01: P(nass | vorher trocken) --> Regen beginnt
+        # p11: P(nass | vorher nass) --> Regen bleibt
         self._p01 = {
-            1: 0.08,
-            2: 0.08,
-            3: 0.10,
-            4: 0.11,
-            5: 0.12,
-            6: 0.11,
-            7: 0.10,
-            8: 0.10,
-            9: 0.09,
-            10: 0.10,
-            11: 0.10,
-            12: 0.09,
+            1: 0.013,
+            2: 0.012,
+            3: 0.015,
+            4: 0.018,
+            5: 0.020,
+            6: 0.019,
+            7: 0.017,
+            8: 0.017,
+            9: 0.016,
+            10: 0.015,
+            11: 0.014,
+            12: 0.014,
         }
         self._p11 = {
-            1: 0.60,
-            2: 0.58,
-            3: 0.56,
-            4: 0.55,
-            5: 0.54,
-            6: 0.53,
-            7: 0.52,
-            8: 0.54,
-            9: 0.56,
-            10: 0.58,
-            11: 0.60,
-            12: 0.61,
+            1: 0.85,
+            2: 0.84,
+            3: 0.82,
+            4: 0.80,
+            5: 0.78,
+            6: 0.76,
+            7: 0.75,
+            8: 0.76,
+            9: 0.79,
+            10: 0.82,
+            11: 0.84,
+            12: 0.85,
         }
 
-        # AMOUNT-Parameter für nasse Stunden:
+        # AMOUNT-Parameter für Anzahl nasse Stunden (Gamma-Verteilung). Schätzung aus Klimanormwerte Bern/Zollkikofen 1991-2920.
         # Niederschlagsmenge ~ Gamma(shape, scale)
         self._gamma_shape = {m: 1.3 for m in range(1, 13)}
-        self._gamma_scale = {
-            1: 1.2,
-            2: 1.2,
-            3: 1.3,
+        _gamma_scale = {
+            1: 1.1,
+            2: 1.1,
+            3: 1.2,
             4: 1.4,
             5: 1.6,
-            6: 1.8,
-            7: 1.8,
-            8: 1.7,
-            9: 1.5,
+            6: 1.9,
+            7: 2.1,
+            8: 2.0,
+            9: 1.7,
             10: 1.4,
-            11: 1.3,
-            12: 1.2,
+            11: 1.2,
+            12: 1.1,
         }
 
-        # Temperaturmodell-Parameter:
+        # Temperaturmodell-Parameter nach Wilks (1999):
         # temp = mu(month,hour) + beta_wet * wet + eps_t
         # eps_t = phi * eps_(t-1) + sigma * N(0,1)
-        self._beta_wet = {m: -0.8 for m in range(1, 13)}
-        self._phi = {m: 0.78 for m in range(1, 13)}
-        self._sigma = {
+        self._beta_wet = {m: -0.8 for m in range(1, 13)} # Niederschlag kühlt die Temperatur um ca. 0.8°C ab (durchschnittlicher Effekt über alle Monate).
+        self._phi = {m: 0.78 for m in range(1, 13)} # Autokorrelationsparameter des Temperaturrauschens. Wert von 0.78 führt zu langsamen veränderungen in der Temperatur.
+        self._sigma = { 
             1: 1.1,
             2: 1.1,
             3: 1.0,
@@ -189,44 +189,6 @@ class TimeWeatherEnv(gym.Env):
         )
 
         return self._get_obs(), {"month": start_month}
-
-    def step(self, action: int):
-        """
-        Führt einen Zeitschritt aus.
-
-        Die Aktion wird aktuell ignoriert (Wetterprozess ist exogen).
-        Bei Bedarf kann hier später z. B. ein energie-/verhaltensbasiertes Reward-Modell
-        angebunden werden, das das Wetter als Input nutzt.
-        """
-        del action
-
-        # Zeit fortschreiben.
-        self._t += self.sample_rate_hours
-
-        # Episode endet, sobald die gewünschte Gesamtlänge erreicht ist.
-        terminated = self._t >= self.horizon_hours
-        truncated = False
-
-        # Solange die Episode läuft, wird das Wetter für den neuen Zeitschritt simuliert.
-        if not terminated:
-            month, hour = self._month_hour(self._t)
-            self._temp, self._precip, self._wet_prev, self._eps_prev = self._simulate_hour(
-                month=month,
-                hour=hour,
-                wet_prev=self._wet_prev,
-                eps_prev=self._eps_prev,
-            )
-
-        # Reward ist noch neutral (0.0), da dieses Environment nur Wetter liefert.
-        reward = 0.0
-
-        # Zusatzinfos für Debugging/Logging.
-        info = {
-            "t": self._t,
-            "wet": int(self._wet_prev),
-            "month": self._month_hour(min(self._t, self.horizon_hours - 1))[0],
-        }
-        return self._get_obs(), reward, terminated, truncated, info
 
     def _simulate_hour(self, month: int, hour: int, wet_prev: int, eps_prev: float):
         """
