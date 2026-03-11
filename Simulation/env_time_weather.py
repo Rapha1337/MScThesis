@@ -35,7 +35,7 @@ class TimeWeatherEnv(gym.Env):
         # Eingabevalidierung, damit später keine stillen Fehler entstehen.
         assert 1 <= month <= 12
         assert sample_rate_hours >= 1
-        assert horizon_hours >= 8760
+        assert horizon_hours >= 24
 
         # Konfiguration, die von außen gesetzt wird.
         self.month = month
@@ -59,7 +59,7 @@ class TimeWeatherEnv(gym.Env):
         )
 
         # Monatliche Mittelwerte für die Temperatur (in °C) Quelle: Klimanormwerte Bern/Zollkikofen 1991-2920.
-        _month_mean_temp = {
+        self._month_mean_temp = {
                 1: 0.2,   
                 2: 1.1,   
                 3: 5.2,   
@@ -109,7 +109,7 @@ class TimeWeatherEnv(gym.Env):
         # AMOUNT-Parameter für Anzahl nasse Stunden (Gamma-Verteilung). Schätzung aus Klimanormwerte Bern/Zollkikofen 1991-2920.
         # Niederschlagsmenge ~ Gamma(shape, scale)
         self._gamma_shape = {m: 1.3 for m in range(1, 13)}
-        _gamma_scale = {
+        self._gamma_scale = {
             1: 1.1,
             2: 1.1,
             3: 1.2,
@@ -189,6 +189,44 @@ class TimeWeatherEnv(gym.Env):
         )
 
         return self._get_obs(), {"month": start_month}
+    
+    def step(self, action: int):
+        """
+        Führt einen Simulationsschritt aus.
+
+        Da das Wetter exogen ist, hat die Aktion aktuell keinen Einfluss
+        auf die Wetterentwicklung. Das Environment simuliert einfach die
+        nächste Stunde und gibt die neue Observation zurück.
+        """
+        del action  # Aktion wird derzeit nicht verwendet
+
+        # Zeit fortschreiten lassen
+        self._t += self.sample_rate_hours
+
+        # Prüfen, ob Episode beendet ist
+        terminated = self._t >= self.horizon_hours
+        truncated = False
+
+        # Falls die Episode noch läuft: nächste Stunde simulieren
+        if not terminated:
+            month, hour = self._month_hour(self._t)
+            self._temp, self._precip, self._wet_prev, self._eps_prev = self._simulate_hour(
+                month=month,
+                hour=hour,
+                wet_prev=self._wet_prev,
+                eps_prev=self._eps_prev,
+            )
+
+        # Dummy-Reward, da Wetter nicht agentengesteuert ist
+        reward = 0.0
+
+        # Zusätzliche Infos
+        month, hour = self._month_hour(min(self._t, self.horizon_hours - 1))
+        info = {
+            "month": month,
+            "hour": hour,
+        }
+        return self._get_obs(), reward, terminated, truncated, info
 
     def _simulate_hour(self, month: int, hour: int, wet_prev: int, eps_prev: float):
         """
