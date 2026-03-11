@@ -1,40 +1,42 @@
 from env_time_weather import TimeWeatherEnv
 import matplotlib.pyplot as plt
 
-env = TimeWeatherEnv(month=6, sample_rate_hours=1)
+# Environment erstellen
+env = TimeWeatherEnv(sample_rate_hours=1)
 
+# Neue Episode starten (simulierter Tag)
 obs, info = env.reset(seed=42)
 
-hours, temps, steps = [], [], []
+# Listen zum Speichern der simulierten Daten
+hours, temps = [], []
 
 terminated = False
 while not terminated:
+
+    # Observation besteht aus [hour, temperature]
     hour, temp = obs
+
+    # Stunde speichern
     hours.append(hour)
+
+    # Temperatur speichern
     temps.append(temp)
 
-    # Test-Policy: tagsüber aktiv, nachts inaktiv
-    action = 1 if 7 <= hour <= 21 else 0
+    # Dummy-Action (wird aktuell nicht verwendet)
+    action = 0
 
+    # Environment einen Schritt weiter simulieren
     obs, reward, terminated, truncated, info = env.step(action)
-    steps.append(info["steps"])
 
-# Plot Temperatur
+# Plot Temperaturverlauf über den Tag
 plt.figure()
 plt.plot(hours, temps)
 plt.xlabel("Stunde")
 plt.ylabel("Temperatur (°C)")
 plt.title("Temperaturverlauf über einen Tag")
-plt.xticks(range(0,23))
+plt.xticks(range(0, 24))
 plt.grid(True)
 plt.show()
 
-# Plot Schritte
-plt.figure()
-plt.plot(hours, steps)
-plt.xlabel("Stunde des Tages")
-plt.ylabel("Schritte pro Stunde")
-plt.title("Simulierte Aktivität")
-plt.xticks(range(0,23))
-plt.grid(True)
-plt.show()
+# Ausgabe welcher Monat simuliert wurde
+print(f"Simulierter Tag aus Monat: {env.month}")
