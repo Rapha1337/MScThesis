@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 # month=1      -> Start im Januar
 # sample_rate=1 -> stündlicher Schritt
 # horizon=72    -> 3 Tage simulieren
-env = TimeWeatherEnv(month=1, sample_rate_hours=1, horizon_hours=24 * 3)
+env = TimeWeatherEnv(month=1, sample_rate_hours=1, horizon_hours=24 * 365)
 
 # 2) Neue Episode starten (mit Seed für reproduzierbare Werte)
 obs, info = env.reset(seed=42)
