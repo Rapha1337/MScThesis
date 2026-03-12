@@ -58,7 +58,7 @@ class TimeWeatherEnv(gym.Env):
             dtype=np.float32,
         )
 
-        # Monatliche Mittelwerte für die Temperatur (in °C) Quelle: Klimanormwerte Bern/Zollkikofen 1991-2920.
+        # Monatliche Mittelwerte für die Temperatur (in °C) Quelle: Klimanormwerte Bern/Zollikofen 1991-2920.
         self._month_mean_temp = {
                 1: 0.2,   
                 2: 1.1,   
@@ -73,6 +73,23 @@ class TimeWeatherEnv(gym.Env):
                 11: 4.2,  
                 12: 0.9   
             }
+        
+        # Monatsspezifische Tagesamplituden der Temperatur (in °C), abgeleitet aus den Klimanormwerten Bern/Zollikofen 1991–2020.
+        # Diese Werte bestimmen, wie stark die Temperatur im Tagesverlauf schwankt.
+        self._month_temp_amp = {
+            1: 2.5,
+            2: 3.0,
+            3: 4.5,
+            4: 5.5,
+            5: 5.5,
+            6: 5.6,
+            7: 5.8,
+            8: 5.6,
+            9: 5.1,
+            10: 4.2,
+            11: 3.3,
+            12: 2.5,
+        }
 
         # Markov-OCCURRENCE-Parameter für Niederschlag pro Monat. Schätzung aus Klimanormwerte Bern/Zollkikofen 1991-2920.
         # p01: P(nass | vorher trocken) --> Regen beginnt
@@ -110,18 +127,18 @@ class TimeWeatherEnv(gym.Env):
         # Niederschlagsmenge ~ Gamma(shape, scale)
         self._gamma_shape = {m: 1.3 for m in range(1, 13)}
         self._gamma_scale = {
-            1: 1.1,
-            2: 1.1,
-            3: 1.2,
-            4: 1.4,
-            5: 1.6,
-            6: 1.9,
-            7: 2.1,
-            8: 2.0,
-            9: 1.7,
-            10: 1.4,
-            11: 1.2,
-            12: 1.1,
+            1: 1.0,
+            2: 1.0,
+            3: 1.1,
+            4: 1.3,
+            5: 1.4,
+            6: 1.7,
+            7: 1.9,
+            8: 1.8,
+            9: 1.5,
+            10: 1.3,
+            11: 1.1,
+            12: 1.0,
         }
 
         # Temperaturmodell-Parameter nach Wilks (1999):
@@ -129,19 +146,19 @@ class TimeWeatherEnv(gym.Env):
         # eps_t = phi * eps_(t-1) + sigma * N(0,1)
         self._beta_wet = {m: -0.8 for m in range(1, 13)} # Niederschlag kühlt die Temperatur um ca. 0.8°C ab (durchschnittlicher Effekt über alle Monate).
         self._phi = {m: 0.78 for m in range(1, 13)} # Autokorrelationsparameter des Temperaturrauschens. Wert von 0.78 führt zu langsamen veränderungen in der Temperatur.
-        self._sigma = { 
-            1: 1.1,
-            2: 1.1,
-            3: 1.0,
-            4: 0.9,
-            5: 0.9,
-            6: 0.8,
-            7: 0.8,
-            8: 0.8,
-            9: 0.9,
+        self._sigma = {
+            1: 0.9,
+            2: 0.9,
+            3: 0.9,
+            4: 1.0,
+            5: 1.1,
+            6: 1.5,
+            7: 2.0,
+            8: 1.8,
+            9: 1.1,
             10: 1.0,
-            11: 1.0,
-            12: 1.1,
+            11: 0.9,
+            12: 0.9,
         }
 
         # Interner Zustand der Simulation.
@@ -261,23 +278,23 @@ class TimeWeatherEnv(gym.Env):
         eps = self._phi[month] * eps_prev + self._sigma[month] * float(self._rng.normal())
 
         # Gesamttemperatur aus deterministischer Komponente + Wet-Effekt + stochastischer Rest.
-        temp = self._mu(month, hour) + self._beta_wet[month] * wet + eps
+        temp = self._compute_temp(month, hour) + self._beta_wet[month] * wet + eps
 
         return float(temp), float(precip), wet, float(eps)
 
-    def _mu(self, month: int, hour: int) -> float:
+    def _compute_temp(self, month: int, hour: int) -> float:
         """
         Deterministische Temperatur-Basis mu(month, hour).
 
         - Monatlicher Mittelwert bildet den Jahresgang.
-        - Kosinusfunktion bildet den Tagesgang (Peak am Nachmittag) ab.
-        - Amplitude variiert über das Jahr (Sommer stärkerer Tagesgang als Winter).
+        - Monatsspezifische Amplitude bildet den mittleren Tagesgang ab.
+        - Kosinusfunktion mit Maximum am Nachmittag (~15 Uhr).
         """
         month_mean = self._month_mean_temp[month]
-        amplitude = 2.5 + 1.5 * np.sin((month - 1) / 12.0 * 2.0 * np.pi)
+        amplitude = self._month_temp_amp[month]
         phase = (hour - 15) / 24.0 * 2.0 * np.pi
         return float(month_mean + amplitude * np.cos(phase))
-
+    
     def _month_hour(self, t: int) -> tuple[int, int]:
         """
         Wandelt absolute Stunden seit Episodenstart in (Monat, Stunde) um.
