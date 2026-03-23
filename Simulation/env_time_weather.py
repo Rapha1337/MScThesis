@@ -4,6 +4,7 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
+from bern_map import BernMap
 
 class TimeWeatherEnv(gym.Env):
     """
@@ -21,6 +22,7 @@ class TimeWeatherEnv(gym.Env):
         month: int = 1,
         sample_rate_hours: int = 1,
         horizon_hours: int = 24 * 365,
+        bern_map: BernMap | None = None, 
     ):
         """
         Initialisiert das Environment und alle Modellparameter.
@@ -58,6 +60,8 @@ class TimeWeatherEnv(gym.Env):
                 0.0,    # wind_ms
                 0.0,    # snow_cover_flag
                 -50.0,  # feels_like_C
+                0.0,    # x_norm
+                0.0,    # y_norm
             ], dtype=np.float32),
             high=np.array([
                 23.0,   # hour_of_day
@@ -70,6 +74,8 @@ class TimeWeatherEnv(gym.Env):
                 12.0,   # wind_ms
                 1.0,    # snow_cover_flag
                 50.0,   # feels_like_C
+                1.0,    # x_norm
+                1.0,    # y_norm
             ], dtype=np.float32),
             dtype=np.float32,
         )
@@ -233,7 +239,7 @@ class TimeWeatherEnv(gym.Env):
             7: 0.0, 8: 0.0, 9: 0.0, 10: 0.1, 11: 1.6, 12: 6.4,
         }
 
-        # Interner Zustand der Simulation.
+        # Interner Zustand der Simulation Wetter und Zeit.
         self._rng: np.random.Generator | None = None
         self._t = 0  # absolute Zeitschrittzahl seit Episode-Start in Stunden
         self._eps_prev = 0.0  # vorheriges AR(1)-Residuum
@@ -247,6 +253,14 @@ class TimeWeatherEnv(gym.Env):
         self._feels_like = 0.0 # zuletzt simulierte gefühlte Temperatur (in °C)
         self._sun_day_factor = 1.0  # tagesweiser Wolken-/Klarheitsfaktor
 
+        # Interner Zustand der Simulation räumlicher Umgebung.
+        self.map = bern_map if bern_map is not None else BernMap()
+        self._node_id: int | None = None
+        self._lat = 0.0
+        self._lon = 0.0
+        self._x_norm = 0.0
+        self._y_norm = 0.0
+
     def reset(self, seed: int | None = None, options: dict | None = None):
         """
         Setzt die Episode zurück und initialisiert den internen Wetterzustand.
@@ -256,6 +270,10 @@ class TimeWeatherEnv(gym.Env):
         super().reset(seed=seed)
         self._rng = np.random.default_rng(seed)
         self._t = 0
+
+        # Zufälliger gültiger Spawn auf OSM-Node
+        self._node_id, self._lat, self._lon = self.map.sample_random_node()
+        self._x_norm, self._y_norm = self.map.normalize_position(self._lat, self._lon)
 
         start_month = self.month
 
@@ -297,7 +315,12 @@ class TimeWeatherEnv(gym.Env):
             snow_prev=self._snow_cover_flag,
         )
 
-        return self._get_obs(), {"month": start_month}
+        return self._get_obs(), {
+            "month": start_month,
+            "node_id": self._node_id,
+            "lat": self._lat,
+            "lon": self._lon,
+        }
     
     def step(self, action: int):
         """
@@ -307,7 +330,7 @@ class TimeWeatherEnv(gym.Env):
         auf die Wetterentwicklung. Das Environment simuliert einfach die
         nächste Stunde und gibt die neue Observation zurück.
         """
-        del action  # Aktion wird derzeit nicht verwendet
+        assert action in [0, 1]
 
         # Zeit fortschreiten lassen
         self._t += self.sample_rate_hours
@@ -330,6 +353,12 @@ class TimeWeatherEnv(gym.Env):
         # Dummy-Reward, da Wetter nicht agentengesteuert ist
         reward = 0.0
 
+        # Einfache Bewegung im OSM-Graph:
+        # 0 = bleiben, 1 = zu zufälligem Nachbar-Node gehen
+        if action == 1 and self._node_id is not None:
+            self._node_id, self._lat, self._lon = self.map.move_to_random_neighbor(self._node_id)
+            self._x_norm, self._y_norm = self.map.normalize_position(self._lat, self._lon)
+
         # Zusätzliche Infos
         month, hour = self._month_hour(min(self._t, self.horizon_hours - 1))
         info = {
@@ -340,6 +369,11 @@ class TimeWeatherEnv(gym.Env):
             "wind": self._wind,
             "snow_cover_flag": self._snow_cover_flag,
             "feels_like": self._feels_like,
+            "node_id": self._node_id,
+            "lat": self._lat,
+            "lon": self._lon,
+            "x_norm": self._x_norm,
+            "y_norm": self._y_norm,
         }
         return self._get_obs(), reward, terminated, truncated, info
 
@@ -633,6 +667,8 @@ class TimeWeatherEnv(gym.Env):
                 self._wind,
                 snow_flag,
                 self._feels_like,
+                self._x_norm,
+                self._y_norm,
             ],
             dtype=np.float32,
         )
