@@ -60,6 +60,11 @@ env = TimeWeatherEnv(month=1, sample_rate_hours=1, horizon_hours=24 * 365)
 # ============================================================
 obs, info = env.reset(seed=SEED)
 
+print("Spawn:")
+print(" node_id:", info["node_id"])
+print(" lat:", info["lat"])
+print(" lon:", info["lon"])
+
 # ============================================================
 # 3) DATEN SAMMELN
 # ============================================================
@@ -72,12 +77,14 @@ humidities = []
 winds = []
 snow_flags = []
 feels_like_vals = []
+x_positions = []
+y_positions = []
 
 terminated = False
 while not terminated:
     # Observation-Layout:
     # [hour_of_day, month_norm, temperature_C, precip_mm, wet_flag,
-    #  sun_frac, humidity_rel, wind_ms, snow_cover_flag, feels_like_C]
+    #  sun_frac, humidity_rel, wind_ms, snow_cover_flag, feels_like_C, x_norm, y_norm]
     (
         hour,
         month_norm,
@@ -89,6 +96,8 @@ while not terminated:
         wind,
         snow_flag,
         feels_like,
+        x_norm,
+        y_norm,
     ) = obs
 
     temps.append(temp)
@@ -100,8 +109,11 @@ while not terminated:
     winds.append(wind)
     snow_flags.append(snow_flag)
     feels_like_vals.append(feels_like)
+    x_positions.append(x_norm)
+    y_positions.append(y_norm)
 
-    obs, reward, terminated, truncated, info = env.step(action=0)
+    action = random.choice([0, 1])
+    obs, reward, terminated, truncated, info = env.step(action=action)
 
 # ============================================================
 # 4) IN ARRAYS UMWANDELN
@@ -273,7 +285,7 @@ month_names = {
     9: "September", 10: "Oktober", 11: "November", 12: "Dezember",
 }
 
-month = 8  # z.B. random.randint(1, 12)
+month = 10  # z.B. random.randint(1, 12)
 month_mask = months == month
 
 month_temps = temp_series[month_mask]
@@ -422,6 +434,18 @@ ax2.set_ylabel("Niederschlag (mm/h)")
 plt.title(f"Wetter an einem zufälligen Tag im {month_names[month]}")
 plt.tight_layout()
 finalize_plot("plot_13_random_day_temp_precip.png")
+
+# Plot 14: NPC Route im x/y-Norm-Koordinatensystem
+fig, ax = plt.subplots(figsize=(6, 6))
+ax.plot(x_positions, y_positions, linewidth=1.5)
+ax.scatter(x_positions[0], y_positions[0], label="Start")
+ax.scatter(x_positions[-1], y_positions[-1], label="Ende")
+ax.set_xlabel("x_norm")
+ax.set_ylabel("y_norm")
+ax.set_title("Normierte NPC-Trajektorie")
+ax.legend()
+plt.tight_layout()
+finalize_plot("plot_14_npc_trajectory.png")
 
 if PLOT_MODE == "save":
     print(f"Plots wurden als PNG-Dateien in '{SAVE_DIR}' gespeichert.")
