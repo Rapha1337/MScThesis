@@ -1,42 +1,55 @@
 from __future__ import annotations
 
 import random
-from typing import Tuple
 
-import numpy as np
 import osmnx as ox
 
 
 class BernMap:
     """
-    Einfache Map-Klasse für einen ca. 10x10 km Ausschnitt um Bern.
+    Map-Klasse für einen Ausschnitt um Bern mit zwei Routing-Netzen:
 
-    - lädt begehbares OSM-Netz
-    - kann zufällige Punkte und zufällige Nodes samplen
-    - prüft Spawn-Plausibilität über Distanz zum nächsten Node
-    - liefert Bounding Box und Node-Infos für Visualisierung
+    - walk_graph: begehbares OSM-Netz
+    - drive_graph: fahrbares OSM-Netz
+
+    Zuständigkeiten:
+    - lädt beide OSM-Netze
+    - kann zufällige gültige OSM-Nodes samplen
+    - liefert Node-Positionen
+    - berechnet kürzeste Pfade und Weglängen je nach Modus
+    - berechnet Reisezeiten entlang des passenden Graphen
     """
 
     def __init__(
         self,
         center_lat: float = 46.9480,
         center_lon: float = 7.4474,
-        dist_km: float = 5.0,
+        dist_km: float = 8.0,
     ):
         self.center_lat = center_lat
         self.center_lon = center_lon
         self.dist_m = dist_km * 1000.0
 
-        print("Lade OSM-Daten für Bern...")
-        self.graph = ox.graph_from_point(
+        print("Lade OSM-Walk-Daten für Bern...")
+        self.walk_graph = ox.graph_from_point(
             (self.center_lat, self.center_lon),
             dist=self.dist_m,
             network_type="walk",
         )
 
-        self.nodes, self.edges = ox.graph_to_gdfs(self.graph)
+        print("Lade OSM-Drive-Daten für Bern...")
+        self.drive_graph = ox.graph_from_point(
+            (self.center_lat, self.center_lon),
+            dist=self.dist_m,
+            network_type="drive",
+        )
 
-        self.node_ids = list(self.graph.nodes)
+        # Für Bounding Box und Visualisierung nehmen wir den walk_graph
+        self.nodes, self.edges = ox.graph_to_gdfs(self.walk_graph)
+
+        self.walk_node_ids = list(self.walk_graph.nodes)
+        self.drive_node_ids = list(self.drive_graph.nodes)
+
         self.node_lats = self.nodes["y"].to_numpy()
         self.node_lons = self.nodes["x"].to_numpy()
 
@@ -45,7 +58,8 @@ class BernMap:
         self.lon_min = float(self.node_lons.min())
         self.lon_max = float(self.node_lons.max())
 
-        print(f"Graph geladen: {len(self.node_ids)} Knoten")
+        print(f"Walk-Graph geladen: {len(self.walk_node_ids)} Knoten")
+        print(f"Drive-Graph geladen: {len(self.drive_node_ids)} Knoten")
 
     # ============================================================
     # BOUNDS
@@ -59,144 +73,206 @@ class BernMap:
         return self.lat_min, self.lat_max, self.lon_min, self.lon_max
 
     # ============================================================
-    # RANDOM POINTS
+    # INTERNAL HELPERS
     # ============================================================
 
-    def sample_random_point(self) -> tuple[float, float]:
+    def _get_graph_for_mode(self, mode: str):
         """
-        Sampelt einen zufälligen Punkt in der Bounding Box.
+        Wählt den passenden Graphen für einen Bewegungsmodus.
         """
-        lat = random.uniform(self.lat_min, self.lat_max)
-        lon = random.uniform(self.lon_min, self.lon_max)
-        return float(lat), float(lon)
+        if mode in ("walk", "bike"):
+            return self.walk_graph
+        if mode == "drive":
+            return self.drive_graph
 
-    def sample_valid_spawn(self, max_tries: int = 100, max_dist_m: float = 50.0) -> tuple[float, float]:
-        """
-        Sampelt einen plausiblen Spawnpunkt in der Bounding Box.
-        Ein Punkt ist plausibel, wenn er nahe genug an einem Node liegt.
-        """
-        for _ in range(max_tries):
-            lat, lon = self.sample_random_point()
-            if self.is_plausible_spawn(lat, lon, max_dist_m=max_dist_m):
-                return lat, lon
+        raise ValueError(f"Unsupported mode: {mode}")
 
-        raise RuntimeError("Kein gültiger Spawnpunkt gefunden.")
+    def _get_node_ids_for_mode(self, mode: str) -> list[int]:
+        """
+        Liefert die Node-Liste des passenden Graphen.
+        """
+        if mode in ("walk", "bike"):
+            return self.walk_node_ids
+        if mode == "drive":
+            return self.drive_node_ids
+
+        raise ValueError(f"Unsupported mode: {mode}")
 
     # ============================================================
-    # RANDOM NODES
+    # NODES
     # ============================================================
 
-    def sample_random_node(self) -> tuple[int, float, float]:
+    def sample_random_node(
+        self,
+        mode: str = "walk",
+    ) -> tuple[int, float, float]:
         """
-        Sampelt direkt einen gültigen OSM-Node.
+        Sampelt direkt einen gültigen OSM-Node aus dem passenden Graphen.
         """
-        node_id = random.choice(self.node_ids)
-        node = self.nodes.loc[node_id]
+        graph = self._get_graph_for_mode(mode)
+        node_ids = self._get_node_ids_for_mode(mode)
+
+        node_id = random.choice(node_ids)
+        node = graph.nodes[node_id]
         lat = float(node["y"])
         lon = float(node["x"])
         return int(node_id), lat, lon
 
-    def nearest_node(self, lat: float, lon: float) -> tuple[int, float, float]:
+    def nearest_node(
+        self,
+        lat: float,
+        lon: float,
+        mode: str = "walk",
+    ) -> tuple[int, float, float]:
         """
-        Gibt den nächsten OSM-Node zu einem Punkt zurück.
+        Gibt den nächsten OSM-Node im passenden Graphen zu einem Punkt zurück.
         """
-        node_id = ox.distance.nearest_nodes(self.graph, lon, lat)
-        node = self.nodes.loc[node_id]
-        node_lat = float(node["y"])
-        node_lon = float(node["x"])
+        graph = self._get_graph_for_mode(mode)
+        node_id = ox.distance.nearest_nodes(graph, lon, lat)
+        node_lat, node_lon = self.get_node_position(node_id, mode=mode)
         return int(node_id), node_lat, node_lon
 
-    # ============================================================
-    # PLAUSIBILITY CHECK
-    # ============================================================
-
-    def is_plausible_spawn(self, lat: float, lon: float, max_dist_m: float = 50.0) -> bool:
+    def get_node_position(
+        self,
+        node_id: int,
+        mode: str = "walk",
+    ) -> tuple[float, float]:
         """
-        Prüft, ob ein Punkt plausibel als Spawn ist:
-        - innerhalb Bounding Box
-        - nahe genug an einem begehbaren OSM-Node
+        Gibt die Position eines OSM-Nodes als (lat, lon) zurück.
         """
-        if not (self.lat_min <= lat <= self.lat_max):
-            return False
-        if not (self.lon_min <= lon <= self.lon_max):
-            return False
-
-        node_id, node_lat, node_lon = self.nearest_node(lat, lon)
-        del node_id
-
-        dist_m = self.haversine_m(lat, lon, node_lat, node_lon)
-        return dist_m <= max_dist_m
-
-    # ============================================================
-    # DISTANCE
-    # ============================================================
-
-    @staticmethod
-    def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-        """
-        Distanz in Metern zwischen zwei Weltkoordinaten.
-        """
-        r = 6371000.0
-
-        phi1 = np.radians(lat1)
-        phi2 = np.radians(lat2)
-        dphi = np.radians(lat2 - lat1)
-        dlambda = np.radians(lon2 - lon1)
-
-        a = (
-            np.sin(dphi / 2.0) ** 2
-            + np.cos(phi1) * np.cos(phi2) * np.sin(dlambda / 2.0) ** 2
-        )
-        c = 2.0 * np.arctan2(np.sqrt(a), np.sqrt(1.0 - a))
-        return float(r * c)
-    
-    def neighbors(self, node_id: int) -> list[int]:
-        """
-        Gibt alle direkten Nachbar-Nodes eines Knotens zurück.
-        """
-        return list(self.graph.neighbors(node_id))
-
-    def move_to_random_neighbor(self, node_id: int) -> tuple[int, float, float]:
-        """
-        Bewegt sich von einem Node zu einem zufälligen Nachbar-Node.
-        Falls es keine Nachbarn gibt, bleibt der Agent am aktuellen Node.
-        """
-        neighbors = self.neighbors(node_id)
-
-        if len(neighbors) == 0:
-            node = self.nodes.loc[node_id]
-            lat = float(node["y"])
-            lon = float(node["x"])
-            return int(node_id), lat, lon
-
-        next_node_id = random.choice(neighbors)
-        node = self.nodes.loc[next_node_id]
+        graph = self._get_graph_for_mode(mode)
+        node = graph.nodes[node_id]
         lat = float(node["y"])
         lon = float(node["x"])
-        return int(next_node_id), lat, lon
+        return lat, lon
 
-    def normalize_position(self, lat: float, lon: float) -> tuple[float, float]:
+    # ============================================================
+    # ROUTING
+    # ============================================================
+
+    def shortest_path_nodes(
+        self,
+        source_node: int,
+        target_node: int,
+        mode: str = "walk",
+    ) -> list[int]:
         """
-        Normiert eine Position innerhalb der Bounding Box auf [0, 1].
-
-        Rückgabe:
-            x_norm: normierte Ost-West-Position
-            y_norm: normierte Süd-Nord-Position
+        Kürzester Pfad auf dem passenden Graphen als Liste von Node-IDs.
+        Verwendet Kantenlänge ('length') in Metern als Gewicht.
         """
-        x_norm = (lon - self.lon_min) / (self.lon_max - self.lon_min)
-        y_norm = (lat - self.lat_min) / (self.lat_max - self.lat_min)
+        graph = self._get_graph_for_mode(mode)
 
-        x_norm = float(np.clip(x_norm, 0.0, 1.0))
-        y_norm = float(np.clip(y_norm, 0.0, 1.0))
-        return x_norm, y_norm
+        route = ox.routing.shortest_path(
+            graph,
+            source_node,
+            target_node,
+            weight="length",
+        )
 
-    def denormalize_position(self, x_norm: float, y_norm: float) -> tuple[float, float]:
+        if route is None:
+            raise ValueError(
+                f"Kein Pfad gefunden zwischen {source_node} und {target_node} für mode='{mode}'."
+            )
+
+        return list(route)
+
+    def shortest_path_length_m(
+        self,
+        source_node: int,
+        target_node: int,
+        mode: str = "walk",
+    ) -> float:
         """
-        Wandelt normierte Positionswerte [0, 1] zurück in lat/lon um.
+        Länge des kürzesten Pfads auf dem passenden Graphen in Metern.
         """
-        x_norm = float(np.clip(x_norm, 0.0, 1.0))
-        y_norm = float(np.clip(y_norm, 0.0, 1.0))
+        graph = self._get_graph_for_mode(mode)
+        route = self.shortest_path_nodes(source_node, target_node, mode=mode)
 
-        lon = self.lon_min + x_norm * (self.lon_max - self.lon_min)
-        lat = self.lat_min + y_norm * (self.lat_max - self.lat_min)
-        return float(lat), float(lon)
+        if len(route) < 2:
+            return 0.0
+
+        total_length_m = 0.0
+
+        for u, v in zip(route[:-1], route[1:]):
+            edge_data = graph.get_edge_data(u, v)
+
+            if edge_data is None:
+                raise ValueError(
+                    f"Keine Kantendaten gefunden für Edge {u} -> {v} im mode='{mode}'."
+                )
+
+            edge_lengths = []
+            for _, attrs in edge_data.items():
+                if "length" in attrs:
+                    edge_lengths.append(float(attrs["length"]))
+
+            if len(edge_lengths) == 0:
+                raise ValueError(
+                    f"Keine 'length'-Information gefunden für Edge {u} -> {v} im mode='{mode}'."
+                )
+
+            total_length_m += min(edge_lengths)
+
+        return float(total_length_m)
+
+    def travel_time_minutes(
+        self,
+        source_node: int,
+        target_node: int,
+        speed_kmh: float,
+        mode: str = "walk",
+    ) -> float:
+        """
+        Reisezeit in Minuten entlang des passenden Graphen bei gegebener mittlerer Geschwindigkeit.
+        """
+        if speed_kmh <= 0:
+            raise ValueError("speed_kmh must be > 0")
+
+        distance_m = self.shortest_path_length_m(
+            source_node,
+            target_node,
+            mode=mode,
+        )
+        speed_m_per_min = speed_kmh * 1000.0 / 60.0
+        return float(distance_m / speed_m_per_min)
+
+    # ============================================================
+    # POSITION-BASED ROUTING
+    # ============================================================
+
+    def shortest_path_nodes_from_positions(
+        self,
+        source_lat: float,
+        source_lon: float,
+        target_lat: float,
+        target_lon: float,
+        mode: str = "walk",
+    ) -> list[int]:
+        """
+        Kürzester Pfad zwischen zwei Weltkoordinaten.
+        Die Koordinaten werden zuerst auf den passenden Graphen gemappt.
+        """
+        source_node, _, _ = self.nearest_node(source_lat, source_lon, mode=mode)
+        target_node, _, _ = self.nearest_node(target_lat, target_lon, mode=mode)
+        return self.shortest_path_nodes(source_node, target_node, mode=mode)
+
+    def travel_time_minutes_from_positions(
+        self,
+        source_lat: float,
+        source_lon: float,
+        target_lat: float,
+        target_lon: float,
+        speed_kmh: float,
+        mode: str = "walk",
+    ) -> float:
+        """
+        Reisezeit zwischen zwei Weltkoordinaten auf dem passenden Graphen.
+        """
+        source_node, _, _ = self.nearest_node(source_lat, source_lon, mode=mode)
+        target_node, _, _ = self.nearest_node(target_lat, target_lon, mode=mode)
+        return self.travel_time_minutes(
+            source_node=source_node,
+            target_node=target_node,
+            speed_kmh=speed_kmh,
+            mode=mode,
+        )
