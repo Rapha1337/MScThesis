@@ -250,7 +250,7 @@ def compute_route_for_last_action(
     return None, "walk"
 
 
-def run_demo(seed: int = 40) -> None:
+def run_demo(seed: int = 38) -> None:
     """
     Führt eine kleine Demo aus:
     - reset
@@ -301,4 +301,4 @@ def run_demo(seed: int = 40) -> None:
 
 
 if __name__ == "__main__":
-    run_demo(seed=40)
+    run_demo(seed=38)

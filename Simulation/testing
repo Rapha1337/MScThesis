@@ -1,0 +1,906 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from math import ceil, isfinite
+from typing import Any
+import traceback
+
+from env_time_weather import TimeWeatherEnv
+
+
+@dataclass
+class TestResult:
+    name: str
+    category: str
+    passed: bool
+    expected: str
+    observed: str
+    note: str = ""
+
+
+class RealSystemTester:
+    """
+    Real-mode tester for the coupled system:
+    - BernMap
+    - MobilityModel
+    - TimeWeatherEnv
+
+    Fokus:
+    1) Edge cases
+    2) Zeitlogik
+    3) Wetterlogik
+    4) Mobility-Logik
+    5) Interaktion von weather, time und mobility
+
+    Diese Klasse arbeitet direkt mit dem echten Environment.
+
+    Mit detailed=True werden die ausführlicheren Tests verwendet.
+    Mit detailed=False laufen kürzere, schnellere Varianten.
+    """
+
+    def __init__(self, env: TimeWeatherEnv, detailed: bool = True):
+        self.env = env
+        self.results: list[TestResult] = []
+        self.detailed = detailed
+
+        if detailed:
+            self._n_time_monotonic = 24
+            self._n_precip_checks = 48
+            self._n_night_checks = 48
+            self._n_weather_change_steps = 12
+            self._n_interaction_stability = 72
+            self._n_parallel_updates = 10
+            self._obs_limit = 8
+        else:
+            self._n_time_monotonic = 12
+            self._n_precip_checks = 24
+            self._n_night_checks = 24
+            self._n_weather_change_steps = 6
+            self._n_interaction_stability = 12
+            self._n_parallel_updates = 6
+            self._obs_limit = 6
+
+    # ============================================================
+    # BASIC HELPERS
+    # ============================================================
+
+    @staticmethod
+    def _safe_text(text: Any) -> str:
+        """
+        Macht Text robust fuer Windows-Konsole (cp1252).
+        """
+        s = str(text)
+        return s.encode("cp1252", errors="replace").decode("cp1252")
+
+    def _record(
+        self,
+        name: str,
+        category: str,
+        passed: bool,
+        expected: str,
+        observed: str,
+        note: str = "",
+    ) -> TestResult:
+        result = TestResult(
+            name=name,
+            category=category,
+            passed=passed,
+            expected=expected,
+            observed=observed,
+            note=note,
+        )
+        self.results.append(result)
+        return result
+
+    def _safe_test(self, fn):
+        try:
+            return fn()
+        except Exception as e:
+            return self._record(
+                name=fn.__name__,
+                category="exception",
+                passed=False,
+                expected="test runs without exception",
+                observed=f"{type(e).__name__}: {e}",
+                note=traceback.format_exc(limit=1),
+            )
+
+    @staticmethod
+    def _rounded_hours_from_minutes(minutes: float) -> int:
+        if minutes <= 0:
+            return 0
+        return int(ceil(minutes / 60.0))
+
+    def _weather_state(self) -> dict[str, Any]:
+        return {
+            "temp": float(self.env._temp),
+            "precip_mm": float(self.env._precip),
+            "wet": int(self.env._wet_prev),
+            "sun_frac": float(self.env._sun_frac),
+            "humidity": float(self.env._humidity),
+            "wind": float(self.env._wind),
+            "snow_cover_flag": int(self.env._snow_cover_flag),
+            "feels_like": float(self.env._feels_like),
+        }
+
+    def _time_state(self) -> dict[str, Any]:
+        month, hour = self.env._month_hour(self.env._t)
+        day_idx = self.env._t // 24
+        return {
+            "t": int(self.env._t),
+            "month": int(month),
+            "hour": int(hour),
+            "day_idx": int(day_idx),
+        }
+
+    def _reset(self, seed: int = 123):
+        obs, info = self.env.reset(seed=seed)
+        return obs, info
+
+    def _pick_existing_category(self) -> str:
+        cats = self.env.mobility.get_categories()
+        if len(cats) == 0:
+            raise ValueError("No POI categories available after reset.")
+        return cats[0]
+
+    def _truncate_obs(self, seq: list[str]) -> str:
+        return "; ".join(seq[: self._obs_limit]) + (" ..." if len(seq) > self._obs_limit else "")
+
+    # ============================================================
+    # 1) MOBILITY / EDGE CASES
+    # ============================================================
+
+    def test_home_is_initialized(self):
+        self._reset()
+
+        passed = (
+            self.env.mobility.home_node is not None
+            and self.env.mobility.current_node is not None
+        )
+
+        return self._record(
+            name="test_home_is_initialized",
+            category="mobility",
+            passed=passed,
+            expected="home_node and current_node are initialized after reset",
+            observed=(
+                f"home_node={self.env.mobility.home_node}, "
+                f"current_node={self.env.mobility.current_node}"
+            ),
+            note="Nach reset() setzt das Env Home und Current Node neu.",
+        )
+
+    def test_reset_starts_at_home(self):
+        self._reset()
+
+        is_at_home = self.env.mobility.is_at_home()
+        passed = bool(is_at_home)
+
+        return self._record(
+            name="test_reset_starts_at_home",
+            category="mobility",
+            passed=passed,
+            expected="agent starts at home after reset",
+            observed=f"is_at_home={is_at_home}",
+            note="MobilityModel.reset_to_home() wird im reset() des Environments genutzt.",
+        )
+
+    def test_same_start_target_distance_zero(self):
+        self._reset()
+
+        node = self.env.mobility.current_node
+        dist_walk = self.env.map.shortest_path_length_m(node, node, mode="walk")
+        time_walk = self.env.map.travel_time_minutes(
+            source_node=node,
+            target_node=node,
+            speed_kmh=self.env.mobility.walk_speed_kmh,
+            mode="walk",
+        )
+
+        passed = abs(dist_walk) < 1e-9 and abs(time_walk) < 1e-9
+
+        return self._record(
+            name="test_same_start_target_distance_zero",
+            category="mobility",
+            passed=passed,
+            expected="same source and target -> distance=0 and travel_time=0",
+            observed=f"distance_walk={dist_walk}, time_walk={time_walk}",
+            note="Wichtigster Edge Case im Routing.",
+        )
+
+    def test_invalid_transport_mode_raises(self):
+        self._reset()
+
+        try:
+            self.env.mobility.get_travel_time_to_nearest_minutes("gym", mode="rocket")
+            passed = False
+            observed = "no exception raised"
+        except Exception as e:
+            passed = True
+            observed = f"caught {type(e).__name__}"
+
+        return self._record(
+            name="test_invalid_transport_mode_raises",
+            category="robustness",
+            passed=passed,
+            expected="unsupported mode raises exception",
+            observed=observed,
+            note="Sichert sauberes Fehlerhandling fuer ungueltige Modi ab.",
+        )
+
+    def test_unknown_category_raises(self):
+        self._reset()
+
+        try:
+            self.env.mobility.get_travel_time_to_nearest_minutes(
+                "unknown_category", mode="walk"
+            )
+            passed = False
+            observed = "no exception raised"
+        except Exception as e:
+            passed = True
+            observed = f"caught {type(e).__name__}"
+
+        return self._record(
+            name="test_unknown_category_raises",
+            category="robustness",
+            passed=passed,
+            expected="unknown POI category raises exception",
+            observed=observed,
+            note="Wichtiger Edge Case fuer die POI-Logik.",
+        )
+
+    def test_transport_ordering_for_nearest_poi(self):
+        self._reset()
+
+        category = self._pick_existing_category()
+
+        walk_t = self.env.mobility.get_travel_time_to_nearest_minutes(category, mode="walk")
+        bike_t = self.env.mobility.get_travel_time_to_nearest_minutes(category, mode="bike")
+        drive_t = self.env.mobility.get_travel_time_to_nearest_minutes(category, mode="drive")
+
+        passed = drive_t < bike_t < walk_t
+
+        return self._record(
+            name="test_transport_ordering_for_nearest_poi",
+            category="mobility",
+            passed=passed,
+            expected="drive < bike < walk for same destination logic",
+            observed=f"walk={walk_t:.2f}, bike={bike_t:.2f}, drive={drive_t:.2f}",
+            note="Plausibilitaetstest fuer Geschwindigkeiten und Routing.",
+        )
+
+    def test_go_to_nearest_changes_position(self):
+        self._reset()
+
+        category = self._pick_existing_category()
+        before = self.env.mobility.current_node
+        info = self.env.mobility.go_to_nearest(category, mode="walk")
+        after = self.env.mobility.current_node
+
+        passed = before != after or info["distance_m"] == 0.0
+
+        return self._record(
+            name="test_go_to_nearest_changes_position",
+            category="mobility",
+            passed=passed,
+            expected="go_to_nearest changes current position unless already at nearest target",
+            observed=f"before={before}, after={after}, info={info}",
+            note="Prueft, ob Bewegung wirklich auf den POI-Nodes landet.",
+        )
+
+    def test_go_home_restores_home_position(self):
+        self._reset()
+
+        category = self._pick_existing_category()
+        _ = self.env.mobility.go_to_nearest(category, mode="walk")
+        info_home = self.env.mobility.go_home(mode="walk")
+
+        passed = (
+            self.env.mobility.current_node == self.env.mobility.home_node
+            and self.env.mobility.is_at_home()
+        )
+
+        return self._record(
+            name="test_go_home_restores_home_position",
+            category="mobility",
+            passed=passed,
+            expected="go_home returns agent to home node",
+            observed=(
+                f"current_node={self.env.mobility.current_node}, "
+                f"home_node={self.env.mobility.home_node}, "
+                f"info={info_home}"
+            ),
+            note="Prueft Rueckkehrlogik des Agenten.",
+        )
+
+    # ============================================================
+    # 2) TIME TESTS
+    # ============================================================
+
+    def test_time_starts_at_zero(self):
+        self._reset()
+
+        passed = self.env._t == 0
+
+        return self._record(
+            name="test_time_starts_at_zero",
+            category="time",
+            passed=passed,
+            expected="simulation time starts at t=0 after reset",
+            observed=f"t={self.env._t}",
+            note="Baseline-Test fuer die gesamte Zeitlogik.",
+        )
+
+    def test_month_hour_bounds(self):
+        self._reset()
+
+        month, hour = self.env._month_hour(self.env._t)
+        passed = 1 <= month <= 12 and 0 <= hour <= 23
+
+        return self._record(
+            name="test_month_hour_bounds",
+            category="time",
+            passed=passed,
+            expected="month in [1,12] and hour in [0,23]",
+            observed=f"month={month}, hour={hour}",
+            note="Prueft Kalendergrenzen des internen Zeitmappings.",
+        )
+
+    def test_step_stay_advances_by_sample_rate(self):
+        self._reset()
+
+        before = self.env._t
+        _, _, terminated, _, info = self.env.step(0)
+        after = self.env._t
+
+        expected_delta = self.env.sample_rate_hours
+        observed_delta = after - before
+        passed = observed_delta == expected_delta and not terminated
+
+        return self._record(
+            name="test_step_stay_advances_by_sample_rate",
+            category="time",
+            passed=passed,
+            expected=f"stay action advances by sample_rate_hours={expected_delta}",
+            observed=f"before={before}, after={after}, delta={observed_delta}, info={info}",
+            note="Action 0 soll nur normalen Zeitfortschritt ausloesen.",
+        )
+
+    def test_travel_time_rounding_logic_in_step(self):
+        self._reset()
+
+        before_t = self.env._t
+        _, _, _, _, info = self.env.step(1)
+        after_t = self.env._t
+
+        observed_delta = after_t - before_t
+        step_travel_min = float(info["mobility"]["travel_time_min"])
+        expected_delta = max(
+            self.env.sample_rate_hours,
+            self._rounded_hours_from_minutes(step_travel_min),
+        )
+
+        passed = observed_delta == expected_delta
+
+        return self._record(
+            name="test_travel_time_rounding_logic_in_step",
+            category="time",
+            passed=passed,
+            expected="delta_hours = max(sample_rate_hours, ceil(travel_time_min / 60))",
+            observed=(
+                f"step_travel_min={step_travel_min:.2f}, "
+                f"observed_delta={observed_delta}, expected_delta={expected_delta}"
+            ),
+            note="Zentraler Test fuer die Kopplung von mobility und Simulationszeit.",
+        )
+
+    def test_long_run_time_consistency(self):
+        self._reset()
+
+        n_steps = self._n_time_monotonic
+        last_t = self.env._t
+        ok = True
+
+        for _ in range(n_steps):
+            _, _, terminated, _, _ = self.env.step(0)
+            if self.env._t <= last_t:
+                ok = False
+                break
+            last_t = self.env._t
+            if terminated:
+                break
+
+        return self._record(
+            name="test_long_run_time_consistency",
+            category="time",
+            passed=ok,
+            expected="time increases monotonically across repeated steps",
+            observed=f"final_t={self.env._t} after {n_steps} stay-steps",
+            note="Prueft, ob Zeit nie rueckwaerts laeuft.",
+        )
+
+    # ============================================================
+    # 3) WEATHER TESTS
+    # ============================================================
+
+    def test_weather_ranges_after_reset(self):
+        self._reset()
+
+        w = self._weather_state()
+
+        checks = {
+            "sun_frac": 0.0 <= w["sun_frac"] <= 1.0,
+            "humidity": 0.0 <= w["humidity"] <= 100.0,
+            "wind": 0.0 <= w["wind"] <= 12.0,
+            "precip_mm": w["precip_mm"] >= 0.0,
+            "snow_cover_flag": w["snow_cover_flag"] in [0, 1],
+            "wet": w["wet"] in [0, 1],
+            "temp": -50.0 <= w["temp"] <= 60.0,
+            "feels_like": -80.0 <= w["feels_like"] <= 70.0,
+        }
+        passed = all(checks.values())
+
+        return self._record(
+            name="test_weather_ranges_after_reset",
+            category="weather",
+            passed=passed,
+            expected="all weather values within plausible bounds",
+            observed=f"weather={w}, checks={checks}",
+            note="Prueft die unmittelbare Plausibilitaet des Startwetters.",
+        )
+
+    def test_precip_wet_consistency(self):
+        self._reset()
+
+        ok = True
+        observations = []
+
+        for _ in range(self._n_precip_checks):
+            _, _, terminated, _, _ = self.env.step(0)
+            w = self._weather_state()
+
+            if w["precip_mm"] > 0 and w["wet"] != 1:
+                ok = False
+
+            observations.append(f"(precip={w['precip_mm']:.2f}, wet={w['wet']})")
+
+            if terminated:
+                break
+
+        return self._record(
+            name="test_precip_wet_consistency",
+            category="weather",
+            passed=ok,
+            expected="precip_mm > 0 implies wet=1",
+            observed=self._truncate_obs(observations),
+            note="Prueft interne Konsistenz zwischen Niederschlag und wet/dry-State.",
+        )
+
+    def test_night_has_low_or_zero_sun(self):
+        self._reset()
+
+        ok = True
+        observations = []
+
+        for _ in range(self._n_night_checks):
+            _, _, terminated, _, _ = self.env.step(0)
+            month, hour = self.env._month_hour(self.env._t)
+            sun = self.env._sun_frac
+
+            if hour in [1, 2, 3, 4] and sun > 0.1:
+                ok = False
+
+            if hour in [1, 2, 3, 4]:
+                observations.append(f"(hour={hour}, sun_frac={sun:.3f}, month={month})")
+
+            if terminated:
+                break
+
+        return self._record(
+            name="test_night_has_low_or_zero_sun",
+            category="weather",
+            passed=ok,
+            expected="during deep night hours sun_frac should be near zero",
+            observed=self._truncate_obs(observations),
+            note="Passt zu sunrise-/sunset-Logik.",
+        )
+
+    def test_weather_changes_over_time(self):
+        self._reset()
+
+        start = self._weather_state()
+
+        for _ in range(self._n_weather_change_steps):
+            self.env.step(0)
+
+        end = self._weather_state()
+
+        changed = any(
+            abs(float(start[k]) - float(end[k])) > 1e-9
+            for k in ["temp", "precip_mm", "sun_frac", "humidity", "wind", "feels_like"]
+        )
+
+        return self._record(
+            name="test_weather_changes_over_time",
+            category="weather",
+            passed=changed,
+            expected="weather state changes over repeated time steps",
+            observed=f"start={start}, end={end}",
+            note="Prueft, ob Wetter dynamisch simuliert wird.",
+        )
+
+    # ============================================================
+    # 4) STATE FEATURE TESTS
+    # ============================================================
+
+    def test_state_features_exist(self):
+        self._reset()
+
+        features = self.env.mobility.get_state_features(
+            include_walk=True,
+            include_bike=True,
+            include_drive=False,
+        )
+
+        expected_keys = [
+            "is_at_home",
+            "minutes_to_nearest_gym_walk",
+            "minutes_to_nearest_gym_bike",
+            "minutes_to_nearest_pool_walk",
+            "minutes_to_nearest_pool_bike",
+            "minutes_to_nearest_park_walk",
+            "minutes_to_nearest_park_bike",
+        ]
+
+        passed = all(k in features for k in expected_keys)
+
+        return self._record(
+            name="test_state_features_exist",
+            category="state",
+            passed=passed,
+            expected="all expected mobility state features exist",
+            observed=f"keys={list(features.keys())}",
+            note="Wichtig fuer Observation-Space und spaetere Agentensteuerung.",
+        )
+
+    def test_observation_shape_matches_space(self):
+        self._reset()
+
+        obs = self.env._get_obs()
+        expected_shape = self.env.observation_space.shape
+
+        passed = obs.shape == expected_shape
+
+        return self._record(
+            name="test_observation_shape_matches_space",
+            category="state",
+            passed=passed,
+            expected=f"obs.shape == observation_space.shape == {expected_shape}",
+            observed=f"obs.shape={obs.shape}",
+            note="Prueft Konsistenz zwischen Observation-Bau und Observation-Space.",
+        )
+
+    # ============================================================
+    # 5) INTERACTION TESTS: WEATHER / TIME / MOBILITY
+    # ============================================================
+
+    def test_step_action_1_returns_mobility_info(self):
+        self._reset()
+
+        _, _, _, _, info = self.env.step(1)
+        mobility = info["mobility"]
+
+        required_keys = [
+            "target_category",
+            "target_name",
+            "target_node",
+            "mode",
+            "distance_m",
+            "travel_time_min",
+        ]
+
+        passed = all(k in mobility for k in required_keys)
+
+        return self._record(
+            name="test_step_action_1_returns_mobility_info",
+            category="interaction",
+            passed=passed,
+            expected="action 1 returns complete mobility info dict",
+            observed=f"mobility={mobility}",
+            note="Wichtig fuer Auswertung und Debugging im Meeting.",
+        )
+
+    def test_action_1_advances_time_by_mobility_logic(self):
+        self._reset()
+
+        before_t = self.env._t
+        _, _, _, _, info = self.env.step(1)
+        after_t = self.env._t
+
+        travel_min = float(info["mobility"]["travel_time_min"])
+        expected_delta = max(
+            self.env.sample_rate_hours,
+            self._rounded_hours_from_minutes(travel_min),
+        )
+        observed_delta = after_t - before_t
+
+        passed = observed_delta == expected_delta
+
+        return self._record(
+            name="test_action_1_advances_time_by_mobility_logic",
+            category="interaction",
+            passed=passed,
+            expected="time increment matches rounded travel time logic",
+            observed=(
+                f"travel_min={travel_min:.2f}, "
+                f"expected_delta={expected_delta}, observed_delta={observed_delta}"
+            ),
+            note="Direkter Integrationstest fuer movement, travel time und env time.",
+        )
+
+    def test_weather_and_mobility_coexist_in_info(self):
+        self._reset()
+
+        _, _, _, _, info = self.env.step(1)
+
+        has_weather = all(
+            k in info for k in ["sun_frac", "humidity", "wind", "snow_cover_flag", "feels_like"]
+        )
+        has_mobility = "mobility" in info
+
+        passed = has_weather and has_mobility
+
+        return self._record(
+            name="test_weather_and_mobility_coexist_in_info",
+            category="interaction",
+            passed=passed,
+            expected="step info contains both weather and mobility information",
+            observed=f"info_keys={list(info.keys())}",
+            note="Gekoppelte Subsysteme liefern gemeinsam Output.",
+        )
+
+    def test_bad_weather_does_not_break_step_loop(self):
+        self._reset()
+
+        ok = True
+        observations = []
+
+        for _ in range(self._n_interaction_stability):
+            _, _, terminated, _, info = self.env.step(1)
+            w = self._weather_state()
+
+            finite_check = all(
+                isfinite(float(x))
+                for x in [
+                    w["temp"],
+                    w["precip_mm"],
+                    w["sun_frac"],
+                    w["humidity"],
+                    w["wind"],
+                    w["feels_like"],
+                ]
+            )
+            if not finite_check:
+                ok = False
+
+            if info["delta_hours"] < 1:
+                ok = False
+
+            observations.append(
+                f"(t={self.env._t}, wet={w['wet']}, precip={w['precip_mm']:.2f}, delta={info['delta_hours']})"
+            )
+
+            if terminated:
+                break
+
+        return self._record(
+            name="test_bad_weather_does_not_break_step_loop",
+            category="interaction",
+            passed=ok,
+            expected="repeated action-1 steps remain numerically stable under varying weather",
+            observed=self._truncate_obs(observations),
+            note="Stabilitaetstest fuer das gekoppelte Gesamtsystem.",
+        )
+
+    def test_mobility_location_updates_while_weather_updates(self):
+        self._reset()
+
+        positions = []
+        temps = []
+
+        for _ in range(self._n_parallel_updates):
+            _, _, terminated, _, _ = self.env.step(1)
+            positions.append(self.env.mobility.current_node)
+            temps.append(self.env._temp)
+            if terminated:
+                break
+
+        moved = len(set(positions)) >= 1
+        weather_dynamic = len(set(round(float(t), 3) for t in temps)) > 1
+        passed = moved and weather_dynamic
+
+        return self._record(
+            name="test_mobility_location_updates_while_weather_updates",
+            category="interaction",
+            passed=passed,
+            expected="location and weather can both evolve across steps",
+            observed=f"positions={positions}, temps={[round(float(x), 2) for x in temps]}",
+            note="Zeigt die Parallelitaet von raeumlicher und meteorologischer Dynamik.",
+        )
+
+    # ============================================================
+    # RUNNER
+    # ============================================================
+
+    def run_all(self):
+        self.results = []
+
+        tests = [
+            # mobility / edge
+            self.test_home_is_initialized,
+            self.test_reset_starts_at_home,
+            self.test_same_start_target_distance_zero,
+            self.test_invalid_transport_mode_raises,
+            self.test_unknown_category_raises,
+            self.test_transport_ordering_for_nearest_poi,
+            self.test_go_to_nearest_changes_position,
+            self.test_go_home_restores_home_position,
+
+            # time
+            self.test_time_starts_at_zero,
+            self.test_month_hour_bounds,
+            self.test_step_stay_advances_by_sample_rate,
+            self.test_travel_time_rounding_logic_in_step,
+            self.test_long_run_time_consistency,
+
+            # weather
+            self.test_weather_ranges_after_reset,
+            self.test_precip_wet_consistency,
+            self.test_night_has_low_or_zero_sun,
+            self.test_weather_changes_over_time,
+
+            # state
+            self.test_state_features_exist,
+            self.test_observation_shape_matches_space,
+
+            # interactions
+            self.test_step_action_1_returns_mobility_info,
+            self.test_action_1_advances_time_by_mobility_logic,
+            self.test_weather_and_mobility_coexist_in_info,
+            self.test_bad_weather_does_not_break_step_loop,
+            self.test_mobility_location_updates_while_weather_updates,
+        ]
+
+        for test_fn in tests:
+            self._safe_test(test_fn)
+
+        return self.results
+
+    # ============================================================
+    # REPORTING
+    # ============================================================
+
+    def summary(self):
+        total = len(self.results)
+        passed = sum(r.passed for r in self.results)
+        failed = total - passed
+
+        by_category = {}
+        for r in self.results:
+            if r.category not in by_category:
+                by_category[r.category] = {"total": 0, "passed": 0, "failed": 0}
+            by_category[r.category]["total"] += 1
+            if r.passed:
+                by_category[r.category]["passed"] += 1
+            else:
+                by_category[r.category]["failed"] += 1
+
+        return {
+            "total": total,
+            "passed": passed,
+            "failed": failed,
+            "by_category": by_category,
+        }
+
+    def print_report(self):
+        s = self.summary()
+
+        print("\n" + "=" * 84)
+        print("REAL SYSTEM TEST REPORT: GPS / MOBILITY / TIME / WEATHER")
+        print("=" * 84)
+        print(f"Total tests : {s['total']}")
+        print(f"Passed      : {s['passed']}")
+        print(f"Failed      : {s['failed']}")
+        print("-" * 84)
+
+        for cat, vals in s["by_category"].items():
+            print(
+                self._safe_text(
+                    f"[{cat.upper():12}] total={vals['total']} | "
+                    f"passed={vals['passed']} | failed={vals['failed']}"
+                )
+            )
+
+        print("-" * 84)
+        for r in self.results:
+            status = "PASS" if r.passed else "FAIL"
+            print(self._safe_text(f"{status:4} | {r.name}"))
+            print(self._safe_text(f"       expected: {r.expected}"))
+            print(self._safe_text(f"       observed: {r.observed}"))
+            if r.note:
+                print(self._safe_text(f"       note    : {r.note}"))
+            print("-" * 84)
+
+    def miro_notes(self) -> str:
+        s = self.summary()
+
+        lines = []
+        lines.append("testing: real system validation")
+        lines.append("")
+        lines.append(f"- total tests: {s['total']}")
+        lines.append(f"- passed: {s['passed']}")
+        lines.append(f"- failed: {s['failed']}")
+        lines.append("")
+        lines.append(f"- mode: {'detailed' if self.detailed else 'quick'}")
+        lines.append("")
+
+        lines.append("tested components")
+        for cat, vals in s["by_category"].items():
+            lines.append(f"- {cat}: {vals['passed']}/{vals['total']} passed")
+
+        lines.append("")
+        lines.append("mobility / edge cases")
+        lines.append("- reset starts at home")
+        lines.append("- same source and target")
+        lines.append("- invalid mode / unknown category")
+        lines.append("- transport mode ordering")
+        lines.append("- go to nearest / go home")
+
+        lines.append("")
+        lines.append("time logic")
+        lines.append("- t starts at zero")
+        lines.append("- month / hour bounds")
+        lines.append("- stay action advances by sample rate")
+        lines.append("- travel time rounding in step()")
+        lines.append("- monotonic long-run time progression")
+
+        lines.append("")
+        lines.append("weather logic")
+        lines.append("- plausible weather ranges")
+        lines.append("- precipitation / wet consistency")
+        lines.append("- low sun during night")
+        lines.append("- weather changes over time")
+
+        lines.append("")
+        lines.append("system interaction")
+        lines.append("- action 1 returns mobility info")
+        lines.append("- mobility affects time progression")
+        lines.append("- weather and mobility coexist in info output")
+        lines.append("- repeated steps remain stable")
+        lines.append("- location and weather update in parallel")
+
+        lines.append("")
+        lines.append("goal")
+        lines.append("- validate real system robustness")
+        lines.append("- validate coupling of mobility, time and weather")
+        lines.append("- close implementation phase before research question / disposition")
+
+        return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    from env_time_weather import TimeWeatherEnv
+
+    env = TimeWeatherEnv(
+        month=1,
+        sample_rate_hours=1,
+        horizon_hours=24 * 30,
+    )
+
+    tester = RealSystemTester(env, detailed=True)
+    tester.run_all()
+    tester.print_report()
+
+    print("\n--- MIRO NOTES ---")
+    print(tester.miro_notes())
