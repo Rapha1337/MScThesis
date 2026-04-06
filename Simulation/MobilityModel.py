@@ -210,16 +210,34 @@ class MobilityModel:
 
     def get_distance_to_nearest_m(self, category: str, mode: str = "walk") -> float:
         """
-        Distanz entlang des passenden Graphen zum nächstgelegenen POI einer Kategorie.
+        Distanz entlang des passenden Graphen zum naechstgelegenen erreichbaren POI
+        einer Kategorie.
+
+        Robust gegen unreachable routes:
+        - Unerreichbare POIs werden uebersprungen
+        - Nur wenn kein POI erreichbar ist, wird ein Fehler geworfen
         """
         current_node = self._require_current_node()
         pois = self._require_category(category)
 
         if mode in ("walk", "bike"):
-            distances = [
-                self.map.shortest_path_length_m(current_node, poi.node_id, mode="walk")
-                for poi in pois
-            ]
+            distances = []
+            for poi in pois:
+                try:
+                    d = self.map.shortest_path_length_m(
+                        current_node,
+                        poi.node_id,
+                        mode="walk",
+                    )
+                    distances.append(float(d))
+                except ValueError:
+                    continue
+
+            if len(distances) == 0:
+                raise ValueError(
+                    f"No reachable POIs found for category='{category}' and mode='{mode}'."
+                )
+
             return float(min(distances))
 
         if mode == "drive":
@@ -227,25 +245,33 @@ class MobilityModel:
 
             distances = []
             for poi in pois:
-                poi_lat, poi_lon = self._get_poi_position(poi)
+                try:
+                    poi_lat, poi_lon = self._get_poi_position(poi)
 
-                source_drive_node, _, _ = self.map.nearest_node(
-                    current_lat,
-                    current_lon,
-                    mode="drive",
-                )
-                target_drive_node, _, _ = self.map.nearest_node(
-                    poi_lat,
-                    poi_lon,
-                    mode="drive",
-                )
+                    source_drive_node, _, _ = self.map.nearest_node(
+                        current_lat,
+                        current_lon,
+                        mode="drive",
+                    )
+                    target_drive_node, _, _ = self.map.nearest_node(
+                        poi_lat,
+                        poi_lon,
+                        mode="drive",
+                    )
 
-                distance_m = self.map.shortest_path_length_m(
-                    source_drive_node,
-                    target_drive_node,
-                    mode="drive",
+                    distance_m = self.map.shortest_path_length_m(
+                        source_drive_node,
+                        target_drive_node,
+                        mode="drive",
+                    )
+                    distances.append(float(distance_m))
+                except ValueError:
+                    continue
+
+            if len(distances) == 0:
+                raise ValueError(
+                    f"No reachable POIs found for category='{category}' and mode='drive'."
                 )
-                distances.append(distance_m)
 
             return float(min(distances))
 
@@ -253,22 +279,35 @@ class MobilityModel:
 
     def get_travel_time_to_nearest_minutes(self, category: str, mode: str = "walk") -> float:
         """
-        Reisezeit zum nächstgelegenen POI einer Kategorie.
+        Reisezeit zum naechstgelegenen erreichbaren POI einer Kategorie.
+
+        Robust gegen unreachable routes:
+        - Unerreichbare POIs werden uebersprungen
+        - Nur wenn kein POI erreichbar ist, wird ein Fehler geworfen
         """
         current_node = self._require_current_node()
         pois = self._require_category(category)
         speed_kmh = self._get_speed_kmh(mode)
 
         if mode in ("walk", "bike"):
-            travel_times = [
-                self.map.travel_time_minutes(
-                    source_node=current_node,
-                    target_node=poi.node_id,
-                    speed_kmh=speed_kmh,
-                    mode="walk",
+            travel_times = []
+            for poi in pois:
+                try:
+                    t = self.map.travel_time_minutes(
+                        source_node=current_node,
+                        target_node=poi.node_id,
+                        speed_kmh=speed_kmh,
+                        mode="walk",
+                    )
+                    travel_times.append(float(t))
+                except ValueError:
+                    continue
+
+            if len(travel_times) == 0:
+                raise ValueError(
+                    f"No reachable POIs found for category='{category}' and mode='{mode}'."
                 )
-                for poi in pois
-            ]
+
             return float(min(travel_times))
 
         if mode == "drive":
@@ -276,17 +315,25 @@ class MobilityModel:
 
             travel_times = []
             for poi in pois:
-                poi_lat, poi_lon = self._get_poi_position(poi)
+                try:
+                    poi_lat, poi_lon = self._get_poi_position(poi)
 
-                travel_time_min = self.map.travel_time_minutes_from_positions(
-                    source_lat=current_lat,
-                    source_lon=current_lon,
-                    target_lat=poi_lat,
-                    target_lon=poi_lon,
-                    speed_kmh=speed_kmh,
-                    mode="drive",
+                    travel_time_min = self.map.travel_time_minutes_from_positions(
+                        source_lat=current_lat,
+                        source_lon=current_lon,
+                        target_lat=poi_lat,
+                        target_lon=poi_lon,
+                        speed_kmh=speed_kmh,
+                        mode="drive",
+                    )
+                    travel_times.append(float(travel_time_min))
+                except ValueError:
+                    continue
+
+            if len(travel_times) == 0:
+                raise ValueError(
+                    f"No reachable POIs found for category='{category}' and mode='drive'."
                 )
-                travel_times.append(travel_time_min)
 
             return float(min(travel_times))
 
@@ -294,36 +341,64 @@ class MobilityModel:
 
     def get_nearest_poi(self, category: str, mode: str = "walk") -> POI:
         """
-        Gibt den nächstgelegenen POI einer Kategorie für den gewählten Modus zurück.
+        Gibt den naechstgelegenen erreichbaren POI einer Kategorie fuer den gewaehlten Modus zurueck.
+
+        Robust gegen unreachable routes:
+        - Unerreichbare POIs werden uebersprungen
+        - Nur wenn kein POI erreichbar ist, wird ein Fehler geworfen
         """
         current_node = self._require_current_node()
         pois = self._require_category(category)
 
         if mode in ("walk", "bike"):
-            nearest_poi = min(
-                pois,
-                key=lambda poi: self.map.shortest_path_length_m(
-                    current_node,
-                    poi.node_id,
-                    mode="walk",
-                ),
-            )
+            candidates: list[tuple[POI, float]] = []
+
+            for poi in pois:
+                try:
+                    dist = self.map.shortest_path_length_m(
+                        current_node,
+                        poi.node_id,
+                        mode="walk",
+                    )
+                    candidates.append((poi, float(dist)))
+                except ValueError:
+                    continue
+
+            if len(candidates) == 0:
+                raise ValueError(
+                    f"No reachable POIs found for category='{category}' and mode='{mode}'."
+                )
+
+            nearest_poi, _ = min(candidates, key=lambda x: x[1])
             return nearest_poi
 
         if mode == "drive":
             current_lat, current_lon = self.get_current_position()
 
-            nearest_poi = min(
-                pois,
-                key=lambda poi: self.map.travel_time_minutes_from_positions(
-                    source_lat=current_lat,
-                    source_lon=current_lon,
-                    target_lat=self._get_poi_position(poi)[0],
-                    target_lon=self._get_poi_position(poi)[1],
-                    speed_kmh=self.drive_speed_kmh,
-                    mode="drive",
-                ),
-            )
+            candidates: list[tuple[POI, float]] = []
+
+            for poi in pois:
+                try:
+                    poi_lat, poi_lon = self._get_poi_position(poi)
+
+                    travel_time_min = self.map.travel_time_minutes_from_positions(
+                        source_lat=current_lat,
+                        source_lon=current_lon,
+                        target_lat=poi_lat,
+                        target_lon=poi_lon,
+                        speed_kmh=self.drive_speed_kmh,
+                        mode="drive",
+                    )
+                    candidates.append((poi, float(travel_time_min)))
+                except ValueError:
+                    continue
+
+            if len(candidates) == 0:
+                raise ValueError(
+                    f"No reachable POIs found for category='{category}' and mode='drive'."
+                )
+
+            nearest_poi, _ = min(candidates, key=lambda x: x[1])
             return nearest_poi
 
         raise ValueError(f"Unsupported mode: {mode}")
