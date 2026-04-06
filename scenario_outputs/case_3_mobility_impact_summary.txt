@@ -1,0 +1,23 @@
+=== CASE 3: MOBILITY IMPACT ON TIME ===
+rows: 15
+
+columns: ['trial', 'mode', 'travel_time_min', 'delta_hours', 'distance_m', 'target_category', 'target_name']
+
+mean delta hours: 1.67
+max delta hours: 3.00
+mean travel time: 64.07 min
+mean distance: 10832.11 m
+mode counts: {'walk': 5, 'bike': 5, 'drive': 5}
+
+First 10 rows:
+ trial  mode  travel_time_min  delta_hours   distance_m target_category target_name
+     0  walk       127.229645            3 10178.371598             gym       Gym 1
+     1  bike        40.713486            1 10178.371598             gym       Gym 1
+     2 drive        24.279182            1 12139.590933             gym       Gym 1
+     3  walk       127.229645            3 10178.371598             gym       Gym 1
+     4  bike        40.713486            1 10178.371598             gym       Gym 1
+     5 drive        24.279182            1 12139.590933             gym       Gym 1
+     6  walk       127.229645            3 10178.371598             gym       Gym 1
+     7  bike        40.713486            1 10178.371598             gym       Gym 1
+     8 drive        24.279182            1 12139.590933             gym       Gym 1
+     9  walk       127.229645            3 10178.371598             gym       Gym 1

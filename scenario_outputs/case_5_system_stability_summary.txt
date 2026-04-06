@@ -1,0 +1,32 @@
+=== CASE 5: SYSTEM STABILITY ===
+rows: 400
+
+columns: ['step', 't', 'month', 'hour', 'action', 'action_name', 'delta_hours', 'temp', 'precip_mm', 'wet', 'sun_frac', 'humidity', 'wind', 'snow_cover_flag', 'feels_like', 'lat', 'lon', 'current_node', 'poi_category', 'poi_name', 'target_node', 'mode', 'distance_m', 'travel_time_min']
+
+moves: 284
+stays: 116
+mean temperature: -0.19 C
+mean sun fraction: 0.10
+wet hours: 34
+mean delta hours: 1.13
+max delta hours: 2.00
+mean travel time: 18.25 min
+mean distance: 3115.34 m
+mode counts: {None: 116, 'walk': 98, 'bike': 94, 'drive': 92}
+poi counts: {'stay': 116, 'park': 102, 'pool': 91, 'gym': 91}
+
+First 10 rows:
+ step  t  month  hour  action     action_name  delta_hours      temp  precip_mm  wet  sun_frac  humidity     wind  snow_cover_flag  feels_like       lat      lon  current_node poi_category poi_name  target_node  mode  distance_m  travel_time_min
+    0  1      1     1       1 random_activity            1 -2.095964        0.0    0  0.000000 88.590807 2.052944                0   -4.967355 46.927000 7.498935     278860240         pool   Pool 1  278860240.0 drive 9141.433329        18.282867
+    1  3      1     3       1 random_activity            2 -0.855621        0.0    0  0.000000 91.935612 1.795281                0   -3.177665 46.886931 7.502093     300025613         park   Park 1  300025613.0  walk 5191.330212        64.891628
+    2  5      1     5       1 random_activity            2 -1.965188        0.0    0  0.000000 95.579900 1.809044                0   -4.479779 46.935702 7.469271    9455383235          gym    Gym 2 9455383235.0  walk 7714.350028        96.429375
+    3  6      1     6       0            stay            1 -1.939344        0.0    0  0.000000 95.639927 2.204842                0   -4.976458 46.935702 7.469271    9455383235         None     None          NaN  None    0.000000         0.000000
+    4  7      1     7       0            stay            1 -0.468440        0.0    0  0.000000 87.073762 1.450724                0   -2.208494 46.935702 7.469271    9455383235         None     None          NaN  None    0.000000         0.000000
+    5  8      1     8       1 random_activity            1 -0.875518        0.0    0  0.105350 90.117529 1.861636                0   -3.292575 46.886931 7.502093     300025613         park   Park 1  300025613.0  bike 7714.350028        30.857400
+    6  9      1     9       1 random_activity            1  0.971287        0.0    0  0.219779 89.696861 2.841371                0   -2.194578 46.886931 7.502093     300025613         park   Park 1  300025613.0  bike    0.000000         0.000000
+    7 10      1    10       1 random_activity            1  1.013384        0.0    0  0.399568 80.344960 0.256597                0    1.013384 46.886931 7.502093     300025613         park   Park 1  300025613.0  bike    0.000000         0.000000
+    8 11      1    11       1 random_activity            1  2.273749        0.0    0  0.529644 78.777890 2.617991                0   -0.439041 46.944952 7.438292    3409298102          gym    Gym 1 3409298102.0 drive 8911.526127        17.823052
+    9 12      1    12       1 random_activity            1  0.778232        0.0    0  0.570664 81.881920 1.203603                0    0.778232 46.886931 7.502093     300025613         park   Park 1  300025613.0  bike 8710.426874        34.841707
+
+finite values check: True
+max delta_hours: 2
