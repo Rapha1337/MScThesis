@@ -34,8 +34,8 @@ class YearPhase(str, Enum):
 @dataclass
 class WeeklyBlockTemplate:
     weekday: int
-    start_hour: float
-    end_hour: float
+    start_hour: int
+    end_hour: int
     activity_type: ActivityType
     flexibility: BlockFlexibility
     subtype: str | None = None
@@ -44,9 +44,9 @@ class WeeklyBlockTemplate:
     def __post_init__(self) -> None:
         if not 0 <= self.weekday <= 6:
             raise ValueError("weekday must be between 0 and 6")
-        if not 0.0 <= self.start_hour < 24.0:
+        if not 0 <= self.start_hour < 24:
             raise ValueError("start_hour must be in [0, 24)")
-        if not 0.0 < self.end_hour <= 24.0:
+        if not 0 < self.end_hour <= 24:
             raise ValueError("end_hour must be in (0, 24]")
         if self.start_hour >= self.end_hour:
             raise ValueError("start_hour must be smaller than end_hour")
@@ -97,13 +97,8 @@ WEEKDAY_NAMES = {
 }
 
 
-def hour_to_hhmm(hour: float) -> str:
-    h = int(hour)
-    m = int(round((hour - h) * 60))
-    if m == 60:
-        h += 1
-        m = 0
-    return f"{h:02d}:{m:02d}"
+def hour_to_hhmm(hour: int) -> str:
+    return f"{hour:02d}:00"
 
 
 def print_weekly_structure(structure: WeeklyStructure) -> None:
@@ -129,6 +124,55 @@ def print_weekly_structure(structure: WeeklyStructure) -> None:
                 f"subtype={subtype}"
             )
 
+def generate_day_episodes(
+    weekly_structure: WeeklyStructure,
+    weekday: int,
+) -> list[DayEpisode]:
+    """
+    Loest die Wochenstruktur fuer einen bestimmten Wochentag
+    in stündliche Tagesepisoden auf.
+    end_hour ist exklusiv.
+    """
+    blocks = weekly_structure.get_blocks_for_weekday(weekday)
+
+    episodes: list[DayEpisode] = []
+
+    for block in blocks:
+        for hour in range(block.start_hour, block.end_hour):
+            episodes.append(
+                DayEpisode(
+                    hour=hour,
+                    activity_type=block.activity_type,
+                    flexibility=block.flexibility,
+                    subtype=block.subtype,
+                )
+            )
+
+    episodes.sort(key=lambda ep: ep.hour)
+    return episodes
+
+def print_day_episodes(day_episodes: list[DayEpisode], weekday: int) -> None:
+    print(f"\nDay episodes for {WEEKDAY_NAMES[weekday]}:")
+
+    if not day_episodes:
+        print("  - no episodes")
+        return
+
+    for ep in day_episodes:
+        subtype = ep.subtype if ep.subtype is not None else "-"
+        print(
+            f"  - {ep.hour:02d}:00 | "
+            f"{ep.activity_type.value} | "
+            f"{ep.flexibility.value} | "
+            f"subtype={subtype}"
+        )
+
+@dataclass
+class DayEpisode:
+    hour: int
+    activity_type: ActivityType
+    flexibility: BlockFlexibility
+    subtype: str | None = None
 
 def has_time_conflict(
     existing_blocks: list[WeeklyBlockTemplate],
@@ -280,8 +324,8 @@ student_me_base = WeeklyStructure(
 student_me_base.add_block(
     WeeklyBlockTemplate(
         weekday=0,
-        start_hour=8.0,
-        end_hour=16.25,
+        start_hour=8,
+        end_hour=16,
         activity_type=ActivityType.WORK,
         flexibility=BlockFlexibility.FIXED,
         subtype="university",
@@ -292,8 +336,8 @@ student_me_base.add_block(
 student_me_base.add_block(
     WeeklyBlockTemplate(
         weekday=1,
-        start_hour=9.0,
-        end_hour=12.0,
+        start_hour=9,
+        end_hour=12,
         activity_type=ActivityType.WORK,
         flexibility=BlockFlexibility.FIXED,
         subtype="assistant_job",
@@ -302,8 +346,8 @@ student_me_base.add_block(
 student_me_base.add_block(
     WeeklyBlockTemplate(
         weekday=1,
-        start_hour=13.0,
-        end_hour=15.25,
+        start_hour=13,
+        end_hour=15,
         activity_type=ActivityType.PHYSICAL_ACTIVITY,
         flexibility=BlockFlexibility.FIXED,
         subtype="gym",
@@ -312,8 +356,8 @@ student_me_base.add_block(
 student_me_base.add_block(
     WeeklyBlockTemplate(
         weekday=1,
-        start_hour=16.0,
-        end_hour=18.0,
+        start_hour=16,
+        end_hour=18,
         activity_type=ActivityType.WORK,
         flexibility=BlockFlexibility.FIXED,
         subtype="assistant_job",
@@ -324,8 +368,8 @@ student_me_base.add_block(
 student_me_base.add_block(
     WeeklyBlockTemplate(
         weekday=2,
-        start_hour=13.0,
-        end_hour=15.25,
+        start_hour=13,
+        end_hour=15,
         activity_type=ActivityType.PHYSICAL_ACTIVITY,
         flexibility=BlockFlexibility.FIXED,
         subtype="gym",
@@ -336,8 +380,8 @@ student_me_base.add_block(
 student_me_base.add_block(
     WeeklyBlockTemplate(
         weekday=3,
-        start_hour=9.0,
-        end_hour=12.0,
+        start_hour=9,
+        end_hour=12,
         activity_type=ActivityType.WORK,
         flexibility=BlockFlexibility.FIXED,
         subtype="assistant_job",
@@ -346,8 +390,8 @@ student_me_base.add_block(
 student_me_base.add_block(
     WeeklyBlockTemplate(
         weekday=3,
-        start_hour=13.0,
-        end_hour=15.25,
+        start_hour=13,
+        end_hour=15,
         activity_type=ActivityType.PHYSICAL_ACTIVITY,
         flexibility=BlockFlexibility.FIXED,
         subtype="gym",
@@ -356,8 +400,8 @@ student_me_base.add_block(
 student_me_base.add_block(
     WeeklyBlockTemplate(
         weekday=3,
-        start_hour=16.0,
-        end_hour=18.0,
+        start_hour=16,
+        end_hour=18,
         activity_type=ActivityType.WORK,
         flexibility=BlockFlexibility.FIXED,
         subtype="assistant_job",
@@ -368,8 +412,8 @@ student_me_base.add_block(
 student_me_base.add_block(
     WeeklyBlockTemplate(
         weekday=4,
-        start_hour=7.0,
-        end_hour=9.0,
+        start_hour=7,
+        end_hour=9,
         activity_type=ActivityType.PHYSICAL_ACTIVITY,
         flexibility=BlockFlexibility.FIXED,
         subtype="training",
@@ -378,8 +422,8 @@ student_me_base.add_block(
 student_me_base.add_block(
     WeeklyBlockTemplate(
         weekday=4,
-        start_hour=9.0,
-        end_hour=17.0,
+        start_hour=9,
+        end_hour=17,
         activity_type=ActivityType.WORK,
         flexibility=BlockFlexibility.FIXED,
         subtype="fitness_coach",
@@ -390,8 +434,8 @@ student_me_base.add_block(
 student_me_base.add_block(
     WeeklyBlockTemplate(
         weekday=5,
-        start_hour=13.0,
-        end_hour=15.25,
+        start_hour=13,
+        end_hour=15,
         activity_type=ActivityType.PHYSICAL_ACTIVITY,
         flexibility=BlockFlexibility.FIXED,
         subtype="gym",
@@ -402,8 +446,8 @@ student_me_base.add_block(
 student_me_base.add_block(
     WeeklyBlockTemplate(
         weekday=6,
-        start_hour=12.0,
-        end_hour=14.0,
+        start_hour=12,
+        end_hour=14,
         activity_type=ActivityType.PHYSICAL_ACTIVITY,
         flexibility=BlockFlexibility.FIXED,
         subtype="training",
