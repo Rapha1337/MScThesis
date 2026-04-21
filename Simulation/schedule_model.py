@@ -808,19 +808,28 @@ def generate_weekly_structure_for_phase(
     return structure
 
 if __name__ == "__main__":
+    BASE_SEED = 37  
+
     for phase in [YearPhase.SEMESTER, YearPhase.EXAM_PHASE, YearPhase.HOLIDAY]:
         print(f"\n=== {phase.value.upper()} FULL DAY SCHEDULES ===")
+
+        # 1) EIN RNG für die Wochenstruktur
+        week_rng = random.Random(BASE_SEED + hash(phase.value) % 10000)
 
         structure = generate_weekly_structure_for_phase(
             student_me_base,
             phase,
-            rng=random.Random(random.randint(0, 10000)),
+            rng=week_rng,
         )
 
         for weekday in range(7):
+            # 2) eigener RNG pro Tag (deterministisch, aber verschieden)
+            day_seed = BASE_SEED + weekday + hash(phase.value) % 10000
+            day_rng = random.Random(day_seed)
+
             full_day = generate_full_day_schedule(
                 structure,
                 weekday,
-                rng=random.Random(random.randint(0, 10000)),
+                rng=day_rng,
             )
             print_full_day_schedule(full_day, weekday)
