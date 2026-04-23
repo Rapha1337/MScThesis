@@ -79,85 +79,56 @@ class DayEpisode:
 @dataclass
 class StudentStructureParameters:
     """
-    Numerische, nicht-psychologische Stellschrauben für eine generische
-    Studenten-Persona.
+    Abstrahierte, numerische Strukturparameter für eine generische Student-Persona.
+    Alle Werte liegen idealerweise im Bereich 0.0 bis 1.0.
 
-    Alle Parameter sollen beschreiben, wie die Wochenstruktur aussieht,
-    nicht warum jemand sich so verhält.
+    Die Parameter beschreiben nur Wochenstruktur und Kontext, keine psychologischen Konstrukte.
     """
 
     name: str = "student_generic"
 
-    # ------------------------------------------------------------
-    # 1) Semester / Prüfungsphase / Ferien
-    # ------------------------------------------------------------
-    university_presence_days_semester: int = 2
-    university_blocks_per_uni_day: int = 2
-    university_block_duration_hours: int = 3
-    university_midday_break_hours: int = 1
-    university_start_hour: int = 8
-    university_day_spread: float = 1.0  # 0 = kompakt, 1 = stärker über die Woche verteilt
+    # Wie stark ist die Woche insgesamt vorstrukturiert?
+    # Beinhaltet sowohl Wiederholbarkeit von Tagen als auch Dichte harter Zeitblöcke.
+    schedule_rigidity: float = 0.58
 
-    # Commute
-    commute_hours_per_uni_day: float = 2.0  # round-trip in hours
+    # Wie stark unterscheiden sich Semester, Prüfungsphase und Ferien?
+    phase_variability: float = 0.52
 
-    # ------------------------------------------------------------
-    # 2) Arbeit / Nebenjob
-    # ------------------------------------------------------------
-    employment_days_per_week_semester: float = 3.0
-    employment_days_per_week_exam_phase: float = 0.0
-    employment_days_per_week_holiday: float = 4.0
+    # Stärke der Uni-Präsenz im Semester
+    university_load: float = 0.57
 
-    employment_hours_per_day: float = 6.0
-    split_workday_probability: float = 0.5
-    workday_start_hour: int = 8
-    workday_mid_break_hours: int = 2
-    workday_second_block_hours: float = 2.0
+    # Stärke von Nebenjob / Praktikum / Arbeit
+    employment_load: float = 0.18
 
-    # ------------------------------------------------------------
-    # 3) Lernen außerhalb fixer Uni-Blöcke
-    # ------------------------------------------------------------
-    study_hours_per_week_semester: float = 2.0
-    study_hours_per_week_exam_phase: float = 24.0
-    study_hours_per_week_holiday: float = 0.0
+    # Stärke und Regelmäßigkeit der Lernlast, vor allem in der Prüfungsphase
+    study_intensity: float = 0.56
 
-    study_block_size_hours: float = 2.0
-    study_evening_bias_semester: float = 0.8  # 1.0 = fast nur abends im Semester
-    study_weekend_share_semester: float = 0.3
-    study_weekend_share_exam_phase: float = 0.3
+    # Wie häufig findet Sport statt?
+    sport_frequency: float = 0.52
 
-    # ------------------------------------------------------------
-    # 4) Sport / Training
-    # ------------------------------------------------------------
-    sport_days_per_week_semester: float = 5.0
-    sport_days_per_week_exam_phase: float = 5.0
-    sport_days_per_week_holiday: float = 5.0
+    # Wie sehr ist Sport ein fixer Strukturanker?
+    sport_fixedness: float = 0.42
 
-    sport_duration_hours: float = 1.5
-    sport_fixedness: float = 0.8  # >0.5 => eher fixed, sonst eher flexible
-    sport_anchor_bias: float = 0.8  # 1.0 = Sport als sehr stabiler Anker
+    # Wie frei / offen sind Abende?
+    evening_flexibility: float = 0.67
 
-    # ------------------------------------------------------------
-    # 5) Soziales / Abende / Wochenende
-    # ------------------------------------------------------------
-    evening_social_probability_semester: float = 0.4
-    evening_social_probability_exam_phase: float = 0.15
-    evening_social_probability_holiday: float = 0.6
+    # Wie zerstückelt / hybrid sind Tage?
+    day_fragmentation: float = 0.44
 
-    evening_social_duration_hours: float = 2.0
-    weekend_structure: float = 0.4  # 0 = offen, 1 = stark strukturiert
-    sunday_family_dinner_probability: float = 0.0
+    # Rate spontaner Termine / Erledigungen / appointments
+    random_event_rate: float = 0.18
 
-    # ------------------------------------------------------------
-    # 6) Variabilität / Fragmentierung
-    # ------------------------------------------------------------
-    random_appointment_rate_semester: float = 0.3
-    random_appointment_rate_exam_phase: float = 0.1
-    random_appointment_rate_holiday: float = 0.4
+    # Pendelaufwand
+    commute_load: float = 0.2
 
-    random_appointment_duration_hours: float = 1.5
-    evening_routine_strength: float = 0.3
-    day_fragmentation: float = 0.5  # höhere Werte => mehr hybride Tage / mehr Blöcke
+    # Frequenz von Ortswechseln, z. B. WG <-> Zuhause
+    location_switch_frequency: float = 0.22
+
+    # Wie stark ist das Wochenende strukturiert?
+    weekend_structure: float = 0.34
+
+    # Wie sozial / beziehungsorientiert ist das Wochenende?
+    weekend_social_intensity: float = 0.7
 
 
 WEEKDAY_NAMES = {
@@ -169,6 +140,18 @@ WEEKDAY_NAMES = {
     5: "Saturday",
     6: "Sunday",
 }
+
+
+def clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
+    return max(lower, min(upper, value))
+
+
+def lerp(low: float, high: float, t: float) -> float:
+    return low + (high - low) * clamp(t)
+
+
+def round_to_nonnegative_int(value: float) -> int:
+    return max(0, int(round(value)))
 
 
 def hour_to_hhmm(hour: int) -> str:
@@ -190,7 +173,6 @@ def print_weekly_structure(structure: WeeklyStructure) -> None:
             start = hour_to_hhmm(block.start_hour)
             end = hour_to_hhmm(block.end_hour)
             subtype = block.subtype if block.subtype is not None else "-"
-
             print(
                 f"  - {start}-{end} | "
                 f"{block.activity_type.value} | "
@@ -201,7 +183,6 @@ def print_weekly_structure(structure: WeeklyStructure) -> None:
 
 def print_full_day_schedule(full_day_schedule: list[DayEpisode], weekday: int) -> None:
     print(f"\nFull day schedule for {WEEKDAY_NAMES[weekday]}:")
-
     for ep in full_day_schedule:
         subtype = ep.subtype if ep.subtype is not None else "-"
         print(
@@ -219,21 +200,16 @@ def has_time_conflict(
     for block in existing_blocks:
         if block.weekday != candidate.weekday:
             continue
-
         overlaps = not (
             candidate.end_hour <= block.start_hour
             or candidate.start_hour >= block.end_hour
         )
         if overlaps:
             return True
-
     return False
 
 
-def add_fixed_block_if_possible(
-    structure: WeeklyStructure,
-    candidate: WeeklyBlockTemplate,
-) -> bool:
+def add_block_if_possible(structure: WeeklyStructure, candidate: WeeklyBlockTemplate) -> bool:
     if has_time_conflict(structure.blocks, candidate):
         return False
     structure.add_block(candidate)
@@ -247,13 +223,10 @@ def sample_time_in_window(
 ) -> tuple[int, int]:
     window_start, window_end = time_window
     min_duration, max_duration = duration_range
-
     duration = rng.randint(min_duration, max_duration)
     latest_start = window_end - duration
-
     if latest_start < window_start:
         raise ValueError("Time window too small for requested duration range.")
-
     start = rng.randint(window_start, latest_start)
     end = start + duration
     return start, end
@@ -263,10 +236,9 @@ def sample_flexible_block_from_rule(
     rule: dict,
     existing_blocks: list[WeeklyBlockTemplate],
     rng: random.Random,
-    max_attempts: int = 20,
+    max_attempts: int = 25,
 ) -> WeeklyBlockTemplate | None:
     per_sample_probability = rule.get("per_sample_probability", 1.0)
-
     if rng.random() >= per_sample_probability:
         return None
 
@@ -279,7 +251,6 @@ def sample_flexible_block_from_rule(
             duration_range=rule["duration_range"],
             rng=rng,
         )
-
         candidate = WeeklyBlockTemplate(
             weekday=weekday,
             start_hour=start_hour,
@@ -289,10 +260,8 @@ def sample_flexible_block_from_rule(
             subtype=rule.get("subtype"),
             notes=rule.get("notes", []),
         )
-
         if not has_time_conflict(existing_blocks, candidate):
             return candidate
-
     return None
 
 
@@ -301,7 +270,6 @@ def _expand_blocks_to_hourly_episodes(
     weekday: int,
 ) -> list[DayEpisode]:
     blocks = weekly_structure.get_blocks_for_weekday(weekday)
-
     episodes: list[DayEpisode] = []
 
     for block in blocks:
@@ -328,16 +296,15 @@ def sample_sleep_schedule(
     if rng is None:
         rng = random.Random()
 
-    sleep_start = rng.choice([22, 23])
     is_weekend = weekday in [5, 6]
+    sleep_start = rng.choice([22, 23])
 
     if phase == YearPhase.HOLIDAY:
-        base_wake_hour = rng.choice([8, 9])
+        base_wake_hour = rng.choice([8, 9]) if is_weekend else rng.choice([7, 8])
     else:
         base_wake_hour = rng.choice([8, 9]) if is_weekend else 7
 
     wake_hour = base_wake_hour
-
     if first_external_hour is not None:
         latest_reasonable_wake = max(5, first_external_hour - 2)
         wake_hour = min(wake_hour, latest_reasonable_wake)
@@ -356,13 +323,10 @@ def classify_default_downtime_subtype(
 
     if wake_hour <= hour < min(wake_hour + 2, sleep_start):
         return "morning_free_time"
-
     if max(wake_hour, sleep_start - 2) <= hour < sleep_start:
         return "evening_wind_down"
-
     if earlier_occupied and later_occupied:
         return "between_blocks"
-
     return "open_time"
 
 
@@ -372,7 +336,6 @@ def is_external_activity(
 ) -> bool:
     if activity_type == ActivityType.WORK and subtype == "studying":
         return False
-
     return activity_type in {
         ActivityType.WORK,
         ActivityType.PHYSICAL_ACTIVITY,
@@ -392,15 +355,8 @@ def find_free_hour_in_window(
     return None
 
 
-def insert_meals(
-    schedule: list[DayEpisode | None],
-    wake_hour: int,
-) -> None:
-    breakfast_hour = find_free_hour_in_window(
-        schedule,
-        wake_hour + 1,
-        min(wake_hour + 3, 24),
-    )
+def insert_meals(schedule: list[DayEpisode | None], wake_hour: int) -> None:
+    breakfast_hour = find_free_hour_in_window(schedule, wake_hour + 1, min(wake_hour + 3, 24))
     if breakfast_hour is not None:
         schedule[breakfast_hour] = DayEpisode(
             hour=breakfast_hour,
@@ -433,17 +389,10 @@ def _insert_commute_segment(
     start_hour: int,
     duration: int,
     subtype: str,
-    reverse: bool = False,
 ) -> None:
     if duration <= 0:
         return
-
-    if reverse:
-        hours = list(range(start_hour - duration + 1, start_hour + 1))
-    else:
-        hours = list(range(start_hour, start_hour + duration))
-
-    for hour in hours:
+    for hour in range(start_hour, start_hour + duration):
         if 0 <= hour < 24 and schedule[hour] is None:
             schedule[hour] = DayEpisode(
                 hour=hour,
@@ -469,27 +418,13 @@ def insert_commutes(
     first_block = external_blocks[0]
     last_block = external_blocks[-1]
 
-    commute_total = int(commute_by_subtype.get(first_block.subtype or "", default_commute))
-    commute_each_way = max(1, round(commute_total / 2)) if commute_total > 0 else 0
+    total_out = int(commute_by_subtype.get(first_block.subtype or "", default_commute))
+    out_each_way = max(0, round(total_out / 2))
+    total_home = int(commute_by_subtype.get(last_block.subtype or "", default_commute))
+    home_each_way = max(0, round(total_home / 2))
 
-    _insert_commute_segment(
-        schedule=schedule,
-        start_hour=first_block.start_hour - commute_each_way,
-        duration=commute_each_way,
-        subtype="commute_out",
-        reverse=False,
-    )
-
-    commute_total_home = int(commute_by_subtype.get(last_block.subtype or "", default_commute))
-    commute_each_way_home = max(1, round(commute_total_home / 2)) if commute_total_home > 0 else 0
-
-    _insert_commute_segment(
-        schedule=schedule,
-        start_hour=last_block.end_hour,
-        duration=commute_each_way_home,
-        subtype="commute_home",
-        reverse=False,
-    )
+    _insert_commute_segment(schedule, first_block.start_hour - out_each_way, out_each_way, "commute_out")
+    _insert_commute_segment(schedule, last_block.end_hour, home_each_way, "commute_home")
 
 
 def generate_full_day_schedule(
@@ -502,7 +437,6 @@ def generate_full_day_schedule(
 
     weekday_blocks = weekly_structure.get_blocks_for_weekday(weekday)
     hourly_episodes = _expand_blocks_to_hourly_episodes(weekly_structure, weekday)
-
     external_hours = sorted(
         ep.hour
         for ep in hourly_episodes
@@ -546,13 +480,7 @@ def generate_full_day_schedule(
     occupied_hours = {ep.hour for ep in hourly_episodes}
     for hour in range(24):
         if schedule[hour] is None:
-            subtype = classify_default_downtime_subtype(
-                hour=hour,
-                occupied_hours=occupied_hours,
-                wake_hour=wake_hour,
-                sleep_start=sleep_start,
-            )
-
+            subtype = classify_default_downtime_subtype(hour, occupied_hours, wake_hour, sleep_start)
             schedule[hour] = DayEpisode(
                 hour=hour,
                 activity_type=ActivityType.DOWNTIME,
@@ -563,44 +491,74 @@ def generate_full_day_schedule(
     return [ep for ep in schedule if ep is not None]
 
 
-# ============================================================
-# Parameter helpers
-# ============================================================
+# ------------------------------------------------------------
+# Mapping von abstrakten Parametern auf phasenspezifische Strukturwerte
+# ------------------------------------------------------------
 
-def clamp(value: float, lower: float, upper: float) -> float:
-    return max(lower, min(upper, value))
+def phase_profile(params: StudentStructureParameters, phase: YearPhase) -> dict[str, float]:
+    pv = clamp(params.phase_variability)
+    sr = clamp(params.schedule_rigidity)
+    si = clamp(params.study_intensity)
 
+    if phase == YearPhase.SEMESTER:
+        return {
+            "schedule_rigidity": clamp(sr),
+            "university_load": clamp(params.university_load),
+            "employment_load": clamp(params.employment_load * lerp(1.0, 0.85, pv)),
+            "study_intensity": clamp(si * lerp(0.18, 0.40, 1 - pv)),
+            "sport_frequency": clamp(params.sport_frequency),
+            "evening_flexibility": clamp(params.evening_flexibility * 0.9),
+            "random_event_rate": clamp(params.random_event_rate * 0.9),
+            "weekend_structure": clamp(params.weekend_structure),
+            "weekend_social_intensity": clamp(params.weekend_social_intensity * 0.9),
+        }
 
-def round_to_nonnegative_int(value: float) -> int:
-    return max(0, int(round(value)))
+    if phase == YearPhase.EXAM_PHASE:
+        # High phase_variability => exam phase should break away from semester strongly.
+        return {
+            "schedule_rigidity": clamp(lerp(sr, 0.95, 0.45 + 0.55 * si)),
+            "university_load": clamp(params.university_load * (1.0 - 1.0 * pv)),
+            "employment_load": clamp(params.employment_load * (1.0 - 0.95 * pv)),
+            "study_intensity": clamp(lerp(si, 1.0, 0.55 + 0.45 * pv)),
+            "sport_frequency": clamp(params.sport_frequency * lerp(1.0, 0.85, pv)),
+            "evening_flexibility": clamp(lerp(params.evening_flexibility, 0.2, 0.45 + 0.55 * pv)),
+            "random_event_rate": clamp(params.random_event_rate * 0.55),
+            "weekend_structure": clamp(lerp(params.weekend_structure, 0.7, 0.45 + 0.55 * si)),
+            "weekend_social_intensity": clamp(params.weekend_social_intensity * lerp(0.85, 0.25, 0.4 + 0.6 * pv)),
+        }
+
+    # Holiday: typically much less studying and more open structure.
+    return {
+        "schedule_rigidity": clamp(sr * (1.0 - 0.8 * pv)),
+        "university_load": 0.0,
+        "employment_load": clamp(lerp(params.employment_load * 0.85, params.employment_load * 1.15, pv)),
+        "study_intensity": clamp(si * (1.0 - 0.98 * pv) * 0.35),
+        "sport_frequency": clamp(lerp(params.sport_frequency, params.sport_frequency * 0.8, params.evening_flexibility)),
+        "evening_flexibility": clamp(lerp(params.evening_flexibility, 0.95, 0.5 + 0.5 * pv)),
+        "random_event_rate": clamp(lerp(params.random_event_rate, 0.55, 0.4 + 0.6 * pv)),
+        "weekend_structure": clamp(lerp(params.weekend_structure, 0.25, 0.5 + 0.5 * pv)),
+        "weekend_social_intensity": clamp(lerp(params.weekend_social_intensity, 0.9, 0.5 + 0.5 * pv)),
+    }
 
 
 def choose_evenly_spread_weekdays(n_days: int, spread: float, rng: random.Random) -> list[int]:
-    """
-    0 -> eher kompakt am Wochenanfang
-    1 -> eher über die Woche verteilt
-    """
     n_days = max(0, min(7, n_days))
     if n_days == 0:
         return []
 
-    compact_pool = list(range(7))
-    spread_templates = {
-        1: [rng.choice(range(7))],
-        2: [1, 3],
-        3: [0, 2, 4],
-        4: [0, 2, 4, 5],
-        5: [0, 1, 2, 4, 5],
-        6: [0, 1, 2, 3, 4, 5],
-        7: [0, 1, 2, 3, 4, 5, 6],
-    }
-
-    if spread >= 0.5:
-        chosen = spread_templates[n_days]
-    else:
-        chosen = compact_pool[:n_days]
-
-    return sorted(chosen)
+    spread = clamp(spread)
+    if spread >= 0.6:
+        templates = {
+            1: [rng.choice(range(7))],
+            2: [1, 3],
+            3: [0, 2, 4],
+            4: [0, 2, 4, 5],
+            5: [0, 1, 2, 4, 5],
+            6: [0, 1, 2, 3, 4, 5],
+            7: [0, 1, 2, 3, 4, 5, 6],
+        }
+        return templates[n_days]
+    return list(range(n_days))
 
 
 def choose_days_with_capacity(
@@ -616,126 +574,90 @@ def choose_days_with_capacity(
         )
         free_capacity = 24 - occupied
         day_free_capacity.append((weekday, free_capacity))
-
     day_free_capacity.sort(key=lambda item: item[1], reverse=True)
     return [weekday for weekday, _ in day_free_capacity[:target_n_days]]
 
 
-def phase_specific_value(
-    phase: YearPhase,
-    semester_value: float,
-    exam_value: float,
-    holiday_value: float,
-) -> float:
-    if phase == YearPhase.SEMESTER:
-        return semester_value
-    if phase == YearPhase.EXAM_PHASE:
-        return exam_value
-    return holiday_value
-
-
-# ============================================================
-# Generische parametrische Student-Woche
-# ============================================================
+# ------------------------------------------------------------
+# Aufbau der Wochenstruktur
+# ------------------------------------------------------------
 
 def add_university_blocks(
     structure: WeeklyStructure,
     params: StudentStructureParameters,
+    p: dict[str, float],
     rng: random.Random,
 ) -> None:
-    if structure.phase != YearPhase.SEMESTER:
+    rigidity = p["schedule_rigidity"]
+    uni_days = round_to_nonnegative_int(lerp(0, 5, p["university_load"] * (0.55 + 0.45 * rigidity)))
+    if uni_days <= 0:
         return
 
-    n_uni_days = round_to_nonnegative_int(params.university_presence_days_semester)
-    uni_days = choose_evenly_spread_weekdays(
-        n_uni_days,
-        spread=clamp(params.university_day_spread, 0.0, 1.0),
-        rng=rng,
-    )
+    day_spread = lerp(0.35, 1.0, rigidity)
+    selected_days = choose_evenly_spread_weekdays(min(5, uni_days), day_spread, rng)
+    start_hour = round_to_nonnegative_int(lerp(8, 9, 1 - rigidity))
+    hours_per_day = round_to_nonnegative_int(lerp(4, 8, p["university_load"] * (0.45 + 0.55 * rigidity)))
+    n_blocks = 2 if hours_per_day >= 5 else 1
+    block_duration = max(2, round_to_nonnegative_int(hours_per_day / n_blocks))
+    midday_break = 1
 
-    for weekday in uni_days:
-        start = params.university_start_hour
-        n_blocks = max(1, round_to_nonnegative_int(params.university_blocks_per_uni_day))
-        duration = max(1, round_to_nonnegative_int(params.university_block_duration_hours))
-        midday_break = max(0, round_to_nonnegative_int(params.university_midday_break_hours))
-
-        for i in range(n_blocks):
-            block_start = start + i * (duration + midday_break)
-            block_end = block_start + duration
-            add_fixed_block_if_possible(
+    for weekday in selected_days:
+        current_start = start_hour
+        for _ in range(n_blocks):
+            end = min(24, current_start + block_duration)
+            add_block_if_possible(
                 structure,
                 WeeklyBlockTemplate(
                     weekday=weekday,
-                    start_hour=block_start,
-                    end_hour=min(block_end, 24),
+                    start_hour=current_start,
+                    end_hour=end,
                     activity_type=ActivityType.WORK,
                     flexibility=BlockFlexibility.FIXED,
                     subtype="university",
                 ),
             )
+            current_start = end + midday_break
 
 
 def add_work_blocks(
     structure: WeeklyStructure,
     params: StudentStructureParameters,
+    p: dict[str, float],
     rng: random.Random,
 ) -> None:
-    target_days = round_to_nonnegative_int(
-        phase_specific_value(
-            structure.phase,
-            params.employment_days_per_week_semester,
-            params.employment_days_per_week_exam_phase,
-            params.employment_days_per_week_holiday,
-        )
-    )
-    if target_days <= 0:
+    rigidity = p["schedule_rigidity"]
+    work_days = round_to_nonnegative_int(lerp(0, 5, p["employment_load"] * (0.45 + 0.55 * rigidity)))
+    if work_days <= 0:
         return
 
-    candidate_days = list(range(5))  # Mo-Fr
-    workdays = choose_evenly_spread_weekdays(
-        n_days=min(target_days, 5),
-        spread=0.7,
-        rng=rng,
-    )
-    workdays = [d for d in workdays if d in candidate_days]
+    candidate_days = choose_evenly_spread_weekdays(min(5, work_days), lerp(0.3, 0.95, rigidity), rng)
+    candidate_days = choose_days_with_capacity(structure, candidate_days, len(candidate_days))
+    start_hour = round_to_nonnegative_int(lerp(8, 9, 1 - rigidity))
+    total_hours = round_to_nonnegative_int(lerp(4, 8, p["employment_load"] * (0.45 + 0.55 * rigidity)))
+    total_hours = max(3, total_hours)
+    split_prob = clamp(0.10 + 0.45 * params.day_fragmentation + 0.15 * (1 - rigidity))
+    break_hours = 2
 
-    total_hours = max(1.0, phase_specific_value(
-        structure.phase,
-        params.employment_hours_per_day,
-        params.employment_hours_per_day,
-        params.employment_hours_per_day,
-    ))
-    first_block_hours = max(1, round_to_nonnegative_int(total_hours - params.workday_second_block_hours))
-    second_block_hours = max(1, round_to_nonnegative_int(params.workday_second_block_hours))
-    midday_break = max(1, round_to_nonnegative_int(params.workday_mid_break_hours))
-
-    effective_split_probability = clamp(
-        params.split_workday_probability * (0.6 + 0.8 * clamp(params.day_fragmentation, 0.0, 1.0)),
-        0.0,
-        1.0,
-    )
-
-    for weekday in workdays:
-        split = rng.random() < effective_split_probability
-
+    for weekday in candidate_days:
+        split = rng.random() < split_prob and total_hours >= 6
         if split:
-            first_start = params.workday_start_hour
-            first_end = min(24, first_start + first_block_hours)
-            second_start = min(23, first_end + midday_break)
-            second_end = min(24, second_start + second_block_hours)
-
-            add_fixed_block_if_possible(
+            first_hours = max(3, total_hours - 2)
+            second_hours = max(1, total_hours - first_hours)
+            first_end = min(24, start_hour + first_hours)
+            second_start = min(23, first_end + break_hours)
+            second_end = min(24, second_start + second_hours)
+            add_block_if_possible(
                 structure,
                 WeeklyBlockTemplate(
                     weekday=weekday,
-                    start_hour=first_start,
+                    start_hour=start_hour,
                     end_hour=first_end,
                     activity_type=ActivityType.WORK,
                     flexibility=BlockFlexibility.FIXED,
                     subtype="paid_work",
                 ),
             )
-            add_fixed_block_if_possible(
+            add_block_if_possible(
                 structure,
                 WeeklyBlockTemplate(
                     weekday=weekday,
@@ -747,13 +669,12 @@ def add_work_blocks(
                 ),
             )
         else:
-            start = params.workday_start_hour
-            end = min(24, start + round_to_nonnegative_int(total_hours))
-            add_fixed_block_if_possible(
+            end = min(24, start_hour + total_hours)
+            add_block_if_possible(
                 structure,
                 WeeklyBlockTemplate(
                     weekday=weekday,
-                    start_hour=start,
+                    start_hour=start_hour,
                     end_hour=end,
                     activity_type=ActivityType.WORK,
                     flexibility=BlockFlexibility.FIXED,
@@ -764,28 +685,23 @@ def add_work_blocks(
 
 def add_study_blocks(
     structure: WeeklyStructure,
-    params: StudentStructureParameters,
+    p: dict[str, float],
     rng: random.Random,
 ) -> None:
-    total_study_hours = phase_specific_value(
-        structure.phase,
-        params.study_hours_per_week_semester,
-        params.study_hours_per_week_exam_phase,
-        params.study_hours_per_week_holiday,
-    )
+    total_study_hours = round_to_nonnegative_int(lerp(0, 28, p["study_intensity"]))
     if total_study_hours <= 0:
         return
 
-    block_size = max(1, round_to_nonnegative_int(params.study_block_size_hours))
+    block_size = 2
     n_blocks = max(1, round_to_nonnegative_int(total_study_hours / block_size))
+    regularity = clamp(p["study_intensity"])
 
     if structure.phase == YearPhase.SEMESTER:
-        weekend_share = clamp(params.study_weekend_share_semester, 0.0, 1.0)
-        evening_bias = clamp(params.study_evening_bias_semester, 0.0, 1.0)
-        weekday_window = (17, 21) if evening_bias >= 0.5 else (10, 18)
-
-        weekend_blocks = round_to_nonnegative_int(n_blocks * weekend_share)
-        weekday_blocks = max(0, n_blocks - weekend_blocks)
+        weekend_share = lerp(0.1, 0.45, 1 - regularity)
+        evening_bias = lerp(0.45, 0.95, 1 - regularity)
+        weekday_blocks = max(0, n_blocks - round_to_nonnegative_int(n_blocks * weekend_share))
+        weekend_blocks = n_blocks - weekday_blocks
+        weekday_window = (17, 21) if evening_bias >= 0.6 else (10, 18)
 
         for _ in range(weekday_blocks):
             candidate = sample_flexible_block_from_rule(
@@ -822,20 +738,19 @@ def add_study_blocks(
                 structure.add_block(candidate)
         return
 
-    # Prüfungsphase / Ferien: homogener über die Woche verteilen
     if structure.phase == YearPhase.EXAM_PHASE:
-        candidate_days = choose_evenly_spread_weekdays(min(6, max(4, n_blocks)), spread=1.0, rng=rng)
+        n_days = round_to_nonnegative_int(lerp(4, 6, regularity))
+        candidate_days = choose_evenly_spread_weekdays(n_days, 1.0, rng)
         per_day_target = {day: 0 for day in candidate_days}
         for i in range(n_blocks):
             per_day_target[candidate_days[i % len(candidate_days)]] += 1
 
-        base_window = (9, 18)
         for day, count in per_day_target.items():
             for j in range(count):
                 candidate = sample_flexible_block_from_rule(
                     rule={
                         "allowed_weekdays": [day],
-                        "time_window": base_window,
+                        "time_window": (9, 18),
                         "duration_range": (block_size, block_size),
                         "activity_type": ActivityType.WORK,
                         "subtype": "studying",
@@ -849,16 +764,17 @@ def add_study_blocks(
                     structure.add_block(candidate)
         return
 
-    # Holiday: falls überhaupt Lernblöcke vorkommen, eher locker und selten
-    for _ in range(n_blocks):
+    # Holiday: studying should be rare and mild by default.
+    holiday_blocks = min(n_blocks, 1 + int(p["study_intensity"] > 0.25))
+    for _ in range(holiday_blocks):
         candidate = sample_flexible_block_from_rule(
             rule={
-                "allowed_weekdays": [0, 1, 2, 3, 4, 5],
-                "time_window": (10, 16),
+                "allowed_weekdays": [2, 4, 5],
+                "time_window": (10, 15),
                 "duration_range": (block_size, block_size),
                 "activity_type": ActivityType.WORK,
                 "subtype": "studying",
-                "per_sample_probability": 1.0,
+                "per_sample_probability": clamp(0.25 + 0.35 * p["study_intensity"]),
                 "flexibility": BlockFlexibility.FLEXIBLE,
             },
             existing_blocks=structure.blocks,
@@ -871,28 +787,18 @@ def add_study_blocks(
 def add_sport_blocks(
     structure: WeeklyStructure,
     params: StudentStructureParameters,
+    p: dict[str, float],
     rng: random.Random,
 ) -> None:
-    target_n_days = round_to_nonnegative_int(
-        phase_specific_value(
-            structure.phase,
-            params.sport_days_per_week_semester,
-            params.sport_days_per_week_exam_phase,
-            params.sport_days_per_week_holiday,
-        )
-    )
-    if target_n_days <= 0:
+    target_days = round_to_nonnegative_int(lerp(0, 7, p["sport_frequency"]))
+    if target_days <= 0:
         return
 
-    ordered_days = choose_days_with_capacity(structure, list(range(7)), min(target_n_days, 7))
-    duration = max(1, round_to_nonnegative_int(params.sport_duration_hours))
-    flexibility = (
-        BlockFlexibility.FIXED
-        if params.sport_fixedness >= 0.5
-        else BlockFlexibility.FLEXIBLE
-    )
-
-    time_window = (14, 18) if params.sport_anchor_bias >= 0.5 else (10, 21)
+    ordered_days = choose_days_with_capacity(structure, list(range(7)), min(target_days, 7))
+    duration = max(1, round_to_nonnegative_int(lerp(1, 2, params.sport_fixedness)))
+    flexibility = BlockFlexibility.FIXED if params.sport_fixedness >= 0.5 else BlockFlexibility.FLEXIBLE
+    anchor_bias = clamp(0.35 + 0.65 * params.sport_fixedness)
+    time_window = (14, 18) if anchor_bias >= 0.5 else (10, 21)
 
     for weekday in ordered_days:
         candidate = sample_flexible_block_from_rule(
@@ -915,25 +821,16 @@ def add_sport_blocks(
 def add_evening_social_blocks(
     structure: WeeklyStructure,
     params: StudentStructureParameters,
+    p: dict[str, float],
     rng: random.Random,
 ) -> None:
-    probability = phase_specific_value(
-        structure.phase,
-        params.evening_social_probability_semester,
-        params.evening_social_probability_exam_phase,
-        params.evening_social_probability_holiday,
-    )
-    probability = clamp(probability, 0.0, 1.0)
-    duration = max(1, round_to_nonnegative_int(params.evening_social_duration_hours))
-
-    candidate_days = [4, 5, 6]
-    if params.weekend_structure >= 0.6:
-        candidate_days = [5, 6]
+    social_prob = clamp(lerp(0.15, 0.75, p["evening_flexibility"] * p["weekend_social_intensity"]))
+    duration = max(1, round_to_nonnegative_int(lerp(1, 3, p["weekend_social_intensity"])))
+    candidate_days = [4, 5, 6] if p["weekend_structure"] < 0.65 else [5, 6]
 
     for weekday in candidate_days:
-        if rng.random() > probability:
+        if rng.random() > social_prob:
             continue
-
         candidate = sample_flexible_block_from_rule(
             rule={
                 "allowed_weekdays": [weekday],
@@ -950,8 +847,9 @@ def add_evening_social_blocks(
         if candidate is not None:
             structure.add_block(candidate)
 
-    if rng.random() < clamp(params.sunday_family_dinner_probability, 0.0, 1.0):
-        add_fixed_block_if_possible(
+    family_dinner_prob = clamp(0.15 + 0.55 * params.location_switch_frequency + 0.25 * p["weekend_structure"])
+    if rng.random() < family_dinner_prob:
+        add_block_if_possible(
             structure,
             WeeklyBlockTemplate(
                 weekday=6,
@@ -966,22 +864,13 @@ def add_evening_social_blocks(
 
 def add_random_appointments(
     structure: WeeklyStructure,
+    p: dict[str, float],
     params: StudentStructureParameters,
     rng: random.Random,
 ) -> None:
-    probability = clamp(
-        phase_specific_value(
-            structure.phase,
-            params.random_appointment_rate_semester,
-            params.random_appointment_rate_exam_phase,
-            params.random_appointment_rate_holiday,
-        ),
-        0.0,
-        1.0,
-    )
-    duration = max(1, round_to_nonnegative_int(params.random_appointment_duration_hours))
-    fragmentation = clamp(params.day_fragmentation, 0.0, 1.0)
-    n_appointments = 1 + int(fragmentation > 0.55) + int(fragmentation > 0.85)
+    probability = clamp(lerp(0.0, 0.8, p["random_event_rate"]))
+    duration = 1 if params.day_fragmentation < 0.5 else 2
+    n_appointments = 1 + int(params.day_fragmentation > 0.55) + int(params.day_fragmentation > 0.85)
 
     for _ in range(n_appointments):
         candidate = sample_flexible_block_from_rule(
@@ -1003,14 +892,14 @@ def add_random_appointments(
 
 def add_evening_routine(
     structure: WeeklyStructure,
-    params: StudentStructureParameters,
+    p: dict[str, float],
 ) -> None:
-    probability = clamp(params.evening_routine_strength, 0.0, 1.0)
-    if probability < 0.5:
+    routine_strength = clamp(1.0 - p["evening_flexibility"])
+    if routine_strength < 0.45:
         return
 
     for weekday in range(5):
-        add_fixed_block_if_possible(
+        add_block_if_possible(
             structure,
             WeeklyBlockTemplate(
                 weekday=weekday,
@@ -1023,41 +912,81 @@ def add_evening_routine(
         )
 
 
+def add_location_switch_blocks(
+    structure: WeeklyStructure,
+    params: StudentStructureParameters,
+) -> None:
+    if clamp(params.location_switch_frequency) < 0.45:
+        return
+
+    if structure.phase in {YearPhase.SEMESTER, YearPhase.EXAM_PHASE}:
+        add_block_if_possible(
+            structure,
+            WeeklyBlockTemplate(
+                weekday=4,
+                start_hour=15,
+                end_hour=17,
+                activity_type=ActivityType.COMMUTE,
+                flexibility=BlockFlexibility.FIXED,
+                subtype="location_switch_home",
+            ),
+        )
+        add_block_if_possible(
+            structure,
+            WeeklyBlockTemplate(
+                weekday=6,
+                start_hour=20,
+                end_hour=23,
+                activity_type=ActivityType.COMMUTE,
+                flexibility=BlockFlexibility.FIXED,
+                subtype="location_switch_back",
+            ),
+        )
+
+
+def build_commute_metadata(params: StudentStructureParameters) -> dict[str, object]:
+    uni_total = round_to_nonnegative_int(lerp(0, 4, params.commute_load))
+    work_total = round_to_nonnegative_int(lerp(0, 2, params.commute_load * 0.7))
+    social_total = round_to_nonnegative_int(lerp(0, 2, params.commute_load * 0.5))
+    sport_total = round_to_nonnegative_int(lerp(0, 2, params.commute_load * 0.5))
+    appointment_total = round_to_nonnegative_int(lerp(0, 2, params.commute_load * 0.6))
+
+    return {
+        "default_commute_hours": max(1, work_total),
+        "commute_hours_by_subtype": {
+            "university": uni_total,
+            "paid_work": max(1, work_total),
+            "sport_anchor": max(1, sport_total),
+            "evening_social": max(1, social_total),
+            "family_dinner": max(1, social_total),
+            "appointment": max(1, appointment_total),
+        },
+    }
+
+
 def generate_student_week(
     params: StudentStructureParameters,
     phase: YearPhase,
     rng: random.Random | None = None,
 ) -> WeeklyStructure:
-    """
-    Eine generische Studenten-Persona, deren Wochenstruktur ausschließlich
-    durch numerische Strukturparameter beeinflusst wird.
-    """
     if rng is None:
         rng = random.Random()
 
+    p = phase_profile(params, phase)
     structure = WeeklyStructure(
         persona_name=params.name,
         phase=phase,
-        metadata={
-            "default_commute_hours": 1,
-            "commute_hours_by_subtype": {
-                "university": int(round(params.commute_hours_per_uni_day)),
-                "paid_work": 1,
-                "sport_anchor": 1,
-                "evening_social": 1,
-                "family_dinner": 1,
-                "appointment": 1,
-            },
-        },
+        metadata=build_commute_metadata(params),
     )
 
-    add_university_blocks(structure, params, rng)
-    add_work_blocks(structure, params, rng)
-    add_study_blocks(structure, params, rng)
-    add_sport_blocks(structure, params, rng)
-    add_evening_social_blocks(structure, params, rng)
-    add_random_appointments(structure, params, rng)
-    add_evening_routine(structure, params)
+    add_university_blocks(structure, params, p, rng)
+    add_work_blocks(structure, params, p, rng)
+    add_study_blocks(structure, p, rng)
+    add_sport_blocks(structure, params, p, rng)
+    add_evening_social_blocks(structure, params, p, rng)
+    add_random_appointments(structure, p, params, rng)
+    add_evening_routine(structure, p)
+    add_location_switch_blocks(structure, params)
 
     return structure
 
@@ -1065,28 +994,20 @@ def generate_student_week(
 def summarize_parameters(params: StudentStructureParameters) -> dict[str, object]:
     return {
         "name": params.name,
-        "university_presence_days_semester": params.university_presence_days_semester,
-        "commute_hours_per_uni_day": params.commute_hours_per_uni_day,
-        "employment_days_per_week": {
-            "semester": params.employment_days_per_week_semester,
-            "exam_phase": params.employment_days_per_week_exam_phase,
-            "holiday": params.employment_days_per_week_holiday,
-        },
-        "study_hours_per_week": {
-            "semester": params.study_hours_per_week_semester,
-            "exam_phase": params.study_hours_per_week_exam_phase,
-            "holiday": params.study_hours_per_week_holiday,
-        },
-        "sport_days_per_week": {
-            "semester": params.sport_days_per_week_semester,
-            "exam_phase": params.sport_days_per_week_exam_phase,
-            "holiday": params.sport_days_per_week_holiday,
-        },
-        "split_workday_probability": params.split_workday_probability,
-        "weekend_structure": params.weekend_structure,
+        "schedule_rigidity": params.schedule_rigidity,
+        "study_intensity": params.study_intensity,
+                "phase_variability": params.phase_variability,
+        "university_load": params.university_load,
+        "employment_load": params.employment_load,
+                        "sport_frequency": params.sport_frequency,
+        "sport_fixedness": params.sport_fixedness,
+        "evening_flexibility": params.evening_flexibility,
         "day_fragmentation": params.day_fragmentation,
-        "effective_exam_distribution": "more_even",
-        "commute_model": "phase-aware subtype-based",
+        "random_event_rate": params.random_event_rate,
+        "commute_load": params.commute_load,
+        "location_switch_frequency": params.location_switch_frequency,
+        "weekend_structure": params.weekend_structure,
+        "weekend_social_intensity": params.weekend_social_intensity,
     }
 
 
@@ -1094,35 +1015,21 @@ if __name__ == "__main__":
     BASE_SEED = 37
 
     student_params = StudentStructureParameters(
-        name="student_generic_tunable",
-        university_presence_days_semester=2,
-        university_blocks_per_uni_day=2,
-        university_block_duration_hours=3,
-        commute_hours_per_uni_day=2.0,
-        employment_days_per_week_semester=3,
-        employment_days_per_week_exam_phase=0,
-        employment_days_per_week_holiday=4,
-        employment_hours_per_day=6,
-        split_workday_probability=0.8,
-        study_hours_per_week_semester=2,
-        study_hours_per_week_exam_phase=18,
-        study_hours_per_week_holiday=0,
-        sport_days_per_week_semester=6,
-        sport_days_per_week_exam_phase=6,
-        sport_days_per_week_holiday=6,
-        sport_duration_hours=2,
-        sport_fixedness=0.9,
-        sport_anchor_bias=0.9,
-        evening_social_probability_semester=0.5,
-        evening_social_probability_exam_phase=0.2,
-        evening_social_probability_holiday=0.7,
-        weekend_structure=0.4,
-        sunday_family_dinner_probability=1.0,
-        random_appointment_rate_semester=0.3,
-        random_appointment_rate_exam_phase=0.1,
-        random_appointment_rate_holiday=0.5,
-        evening_routine_strength=0.6,
-        day_fragmentation=0.8,
+        name="student_average",
+        schedule_rigidity=0.62,
+        study_intensity=0.56,
+        phase_variability=0.52,
+        university_load=0.70,
+        employment_load=0.22,
+        sport_frequency=0.52,
+        sport_fixedness=0.42,
+        evening_flexibility=0.67,
+        day_fragmentation=0.44,
+        random_event_rate=0.18,
+        commute_load=0.20,
+        location_switch_frequency=0.22,
+        weekend_structure=0.34,
+        weekend_social_intensity=0.74,
     )
 
     print("\n=== PARAMETER SUMMARY ===")
