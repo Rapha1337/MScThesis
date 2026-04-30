@@ -130,6 +130,10 @@ class StudentStructureParameters:
     # Wie sozial / beziehungsorientiert ist das Wochenende?
     weekend_social_intensity: float = 0.7
 
+    # Zielwert für soziale Kontakte / soziale Aktivitäten in Stunden pro Woche.
+    # Wenn None, verwendet das Modell die bisherige probabilistische Logik.
+    social_hours_week: float | None = None
+
 
 WEEKDAY_NAMES = {
     0: "Monday",
@@ -824,6 +828,57 @@ def add_evening_social_blocks(
     p: dict[str, float],
     rng: random.Random,
 ) -> None:
+    """
+    Add social blocks.
+
+    If params.social_hours_week is set, social time is scheduled as an
+    approximate weekly hour target. If it is None, the original probabilistic
+    social-time logic is used.
+    """
+
+    if params.social_hours_week is not None:
+        target_hours = max(0, round_to_nonnegative_int(params.social_hours_week))
+        remaining_hours = target_hours
+
+        candidate_windows = [
+            (4, 19, 23),  # Friday evening
+            (5, 14, 18),  # Saturday afternoon
+            (5, 19, 23),  # Saturday evening
+            (6, 14, 18),  # Sunday afternoon
+            (6, 18, 22),  # Sunday evening
+            (3, 19, 22),  # Thursday evening
+            (2, 19, 22),  # Wednesday evening
+            (1, 19, 22),  # Tuesday evening
+            (0, 19, 22),  # Monday evening
+        ]
+
+        for weekday, window_start, window_end in candidate_windows:
+            if remaining_hours <= 0:
+                break
+
+            max_duration = min(3, remaining_hours, window_end - window_start)
+            if max_duration <= 0:
+                continue
+
+            duration = max_duration
+            start_hour = window_start
+            end_hour = start_hour + duration
+
+            candidate = WeeklyBlockTemplate(
+                weekday=weekday,
+                start_hour=start_hour,
+                end_hour=end_hour,
+                activity_type=ActivityType.SOCIAL_TIME,
+                flexibility=BlockFlexibility.FLEXIBLE,
+                subtype="social_hours_target",
+            )
+
+            if add_block_if_possible(structure, candidate):
+                remaining_hours -= duration
+
+        return
+
+    # Original logic
     social_prob = clamp(lerp(0.15, 0.75, p["evening_flexibility"] * p["weekend_social_intensity"]))
     duration = max(1, round_to_nonnegative_int(lerp(1, 3, p["weekend_social_intensity"])))
     candidate_days = [4, 5, 6] if p["weekend_structure"] < 0.65 else [5, 6]
@@ -860,35 +915,6 @@ def add_evening_social_blocks(
                 subtype="family_dinner",
             ),
         )
-
-
-def add_random_appointments(
-    structure: WeeklyStructure,
-    p: dict[str, float],
-    params: StudentStructureParameters,
-    rng: random.Random,
-) -> None:
-    probability = clamp(lerp(0.0, 0.8, p["random_event_rate"]))
-    duration = 1 if params.day_fragmentation < 0.5 else 2
-    n_appointments = 1 + int(params.day_fragmentation > 0.55) + int(params.day_fragmentation > 0.85)
-
-    for _ in range(n_appointments):
-        candidate = sample_flexible_block_from_rule(
-            rule={
-                "allowed_weekdays": [0, 1, 2, 3, 4, 5],
-                "time_window": (9, 18),
-                "duration_range": (duration, duration),
-                "activity_type": ActivityType.RANDOM_APPOINTMENT,
-                "subtype": "appointment",
-                "per_sample_probability": probability,
-                "flexibility": BlockFlexibility.FLEXIBLE,
-            },
-            existing_blocks=structure.blocks,
-            rng=rng,
-        )
-        if candidate is not None:
-            structure.add_block(candidate)
-
 
 def add_evening_routine(
     structure: WeeklyStructure,
@@ -984,7 +1010,6 @@ def generate_student_week(
     add_study_blocks(structure, p, rng)
     add_sport_blocks(structure, params, p, rng)
     add_evening_social_blocks(structure, params, p, rng)
-    add_random_appointments(structure, p, params, rng)
     add_evening_routine(structure, p)
     add_location_switch_blocks(structure, params)
 
