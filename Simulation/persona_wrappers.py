@@ -136,7 +136,11 @@ class StudentHoursWrapper:
         """
         params = self.to_structure_parameters(seed=seed)
         rng = self._rng(seed)
-        return generate_student_week(params=params, phase=phase, rng=rng)
+        structure = generate_student_week(params=params, phase=phase, rng=rng)
+        structure.metadata["input_fitness_hours_week"] = self.fitness_hours_week
+        structure.metadata["input_social_hours_week"] = self.social_hours_week
+        structure.metadata["input_work_hours_week"] = self.work_hours_week
+        return structure
 
     def summary(self, seed: int | None = None) -> dict[str, object]:
         """Return both the hour inputs and the derived structure parameters."""
