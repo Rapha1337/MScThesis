@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+# ---------------------------------------------------------------------
+# 1) Imports
+# ---------------------------------------------------------------------
 from dataclasses import dataclass, field
 from enum import Enum
 import random
 
 
+
+# ---------------------------------------------------------------------
+# 2) Enums
+# ---------------------------------------------------------------------
 class BlockFlexibility(str, Enum):
     FIXED = "fixed"
     FLEXIBLE = "flexible"
@@ -30,6 +37,10 @@ class YearPhase(str, Enum):
     HOLIDAY = "holiday"
 
 
+
+# ---------------------------------------------------------------------
+# 3) Dataclasses
+# ---------------------------------------------------------------------
 @dataclass
 class WeeklyBlockTemplate:
     weekday: int
@@ -180,6 +191,10 @@ class StudentStructureParameters:
     social_hours_week: float | None = None
 
 
+
+# ---------------------------------------------------------------------
+# 4) Constants
+# ---------------------------------------------------------------------
 WEEKDAY_NAMES = {
     0: "Monday",
     1: "Tuesday",
@@ -191,6 +206,10 @@ WEEKDAY_NAMES = {
 }
 
 
+
+# ---------------------------------------------------------------------
+# 5) Generic utilities
+# ---------------------------------------------------------------------
 def clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
     return max(lower, min(upper, value))
 
@@ -207,6 +226,10 @@ def hour_to_hhmm(hour: int) -> str:
     return f"{hour:02d}:00"
 
 
+
+# ---------------------------------------------------------------------
+# 6) Printing helpers
+# ---------------------------------------------------------------------
 def print_weekly_structure(structure: WeeklyStructure) -> None:
     print(f"\nWeeklyStructure: {structure.persona_name} | phase={structure.phase.value}")
 
@@ -225,8 +248,39 @@ def print_weekly_structure(structure: WeeklyStructure) -> None:
     print("\nMetadata:")
     if not structure.metadata:
         print("  - none")
+    simple_metadata_keys = {
+        "default_commute_hours",
+        "commute_hours_by_subtype",
+        "input_fitness_hours_week",
+        "input_social_hours_week",
+        "input_work_hours_week",
+    }
+
+    for key in simple_metadata_keys:
+        if key in structure.metadata:
+            print(f"  - {key}: {structure.metadata[key]}")
+
+    if "daily_budget_distribution" in structure.metadata:
+        print("  - daily_budget_distribution: available")
+    else:
+        print("  - daily_budget_distribution: not generated")
+
+    warnings = structure.metadata.get("daily_schedule_warnings")
+    if isinstance(warnings, list):
+        print(f"  - daily_schedule_warnings: {len(warnings)} warning(s)")
+
+    already_handled = simple_metadata_keys | {"daily_budget_distribution", "daily_schedule_warnings"}
     for k, v in structure.metadata.items():
-        print(f"  - {k}: {v}")
+        if k in already_handled:
+            continue
+        if isinstance(v, (str, int, float, bool)) or v is None:
+            print(f"  - {k}: {v}")
+        elif isinstance(v, dict):
+            print(f"  - {k}: <dict with {len(v)} entries>")
+        elif isinstance(v, list):
+            print(f"  - {k}: <list with {len(v)} entries>")
+        else:
+            print(f"  - {k}: <{type(v).__name__}>")
 
 
 def print_full_day_schedule(full_day_schedule: list[DayEpisode], weekday: int) -> None:
@@ -241,6 +295,12 @@ def print_full_day_schedule(full_day_schedule: list[DayEpisode], weekday: int) -
         )
 
 
+
+# ---------------------------------------------------------------------
+# 13) Legacy block-based weekly scheduling helpers
+# Kept temporarily for backwards compatibility, not used by the new
+# budget-based pipeline.
+# ---------------------------------------------------------------------
 def has_time_conflict(
     existing_blocks: list[WeeklyBlockTemplate],
     candidate: WeeklyBlockTemplate,
@@ -480,6 +540,10 @@ def insert_commutes(
     _insert_commute_segment(schedule, last_block.end_hour, home_each_way, "commute_home")
 
 
+
+# ---------------------------------------------------------------------
+# 8) Weekly budget distribution
+# ---------------------------------------------------------------------
 def _preferred_days_for_budget(budget: WeeklyActivityBudget) -> list[int]:
     if budget.preferred_weekdays:
         return budget.preferred_weekdays
@@ -584,6 +648,10 @@ def distribute_weekly_budgets_to_days(
     return distribution
 
 
+
+# ---------------------------------------------------------------------
+# 9) Daily schedule generation
+# ---------------------------------------------------------------------
 def _activity_window(subtype: str, phase: YearPhase, weekday: int) -> tuple[int, int]:
     if subtype == "university":
         return (8, 16)
@@ -716,6 +784,10 @@ def _placement_priority(budget: WeeklyActivityBudget) -> int:
     return priority.get(subtype, 99)
 
 
+
+# ---------------------------------------------------------------------
+# 10) Constraint logic
+# ---------------------------------------------------------------------
 def apply_acute_illness_constraint(
     day_schedule: list[DayEpisode],
     constraint: AcuteIllnessConstraint,
@@ -1359,6 +1431,10 @@ def build_commute_metadata(params: StudentStructureParameters) -> dict[str, obje
     }
 
 
+
+# ---------------------------------------------------------------------
+# 7) Weekly budget generation
+# ---------------------------------------------------------------------
 def generate_student_week(
     params: StudentStructureParameters,
     phase: YearPhase,
@@ -1368,7 +1444,11 @@ def generate_student_week(
         rng = random.Random()
 
     p = phase_profile(params, phase)
-    # WeeklyStructure is now a high-level budget layer; concrete times are generated only in DailyEpisode.
+    # Pipeline architecture:
+    # - WeeklyStructure stores planned high-level weekly budgets.
+    # - daily_budget_distribution maps these weekly budgets to selected weekdays.
+    # - generate_full_day_schedule turns day-level budgets into realised hourly DayEpisodes.
+    # - Constraints (e.g., AcuteIllnessConstraint) modify DayEpisodes, not weekly budgets.
     structure = WeeklyStructure(persona_name=params.name, phase=phase, metadata=build_commute_metadata(params))
 
     work_h = round_to_nonnegative_int(lerp(0, 20, p["employment_load"]))
@@ -1403,6 +1483,10 @@ def generate_student_week(
 
 
 
+
+# ---------------------------------------------------------------------
+# 11) Validation helpers
+# ---------------------------------------------------------------------
 def validate_weekly_structure(structure: WeeklyStructure) -> dict[str, object]:
     warnings: list[str] = []
     total_budget_hours = sum(max(0, b.total_hours) for b in structure.budgets)
@@ -1482,6 +1566,10 @@ def validate_weekly_budget_consistency(
     return {"ok": len(warnings) == 0, "warnings": warnings, "summary": summary}
 
 
+
+# ---------------------------------------------------------------------
+# 12) Parameter summaries / demo main
+# ---------------------------------------------------------------------
 def summarize_parameters(params: StudentStructureParameters) -> dict[str, object]:
     return {
         "name": params.name,
