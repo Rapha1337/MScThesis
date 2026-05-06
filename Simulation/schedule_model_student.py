@@ -407,6 +407,11 @@ def insert_meals(schedule: list[DayEpisode | None], wake_hour: int) -> None:
         )
 
 
+def _add_schedule_warning(structure: WeeklyStructure, warning: str) -> None:
+    warnings = structure.metadata.setdefault("daily_schedule_warnings", [])
+    warnings.append(warning)
+
+
 def _insert_commute_segment(
     schedule: list[DayEpisode | None],
     start_hour: int,
@@ -602,6 +607,16 @@ def generate_full_day_schedule(weekly_structure: WeeklyStructure, weekday: int, 
             )
 
     insert_meals(schedule, wake_hour)
+    sorted_items = sorted(daily_items, key=_placement_priority)
+    for budget in sorted_items:
+        placed = place_activity_in_day(schedule, budget, weekday, weekly_structure.phase, rng)
+        if placed < budget.total_hours:
+            _add_schedule_warning(
+                weekly_structure,
+                f"{WEEKDAY_NAMES[weekday]}:{budget.subtype or budget.activity_type.value} "
+                f"requested={budget.total_hours}h placed={placed}h"
+            )
+    _relocate_or_warn_missing_meals(schedule, wake_hour, weekly_structure, weekday)
     occupied = {ep.hour for ep in schedule if ep is not None and ep.activity_type not in {ActivityType.SLEEP, ActivityType.DOWNTIME}}
     for h in range(24):
         if schedule[h] is None:
@@ -1169,10 +1184,26 @@ def validate_full_day_schedule(day_schedule: list[DayEpisode]) -> dict[str, obje
         warnings.append("Duplicate hours detected")
     sleep_hours = sum(1 for ep in day_schedule if ep.activity_type == ActivityType.SLEEP)
     occupied_hours = sum(1 for ep in day_schedule if ep.activity_type != ActivityType.SLEEP)
+    productive_hours = sum(1 for ep in day_schedule if ep.activity_type not in {ActivityType.SLEEP, ActivityType.DOWNTIME})
+    meal_subtypes = {ep.subtype for ep in day_schedule if ep.activity_type == ActivityType.EAT}
     if sleep_hours < 6:
         warnings.append("Less than 6 hours sleep")
-    if occupied_hours > 16:
-        warnings.append("More than 16 non-sleep occupied hours")
+    if productive_hours > 14:
+        warnings.append("More than 14 non-sleep productive hours")
+    if "lunch" not in meal_subtypes:
+        warnings.append("No lunch was placed")
+    if "dinner" not in meal_subtypes:
+        warnings.append("No dinner was placed")
+    streak = 0
+    max_streak = 0
+    for ep in sorted(day_schedule, key=lambda x: x.hour):
+        if ep.activity_type not in {ActivityType.SLEEP, ActivityType.DOWNTIME}:
+            streak += 1
+            max_streak = max(max_streak, streak)
+        else:
+            streak = 0
+    if max_streak > 10:
+        warnings.append("More than 10 consecutive non-sleep, non-downtime hours")
     return {"ok": len(warnings) == 0, "warnings": warnings, "sleep_hours": sleep_hours, "occupied_hours": occupied_hours}
 
 

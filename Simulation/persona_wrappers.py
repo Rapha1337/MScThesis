@@ -183,6 +183,7 @@ if __name__ == "__main__":
         print_weekly_structure,
         generate_full_day_schedule,
         print_full_day_schedule,
+        validate_full_day_schedule,
     )
 
     BASE_SEED = 37
