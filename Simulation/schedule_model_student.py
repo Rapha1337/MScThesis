@@ -97,6 +97,31 @@ class DayEpisode:
 
 
 @dataclass
+class AcuteIllnessConstraint:
+    duration_days: int
+    intensity: str  # "low", "mid", "high"
+    start_weekday: int = 0
+    is_active: bool = True
+
+    def __post_init__(self) -> None:
+        if self.duration_days < 0:
+            raise ValueError("duration_days must be >= 0")
+        if not 0 <= self.start_weekday <= 6:
+            raise ValueError("start_weekday must be between 0 and 6")
+        if self.intensity not in {"low", "mid", "high"}:
+            raise ValueError("intensity must be one of: low, mid, high")
+
+
+def is_active_on_weekday(constraint: AcuteIllnessConstraint, weekday: int) -> bool:
+    if not constraint.is_active or constraint.duration_days == 0:
+        return False
+    if not 0 <= weekday <= 6:
+        return False
+    end_weekday = min(6, constraint.start_weekday + constraint.duration_days - 1)
+    return constraint.start_weekday <= weekday <= end_weekday
+
+
+@dataclass
 class StudentStructureParameters:
     """
     Abstrahierte, numerische Strukturparameter für eine generische Student-Persona.
@@ -691,10 +716,68 @@ def _placement_priority(budget: WeeklyActivityBudget) -> int:
     return priority.get(subtype, 99)
 
 
+def apply_acute_illness_constraint(
+    day_schedule: list[DayEpisode],
+    constraint: AcuteIllnessConstraint,
+    weekday: int,
+) -> list[DayEpisode]:
+    if not is_active_on_weekday(constraint, weekday):
+        return [DayEpisode(ep.hour, ep.activity_type, ep.flexibility, ep.subtype) for ep in day_schedule]
+
+    updated = [DayEpisode(ep.hour, ep.activity_type, ep.flexibility, ep.subtype) for ep in day_schedule]
+    by_hour = {ep.hour: ep for ep in updated}
+
+    def _replace_hours(hours: list[int], activity_type: ActivityType, subtype: str) -> None:
+        for h in hours:
+            ep = by_hour[h]
+            by_hour[h] = DayEpisode(h, activity_type, ep.flexibility, subtype)
+
+    physical = [ep.hour for ep in updated if ep.activity_type == ActivityType.PHYSICAL_ACTIVITY]
+    social = [ep.hour for ep in updated if ep.activity_type == ActivityType.SOCIAL_TIME]
+    work_like = [
+        ep.hour
+        for ep in updated
+        if ep.activity_type == ActivityType.WORK and ep.subtype in {"paid_work", "university", "studying"}
+    ]
+
+    if constraint.intensity == "low":
+        _replace_hours(physical[len(physical) // 2 :], ActivityType.DOWNTIME, "illness_recovery")
+        _replace_hours(social[len(social) // 2 :], ActivityType.DOWNTIME, "illness_recovery")
+    elif constraint.intensity == "mid":
+        _replace_hours(physical, ActivityType.DOWNTIME, "illness_recovery")
+        _replace_hours(social, ActivityType.DOWNTIME, "illness_recovery")
+        _replace_hours(work_like[len(work_like) // 2 :], ActivityType.DOWNTIME, "illness_recovery")
+    else:  # high
+        _replace_hours(physical, ActivityType.DOWNTIME, "illness_recovery")
+        _replace_hours(social, ActivityType.DOWNTIME, "illness_recovery")
+        _replace_hours(work_like, ActivityType.DOWNTIME, "illness_recovery")
+
+    sleep_targets = 2 if constraint.intensity == "mid" else 3 if constraint.intensity == "high" else 0
+    if sleep_targets > 0:
+        preferred_sleep_hours = [22, 21, 20, 7, 6, 5]
+        converted = 0
+        for h in preferred_sleep_hours:
+            if converted >= sleep_targets:
+                break
+            ep = by_hour.get(h)
+            if ep is None:
+                continue
+            if ep.activity_type == ActivityType.EAT:
+                continue
+            if ep.activity_type == ActivityType.WAKE_UP:
+                continue
+            if ep.activity_type == ActivityType.DOWNTIME:
+                by_hour[h] = DayEpisode(h, ActivityType.SLEEP, ep.flexibility, "illness_sleep")
+                converted += 1
+
+    return [by_hour[h] for h in range(24)]
+
+
 def generate_full_day_schedule(
     weekly_structure: WeeklyStructure,
     weekday: int,
     rng: random.Random | None = None,
+    constraints: list[AcuteIllnessConstraint] | None = None,
 ) -> list[DayEpisode]:
     # This function turns the selected daily budget items into concrete hourly activities.
     if rng is None:
@@ -773,7 +856,13 @@ def generate_full_day_schedule(
                 ),
             )
 
-    return [ep for ep in schedule if ep is not None]
+    day_schedule = [ep for ep in schedule if ep is not None]
+
+    if constraints:
+        for constraint in constraints:
+            day_schedule = apply_acute_illness_constraint(day_schedule, constraint, weekday)
+
+    return day_schedule
 
 # ------------------------------------------------------------
 # Mapping von abstrakten Parametern auf phasenspezifische Strukturwerte
