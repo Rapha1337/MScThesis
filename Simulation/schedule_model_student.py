@@ -580,49 +580,117 @@ def place_activity_in_day(
             placed += 1
     return placed
 
+def _placement_priority(budget: WeeklyActivityBudget) -> int:
+    subtype = budget.subtype or budget.activity_type.value
 
-def generate_full_day_schedule(weekly_structure: WeeklyStructure, weekday: int, rng: random.Random | None = None) -> list[DayEpisode]:
+    priority = {
+        "university": 0,
+        "paid_work": 1,
+        "physical_activity": 2,
+        "studying": 3,
+        "social_time": 4,
+    }
+
+    return priority.get(subtype, 99)
+
+
+def _placement_priority(budget: WeeklyActivityBudget) -> int:
+    subtype = budget.subtype or budget.activity_type.value
+
+    priority = {
+        "university": 0,
+        "paid_work": 1,
+        "physical_activity": 2,
+        "studying": 3,
+        "social_time": 4,
+    }
+
+    return priority.get(subtype, 99)
+
+
+def generate_full_day_schedule(
+    weekly_structure: WeeklyStructure,
+    weekday: int,
+    rng: random.Random | None = None,
+) -> list[DayEpisode]:
     # This function turns the selected daily budget items into concrete hourly activities.
     if rng is None:
         rng = random.Random()
+
     schedule: list[DayEpisode | None] = [None] * 24
 
-    sleep_start, wake_hour = sample_sleep_schedule(weekly_structure.phase, weekday, None, rng)
+    sleep_start, wake_hour = sample_sleep_schedule(
+        weekly_structure.phase,
+        weekday,
+        None,
+        rng,
+    )
+
     for h in list(range(sleep_start, 24)) + list(range(0, wake_hour)):
-        schedule[h] = DayEpisode(h, ActivityType.SLEEP, BlockFlexibility.FIXED, "night_sleep")
+        schedule[h] = DayEpisode(
+            h,
+            ActivityType.SLEEP,
+            BlockFlexibility.FIXED,
+            "night_sleep",
+        )
+
     if schedule[wake_hour] is None:
-        schedule[wake_hour] = DayEpisode(wake_hour, ActivityType.WAKE_UP, BlockFlexibility.FIXED, "morning_wake_up")
+        schedule[wake_hour] = DayEpisode(
+            wake_hour,
+            ActivityType.WAKE_UP,
+            BlockFlexibility.FIXED,
+            "morning_wake_up",
+        )
+
+    # Meals are inserted before activities as soft anchors.
+    # They only occupy free slots and do not overwrite fixed activities.
+    insert_meals(schedule, wake_hour)
 
     distribution = weekly_structure.metadata.get("daily_budget_distribution")
     if not isinstance(distribution, dict):
         distribution = distribute_weekly_budgets_to_days(weekly_structure, rng)
-    daily_items = distribution.get(weekday, [])
-    for budget in daily_items:
-        placed = place_activity_in_day(schedule, budget, weekday, weekly_structure.phase, rng)
-        if placed < budget.total_hours:
-            warnings = weekly_structure.metadata.setdefault("daily_schedule_warnings", [])
-            warnings.append(
-                f"{WEEKDAY_NAMES[weekday]}:{budget.subtype or budget.activity_type.value} "
-                f"requested={budget.total_hours}h placed={placed}h"
-            )
 
-    insert_meals(schedule, wake_hour)
+    daily_items = distribution.get(weekday, [])
     sorted_items = sorted(daily_items, key=_placement_priority)
+
     for budget in sorted_items:
-        placed = place_activity_in_day(schedule, budget, weekday, weekly_structure.phase, rng)
+        placed = place_activity_in_day(
+            schedule,
+            budget,
+            weekday,
+            weekly_structure.phase,
+            rng,
+        )
+
         if placed < budget.total_hours:
             _add_schedule_warning(
                 weekly_structure,
                 f"{WEEKDAY_NAMES[weekday]}:{budget.subtype or budget.activity_type.value} "
-                f"requested={budget.total_hours}h placed={placed}h"
+                f"requested={budget.total_hours}h placed={placed}h",
             )
-    _relocate_or_warn_missing_meals(schedule, wake_hour, weekly_structure, weekday)
-    occupied = {ep.hour for ep in schedule if ep is not None and ep.activity_type not in {ActivityType.SLEEP, ActivityType.DOWNTIME}}
+
+    occupied = {
+        ep.hour
+        for ep in schedule
+        if ep is not None
+        and ep.activity_type not in {ActivityType.SLEEP, ActivityType.DOWNTIME}
+    }
+
     for h in range(24):
         if schedule[h] is None:
-            schedule[h] = DayEpisode(h, ActivityType.DOWNTIME, BlockFlexibility.FLEXIBLE, classify_default_downtime_subtype(h, occupied, wake_hour, sleep_start))
-    return [ep for ep in schedule if ep is not None]
+            schedule[h] = DayEpisode(
+                h,
+                ActivityType.DOWNTIME,
+                BlockFlexibility.FLEXIBLE,
+                classify_default_downtime_subtype(
+                    h,
+                    occupied,
+                    wake_hour,
+                    sleep_start,
+                ),
+            )
 
+    return [ep for ep in schedule if ep is not None]
 
 # ------------------------------------------------------------
 # Mapping von abstrakten Parametern auf phasenspezifische Strukturwerte
