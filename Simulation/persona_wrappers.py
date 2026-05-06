@@ -137,6 +137,14 @@ class StudentHoursWrapper:
         params = self.to_structure_parameters(seed=seed)
         rng = self._rng(seed)
         structure = generate_student_week(params=params, phase=phase, rng=rng)
+        direct_budget_hours = {
+            "physical_activity": int(round(self.fitness_hours_week)),
+            "social_time": int(round(self.social_hours_week)),
+            "paid_work": int(round(self.work_hours_week)),
+        }
+        for budget in structure.budgets:
+            if budget.subtype in direct_budget_hours:
+                budget.total_hours = max(0, direct_budget_hours[budget.subtype])
         structure.metadata["input_fitness_hours_week"] = self.fitness_hours_week
         structure.metadata["input_social_hours_week"] = self.social_hours_week
         structure.metadata["input_work_hours_week"] = self.work_hours_week
@@ -196,11 +204,7 @@ if __name__ == "__main__":
 
         print_weekly_structure(structure)
 
-        for weekday in range(7):
+        for weekday in [0, 5]:
             day_rng = random.Random(BASE_SEED + weekday)
-            full_day = generate_full_day_schedule(
-                structure,
-                weekday,
-                rng=day_rng,
-            )
+            full_day = generate_full_day_schedule(structure, weekday, rng=day_rng)
             print_full_day_schedule(full_day, weekday)
