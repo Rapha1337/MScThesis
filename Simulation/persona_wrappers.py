@@ -209,4 +209,3 @@ if __name__ == "__main__":
             day_rng = random.Random(BASE_SEED + weekday)
             full_day = generate_full_day_schedule(structure, weekday, rng=day_rng)
             print_full_day_schedule(full_day, weekday)
-            print(f"validation {weekday}: {validate_full_day_schedule(full_day)}")
