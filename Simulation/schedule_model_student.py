@@ -51,11 +51,27 @@ class WeeklyBlockTemplate:
             raise ValueError("start_hour must be smaller than end_hour")
 
 
+
+
+@dataclass
+class WeeklyActivityBudget:
+    activity_type: ActivityType
+    subtype: str | None
+    total_hours: int
+    target_days: int
+    flexibility: BlockFlexibility
+    preferred_day_type: str = "mixed"
+    preferred_weekdays: list[int] | None = None
+    preferred_time_window: tuple[int, int] | None = None
+    notes: list[str] = field(default_factory=list)
+
+
 @dataclass
 class WeeklyStructure:
     persona_name: str
     phase: YearPhase
     blocks: list[WeeklyBlockTemplate] = field(default_factory=list)
+    budgets: list[WeeklyActivityBudget] = field(default_factory=list)
     metadata: dict[str, object] = field(default_factory=dict)
 
     def add_block(self, block: WeeklyBlockTemplate) -> None:
@@ -165,24 +181,23 @@ def hour_to_hhmm(hour: int) -> str:
 def print_weekly_structure(structure: WeeklyStructure) -> None:
     print(f"\nWeeklyStructure: {structure.persona_name} | phase={structure.phase.value}")
 
-    for weekday in range(7):
-        blocks = structure.get_blocks_for_weekday(weekday)
-        print(f"\n{WEEKDAY_NAMES[weekday]}:")
+    print("\nWeekly budgets:")
+    if not structure.budgets:
+        print("  - no budgets")
+    for budget in structure.budgets:
+        print(
+            f"  - {budget.subtype or budget.activity_type.value} | "
+            f"total={budget.total_hours}h | "
+            f"target_days={budget.target_days} | "
+            f"flexibility={budget.flexibility.value} | "
+            f"preferred={budget.preferred_day_type}"
+        )
 
-        if not blocks:
-            print("  - no blocks")
-            continue
-
-        for block in blocks:
-            start = hour_to_hhmm(block.start_hour)
-            end = hour_to_hhmm(block.end_hour)
-            subtype = block.subtype if block.subtype is not None else "-"
-            print(
-                f"  - {start}-{end} | "
-                f"{block.activity_type.value} | "
-                f"{block.flexibility.value} | "
-                f"subtype={subtype}"
-            )
+    print("\nMetadata:")
+    if not structure.metadata:
+        print("  - none")
+    for k, v in structure.metadata.items():
+        print(f"  - {k}: {v}")
 
 
 def print_full_day_schedule(full_day_schedule: list[DayEpisode], weekday: int) -> None:
@@ -431,67 +446,55 @@ def insert_commutes(
     _insert_commute_segment(schedule, last_block.end_hour, home_each_way, "commute_home")
 
 
-def generate_full_day_schedule(
-    weekly_structure: WeeklyStructure,
-    weekday: int,
-    rng: random.Random | None = None,
-) -> list[DayEpisode]:
+def _preferred_days_for_budget(budget: WeeklyActivityBudget) -> list[int]:
+    if budget.preferred_weekdays:
+        return budget.preferred_weekdays
+    if budget.preferred_day_type == "weekday":
+        return [0, 1, 2, 3, 4]
+    if budget.preferred_day_type == "weekend":
+        return [5, 6]
+    return [0, 1, 2, 3, 4, 5, 6]
+
+
+def _allocate_block(schedule: list[DayEpisode | None], activity_type: ActivityType, subtype: str, flexibility: BlockFlexibility, duration: int, window: tuple[int,int], rng: random.Random) -> None:
+    start_min, end_max = window
+    for _ in range(20):
+        start = rng.randint(start_min, max(start_min, end_max - duration))
+        if all(0 <= h < 24 and schedule[h] is None for h in range(start, start + duration)):
+            for h in range(start, start + duration):
+                schedule[h] = DayEpisode(hour=h, activity_type=activity_type, flexibility=flexibility, subtype=subtype)
+            return
+
+
+def generate_full_day_schedule(weekly_structure: WeeklyStructure, weekday: int, rng: random.Random | None = None) -> list[DayEpisode]:
     if rng is None:
         rng = random.Random()
-
-    weekday_blocks = weekly_structure.get_blocks_for_weekday(weekday)
-    hourly_episodes = _expand_blocks_to_hourly_episodes(weekly_structure, weekday)
-    external_hours = sorted(
-        ep.hour
-        for ep in hourly_episodes
-        if is_external_activity(ep.activity_type, ep.subtype)
-    )
-    first_external_hour = external_hours[0] if external_hours else None
-
-    sleep_start, wake_hour = sample_sleep_schedule(
-        phase=weekly_structure.phase,
-        weekday=weekday,
-        first_external_hour=first_external_hour,
-        rng=rng,
-    )
-
     schedule: list[DayEpisode | None] = [None] * 24
 
-    for ep in hourly_episodes:
-        schedule[ep.hour] = ep
+    sleep_start, wake_hour = sample_sleep_schedule(weekly_structure.phase, weekday, None, rng)
+    for h in list(range(sleep_start, 24)) + list(range(0, wake_hour)):
+        schedule[h] = DayEpisode(h, ActivityType.SLEEP, BlockFlexibility.FIXED, "night_sleep")
+    if schedule[wake_hour] is None:
+        schedule[wake_hour] = DayEpisode(wake_hour, ActivityType.WAKE_UP, BlockFlexibility.FIXED, "morning_wake_up")
 
-    sleep_hours = list(range(sleep_start, 24)) + list(range(0, wake_hour))
-    for hour in sleep_hours:
-        if schedule[hour] is None:
-            schedule[hour] = DayEpisode(
-                hour=hour,
-                activity_type=ActivityType.SLEEP,
-                flexibility=BlockFlexibility.FIXED,
-                subtype="night_sleep",
-            )
+    for b in weekly_structure.budgets:
+        if weekday not in _preferred_days_for_budget(b) or b.target_days <= 0 or b.total_hours <= 0:
+            continue
+        day_hours = max(1, b.total_hours // b.target_days)
+        if b.subtype == "physical_activity":
+            day_hours = min(day_hours, 3)
+        if b.subtype == "social_time":
+            day_hours = min(day_hours, 3)
+        if b.subtype in {"university", "paid_work"}:
+            day_hours = min(max(day_hours, 3), 6)
+        window = b.preferred_time_window or (9, 21)
+        _allocate_block(schedule, b.activity_type, b.subtype or b.activity_type.value, b.flexibility, day_hours, window, rng)
 
-    if 0 <= wake_hour < 24 and schedule[wake_hour] is None:
-        schedule[wake_hour] = DayEpisode(
-            hour=wake_hour,
-            activity_type=ActivityType.WAKE_UP,
-            flexibility=BlockFlexibility.FIXED,
-            subtype="morning_wake_up",
-        )
-
-    insert_commutes(schedule, weekday_blocks, weekly_structure)
     insert_meals(schedule, wake_hour)
-
-    occupied_hours = {ep.hour for ep in hourly_episodes}
-    for hour in range(24):
-        if schedule[hour] is None:
-            subtype = classify_default_downtime_subtype(hour, occupied_hours, wake_hour, sleep_start)
-            schedule[hour] = DayEpisode(
-                hour=hour,
-                activity_type=ActivityType.DOWNTIME,
-                flexibility=BlockFlexibility.FLEXIBLE,
-                subtype=subtype,
-            )
-
+    occupied = {ep.hour for ep in schedule if ep is not None and ep.activity_type not in {ActivityType.SLEEP, ActivityType.DOWNTIME}}
+    for h in range(24):
+        if schedule[h] is None:
+            schedule[h] = DayEpisode(h, ActivityType.DOWNTIME, BlockFlexibility.FLEXIBLE, classify_default_downtime_subtype(h, occupied, wake_hour, sleep_start))
     return [ep for ep in schedule if ep is not None]
 
 
@@ -999,21 +1002,67 @@ def generate_student_week(
         rng = random.Random()
 
     p = phase_profile(params, phase)
-    structure = WeeklyStructure(
-        persona_name=params.name,
-        phase=phase,
-        metadata=build_commute_metadata(params),
-    )
+    # WeeklyStructure is now a high-level budget layer; concrete times are generated only in DailyEpisode.
+    structure = WeeklyStructure(persona_name=params.name, phase=phase, metadata=build_commute_metadata(params))
 
-    add_university_blocks(structure, params, p, rng)
-    add_work_blocks(structure, params, p, rng)
-    add_study_blocks(structure, p, rng)
-    add_sport_blocks(structure, params, p, rng)
-    add_evening_social_blocks(structure, params, p, rng)
-    add_evening_routine(structure, p)
-    add_location_switch_blocks(structure, params)
+    work_h = round_to_nonnegative_int(lerp(0, 20, p["employment_load"]))
+    fit_h = round_to_nonnegative_int(lerp(0, 14, p["sport_frequency"]))
+    social_h = round_to_nonnegative_int(params.social_hours_week if params.social_hours_week is not None else lerp(2, 10, p["weekend_social_intensity"]))
+    uni_h = 0 if phase == YearPhase.HOLIDAY else round_to_nonnegative_int(lerp(8, 22, p["university_load"]))
+    study_h = round_to_nonnegative_int(lerp(2, 24, p["study_intensity"]))
+    if phase == YearPhase.SEMESTER:
+        study_h = max(3, int(study_h * 0.45))
+    elif phase == YearPhase.EXAM_PHASE:
+        study_h = max(8, int(study_h * 1.0))
+        uni_h = int(uni_h * 0.45)
+        work_h = int(work_h * 0.9)
+        social_h = int(social_h * 0.75)
+        fit_h = int(fit_h * 0.9)
+    else:
+        study_h = int(study_h * 0.2)
+        uni_h = 0
+
+    structure.budgets = [
+        WeeklyActivityBudget(ActivityType.WORK, "paid_work", work_h, min(5, max(0, (work_h + 5)//6)), BlockFlexibility.FIXED, "weekday", [0,1,2,3,4], (8,18)),
+        WeeklyActivityBudget(ActivityType.PHYSICAL_ACTIVITY, "physical_activity", fit_h, min(7, max(0, (fit_h + 2)//3)), BlockFlexibility.FIXED if params.sport_fixedness > 0.5 else BlockFlexibility.FLEXIBLE, "mixed", None, (14,21)),
+        WeeklyActivityBudget(ActivityType.SOCIAL_TIME, "social_time", social_h, min(4, max(0, (social_h + 1)//3)), BlockFlexibility.FLEXIBLE, "weekend", [4,5,6], (18,23)),
+        WeeklyActivityBudget(ActivityType.WORK, "university", uni_h, min(5, max(0, (uni_h + 4)//6)), BlockFlexibility.FIXED, "weekday", [0,1,2,3,4], (8,16)),
+        WeeklyActivityBudget(ActivityType.WORK, "studying", study_h, min(6, max(0, (study_h + 2)//4)), BlockFlexibility.FLEXIBLE, "weekday", None, (10,21)),
+    ]
 
     return structure
+
+
+
+def validate_weekly_structure(structure: WeeklyStructure) -> dict[str, object]:
+    warnings: list[str] = []
+    total_budget_hours = sum(max(0, b.total_hours) for b in structure.budgets)
+    for b in structure.budgets:
+        if b.total_hours < 0:
+            warnings.append(f"Negative hours in {b.subtype or b.activity_type.value}")
+        if b.target_days < 0 or b.target_days > 7:
+            warnings.append(f"Invalid target_days in {b.subtype or b.activity_type.value}")
+        if b.total_hours == 0 and b.target_days > 0:
+            warnings.append(f"{b.subtype or b.activity_type.value} has target_days>0 but total_hours=0")
+    if total_budget_hours > 112:
+        warnings.append(f"Total weekly budget too high: {total_budget_hours}h")
+    return {"ok": len(warnings) == 0, "warnings": warnings, "total_budget_hours": total_budget_hours}
+
+
+def validate_full_day_schedule(day_schedule: list[DayEpisode]) -> dict[str, object]:
+    warnings: list[str] = []
+    hours = [ep.hour for ep in day_schedule]
+    if len(day_schedule) != 24:
+        warnings.append("Schedule does not contain exactly 24 episodes")
+    if len(set(hours)) != len(hours):
+        warnings.append("Duplicate hours detected")
+    sleep_hours = sum(1 for ep in day_schedule if ep.activity_type == ActivityType.SLEEP)
+    occupied_hours = sum(1 for ep in day_schedule if ep.activity_type != ActivityType.SLEEP)
+    if sleep_hours < 6:
+        warnings.append("Less than 6 hours sleep")
+    if occupied_hours > 16:
+        warnings.append("More than 16 non-sleep occupied hours")
+    return {"ok": len(warnings) == 0, "warnings": warnings, "sleep_hours": sleep_hours, "occupied_hours": occupied_hours}
 
 
 def summarize_parameters(params: StudentStructureParameters) -> dict[str, object]:
