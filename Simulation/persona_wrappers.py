@@ -145,6 +145,8 @@ class StudentHoursWrapper:
         for budget in structure.budgets:
             if budget.subtype in direct_budget_hours:
                 budget.total_hours = max(0, direct_budget_hours[budget.subtype])
+                if budget.total_hours == 0:
+                    budget.target_days = 0
         structure.metadata["input_fitness_hours_week"] = self.fitness_hours_week
         structure.metadata["input_social_hours_week"] = self.social_hours_week
         structure.metadata["input_work_hours_week"] = self.work_hours_week
