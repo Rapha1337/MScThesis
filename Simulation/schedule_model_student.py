@@ -510,13 +510,35 @@ def distribute_weekly_budgets_to_days(
 ) -> dict[int, list[WeeklyActivityBudget]]:
     if rng is None:
         rng = random.Random()
+
     distribution: dict[int, list[WeeklyActivityBudget]] = {d: [] for d in range(7)}
-    for budget in structure.budgets:
+    heavy_subtypes = {"university", "paid_work", "studying", "physical_activity"}
+    heavy_load_by_day: dict[int, int] = {d: 0 for d in range(7)}
+
+    budget_order = {"university": 0, "paid_work": 1, "physical_activity": 2, "studying": 3, "social_time": 4}
+    budgets = sorted(structure.budgets, key=lambda b: budget_order.get(b.subtype or b.activity_type.value, 99))
+
+    for budget in budgets:
         if budget.total_hours <= 0 or budget.target_days <= 0:
             continue
-        selected_days = select_weekdays_for_budget(budget, rng)
+
+        subtype = budget.subtype or budget.activity_type.value
+        candidate_days = _preferred_days_for_budget(budget)
+        candidate_days = [d for d in candidate_days if 0 <= d <= 6]
+        if not candidate_days:
+            candidate_days = list(range(7))
+
+        if subtype == "social_time":
+            ordered_candidates = sorted(candidate_days, key=lambda d: (0 if d >= 5 else 1, heavy_load_by_day[d], d))
+        else:
+            ordered_candidates = sorted(candidate_days, key=lambda d: (heavy_load_by_day[d], d))
+
+        selected_days = ordered_candidates[: max(0, min(7, budget.target_days))]
         allocations = split_hours_across_days(budget.total_hours, len(selected_days), rng)
+
         for day, day_hours in zip(selected_days, allocations):
+            if day_hours <= 0:
+                continue
             distribution[day].append(
                 WeeklyActivityBudget(
                     activity_type=budget.activity_type,
@@ -530,6 +552,9 @@ def distribute_weekly_budgets_to_days(
                     notes=list(budget.notes),
                 )
             )
+            if subtype in heavy_subtypes:
+                heavy_load_by_day[day] += day_hours
+
     structure.metadata["daily_budget_distribution"] = distribution
     return distribution
 
@@ -540,15 +565,56 @@ def _activity_window(subtype: str, phase: YearPhase, weekday: int) -> tuple[int,
     if subtype == "paid_work":
         return (8, 17)
     if subtype == "studying":
-        return (17, 21) if phase == YearPhase.EXAM_PHASE else (10, 18)
+        return (17, 21) if phase == YearPhase.SEMESTER else (9, 18)
     if subtype == "physical_activity":
-        return (14, 21)
+        return (15, 21)
     if subtype == "social_time":
         if weekday >= 5:
             return (14, 23)
         return (18, 23)
     return (9, 21)
 
+
+
+
+def _fallback_windows_for_subtype(subtype: str, phase: YearPhase, weekday: int) -> list[tuple[int, int]]:
+    if subtype == "paid_work":
+        return [(8, 17), (9, 18), (13, 21)]
+    if subtype == "university":
+        return [(8, 16), (9, 17)]
+    if subtype == "studying":
+        if phase == YearPhase.SEMESTER:
+            return [(17, 21), (10, 18), (19, 22)]
+        if phase == YearPhase.EXAM_PHASE:
+            return [(9, 18), (13, 21), (18, 22)]
+        return [(10, 18), (19, 22)]
+    if subtype == "physical_activity":
+        return [(15, 21), (10, 21)]
+    if subtype == "social_time":
+        primary = (14, 23) if weekday >= 5 else (18, 23)
+        return [primary, (10, 23)]
+    return [_activity_window(subtype, phase, weekday)]
+
+
+def _try_place_contiguous(
+    schedule: list[DayEpisode | None],
+    duration: int,
+    window: tuple[int, int],
+    activity_type: ActivityType,
+    flexibility: BlockFlexibility,
+    subtype: str,
+    rng: random.Random,
+) -> int:
+    start_min, end_max = window
+    latest_start = max(start_min, end_max - duration)
+    starts = list(range(start_min, latest_start + 1))
+    rng.shuffle(starts)
+    for start in starts:
+        if all(0 <= h < 24 and schedule[h] is None for h in range(start, start + duration)):
+            for h in range(start, start + duration):
+                schedule[h] = DayEpisode(h, activity_type, flexibility, subtype)
+            return duration
+    return 0
 
 def place_activity_in_day(
     schedule: list[DayEpisode | None],
@@ -560,39 +626,56 @@ def place_activity_in_day(
     duration = max(0, budget.total_hours)
     if duration <= 0:
         return 0
+
     subtype = budget.subtype or budget.activity_type.value
-    window = budget.preferred_time_window or _activity_window(subtype, phase, weekday)
-    start_min, end_max = window
-    latest_start = max(start_min, end_max - duration)
-    start_candidates = list(range(start_min, latest_start + 1))
-    rng.shuffle(start_candidates)
-    for start in start_candidates:
-        if all(0 <= h < 24 and schedule[h] is None for h in range(start, start + duration)):
-            for h in range(start, start + duration):
+    windows = _fallback_windows_for_subtype(subtype, phase, weekday)
+    preferred = budget.preferred_time_window
+    if preferred is not None and preferred not in windows:
+        windows = [preferred] + windows
+
+    # 1) Try to place full duration contiguously in primary/fallback windows.
+    for window in windows:
+        placed = _try_place_contiguous(
+            schedule,
+            duration,
+            window,
+            budget.activity_type,
+            budget.flexibility,
+            subtype,
+            rng,
+        )
+        if placed == duration:
+            return placed
+
+    # 2) Studying is allowed to split into smaller chunks in free non-sleep hours.
+    if subtype == "studying":
+        placed = 0
+        candidate_hours: list[int] = []
+        for start, end in windows + [(9, 22)]:
+            for h in range(max(0, start), min(24, end)):
+                if h not in candidate_hours:
+                    candidate_hours.append(h)
+        for h in candidate_hours:
+            if placed >= duration:
+                break
+            ep = schedule[h]
+            if ep is None:
                 schedule[h] = DayEpisode(h, budget.activity_type, budget.flexibility, subtype)
-            return duration
+                placed += 1
+        return placed
+
+    # 3) Partial fallback for all other subtypes.
     placed = 0
-    for h in range(start_min, min(24, end_max)):
+    for start, end in windows:
+        for h in range(max(0, start), min(24, end)):
+            if placed >= duration:
+                break
+            if schedule[h] is None:
+                schedule[h] = DayEpisode(h, budget.activity_type, budget.flexibility, subtype)
+                placed += 1
         if placed >= duration:
             break
-        if schedule[h] is None:
-            schedule[h] = DayEpisode(h, budget.activity_type, budget.flexibility, subtype)
-            placed += 1
     return placed
-
-def _placement_priority(budget: WeeklyActivityBudget) -> int:
-    subtype = budget.subtype or budget.activity_type.value
-
-    priority = {
-        "university": 0,
-        "paid_work": 1,
-        "physical_activity": 2,
-        "studying": 3,
-        "social_time": 4,
-    }
-
-    return priority.get(subtype, 99)
-
 
 def _placement_priority(budget: WeeklyActivityBudget) -> int:
     subtype = budget.subtype or budget.activity_type.value
@@ -1216,12 +1299,15 @@ def generate_student_week(
         study_h = int(study_h * 0.2)
         uni_h = 0
 
+    def _td(hours: int, expr: int) -> int:
+        return 0 if hours <= 0 else expr
+
     structure.budgets = [
-        WeeklyActivityBudget(ActivityType.WORK, "paid_work", work_h, min(5, max(0, (work_h + 5)//6)), BlockFlexibility.FIXED, "weekday", [0,1,2,3,4], (8,18)),
-        WeeklyActivityBudget(ActivityType.PHYSICAL_ACTIVITY, "physical_activity", fit_h, min(7, max(0, (fit_h + 2)//3)), BlockFlexibility.FIXED if params.sport_fixedness > 0.5 else BlockFlexibility.FLEXIBLE, "mixed", None, (14,21)),
-        WeeklyActivityBudget(ActivityType.SOCIAL_TIME, "social_time", social_h, min(4, max(0, (social_h + 1)//3)), BlockFlexibility.FLEXIBLE, "weekend", [4,5,6], (18,23)),
-        WeeklyActivityBudget(ActivityType.WORK, "university", uni_h, min(5, max(0, (uni_h + 4)//6)), BlockFlexibility.FIXED, "weekday", [0,1,2,3,4], (8,16)),
-        WeeklyActivityBudget(ActivityType.WORK, "studying", study_h, min(6, max(0, (study_h + 2)//4)), BlockFlexibility.FLEXIBLE, "weekday", None, (10,21)),
+        WeeklyActivityBudget(ActivityType.WORK, "paid_work", work_h, _td(work_h, min(5, max(0, (work_h + 5)//6))), BlockFlexibility.FIXED, "weekday", [0,1,2,3,4], (8,18)),
+        WeeklyActivityBudget(ActivityType.PHYSICAL_ACTIVITY, "physical_activity", fit_h, _td(fit_h, min(7, max(0, (fit_h + 2)//3))), BlockFlexibility.FIXED if params.sport_fixedness > 0.5 else BlockFlexibility.FLEXIBLE, "mixed", None, (14,21)),
+        WeeklyActivityBudget(ActivityType.SOCIAL_TIME, "social_time", social_h, _td(social_h, min(4, max(0, (social_h + 1)//3))), BlockFlexibility.FLEXIBLE, "weekend", [4,5,6], (18,23)),
+        WeeklyActivityBudget(ActivityType.WORK, "university", uni_h, _td(uni_h, min(5, max(0, (uni_h + 4)//6))), BlockFlexibility.FIXED, "weekday", [0,1,2,3,4], (8,16)),
+        WeeklyActivityBudget(ActivityType.WORK, "studying", study_h, _td(study_h, min(6, max(0, (study_h + 2)//4))), BlockFlexibility.FLEXIBLE, "weekday", None, (10,21)),
     ]
 
     return structure
