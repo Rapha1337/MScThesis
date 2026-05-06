@@ -26,6 +26,7 @@ from schedule_model_student import (
     YearPhase,
     distribute_weekly_budgets_to_days,
     generate_full_day_schedule,
+    is_active_on_weekday,
     validate_full_day_schedule,
     validate_weekly_budget_consistency,
     validate_weekly_structure,
