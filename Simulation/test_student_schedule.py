@@ -19,6 +19,7 @@ import random
 
 from persona_wrappers import StudentHoursWrapper
 from schedule_model_student import (
+    AcuteIllnessConstraint,
     ActivityType,
     DayEpisode,
     WEEKDAY_NAMES,
@@ -31,6 +32,37 @@ from schedule_model_student import (
 )
 
 PHASES = [YearPhase.SEMESTER, YearPhase.EXAM_PHASE, YearPhase.HOLIDAY]
+
+
+def count_activity(
+    day_schedule: list[DayEpisode],
+    activity_type: ActivityType,
+    subtype: str | None = None,
+) -> int:
+    return sum(
+        1
+        for ep in day_schedule
+        if ep.activity_type == activity_type and (subtype is None or ep.subtype == subtype)
+    )
+
+
+def has_subtype(day_schedule: list[DayEpisode], subtype: str) -> bool:
+    return any(ep.subtype == subtype for ep in day_schedule)
+
+
+def compare_counts(original_day: list[DayEpisode], illness_day: list[DayEpisode]) -> dict[str, int]:
+    return {
+        "physical_original": count_activity(original_day, ActivityType.PHYSICAL_ACTIVITY),
+        "physical_illness": count_activity(illness_day, ActivityType.PHYSICAL_ACTIVITY),
+        "social_original": count_activity(original_day, ActivityType.SOCIAL_TIME),
+        "social_illness": count_activity(illness_day, ActivityType.SOCIAL_TIME),
+        "work_original": count_activity(original_day, ActivityType.WORK),
+        "work_illness": count_activity(illness_day, ActivityType.WORK),
+        "sleep_original": count_activity(original_day, ActivityType.SLEEP),
+        "sleep_illness": count_activity(illness_day, ActivityType.SLEEP),
+        "recovery_original": count_activity(original_day, ActivityType.DOWNTIME, "illness_recovery"),
+        "recovery_illness": count_activity(illness_day, ActivityType.DOWNTIME, "illness_recovery"),
+    }
 
 
 def _is_productive(ep: DayEpisode) -> bool:
@@ -318,6 +350,126 @@ def main() -> None:
     total_hard_failures.extend(hard_failures)
     total_warnings.extend(warnings)
     total_expected_overload_warnings.extend(expected_overload_warnings)
+
+    print("\n--- Constraint test: acute illness ---")
+    constraint_student = StudentHoursWrapper(
+        name="student_test",
+        fitness_hours_week=6,
+        social_hours_week=8,
+        work_hours_week=5,
+    )
+    base_seed = 2026
+    constraint_structure = constraint_student.generate_week(phase=YearPhase.SEMESTER, seed=base_seed)
+    constraint_structure.metadata["daily_budget_distribution"] = distribute_weekly_budgets_to_days(
+        constraint_structure,
+        random.Random(base_seed + 99),
+    )
+    base_week = {
+        weekday: generate_full_day_schedule(
+            constraint_structure,
+            weekday,
+            rng=random.Random(base_seed + 100 + weekday),
+        )
+        for weekday in range(7)
+    }
+
+    def _record_constraint_result(label: str, ok: bool, failure: str) -> None:
+        if ok:
+            print(f"{label}: OK")
+        else:
+            print(f"{label}: FAIL")
+            total_hard_failures.append(failure)
+
+    low_constraint = AcuteIllnessConstraint(start_weekday=0, duration_days=1, intensity="low")
+    low_day = generate_full_day_schedule(
+        constraint_structure,
+        0,
+        rng=random.Random(base_seed + 100),
+        constraints=[low_constraint],
+    )
+    low_cmp = compare_counts(base_week[0], low_day)
+    low_valid = validate_full_day_schedule(low_day)["ok"]
+    low_ok = (
+        low_valid
+        and low_cmp["physical_illness"] <= low_cmp["physical_original"]
+        and low_cmp["social_illness"] <= low_cmp["social_original"]
+        and (
+            low_cmp["work_original"] == 0
+            or low_cmp["work_illness"] > 0
+        )
+    )
+    _record_constraint_result("low illness", low_ok, "acute illness low: constraint behavior mismatch")
+
+    mid_constraint = AcuteIllnessConstraint(start_weekday=0, duration_days=1, intensity="mid")
+    mid_day = generate_full_day_schedule(
+        constraint_structure,
+        0,
+        rng=random.Random(base_seed + 100),
+        constraints=[mid_constraint],
+    )
+    mid_cmp = compare_counts(base_week[0], mid_day)
+    mid_valid = validate_full_day_schedule(mid_day)["ok"]
+    mid_ok = (
+        mid_valid
+        and mid_cmp["physical_illness"] == 0
+        and mid_cmp["social_illness"] == 0
+        and (mid_cmp["work_original"] == 0 or mid_cmp["work_illness"] < mid_cmp["work_original"])
+        and (
+            mid_cmp["sleep_illness"] >= mid_cmp["sleep_original"]
+            or mid_cmp["recovery_illness"] > mid_cmp["recovery_original"]
+        )
+    )
+    _record_constraint_result("mid illness", mid_ok, "acute illness mid: constraint behavior mismatch")
+
+    high_constraint = AcuteIllnessConstraint(start_weekday=0, duration_days=1, intensity="high")
+    high_day = generate_full_day_schedule(
+        constraint_structure,
+        0,
+        rng=random.Random(base_seed + 100),
+        constraints=[high_constraint],
+    )
+    high_cmp = compare_counts(base_week[0], high_day)
+    had_meal = any(ep.activity_type == ActivityType.EAT for ep in base_week[0])
+    has_meal = any(ep.activity_type == ActivityType.EAT for ep in high_day)
+    high_valid = validate_full_day_schedule(high_day)["ok"]
+    high_ok = (
+        high_valid
+        and high_cmp["physical_illness"] == 0
+        and high_cmp["social_illness"] == 0
+        and high_cmp["work_illness"] == 0
+        and (
+            has_subtype(high_day, "illness_recovery")
+            or has_subtype(high_day, "illness_sleep")
+        )
+        and ((not had_meal) or has_meal)
+    )
+    _record_constraint_result("high illness", high_ok, "acute illness high: constraint behavior mismatch")
+
+    duration_constraint = AcuteIllnessConstraint(start_weekday=1, duration_days=2, intensity="high")
+    duration_days = {
+        weekday: generate_full_day_schedule(
+            constraint_structure,
+            weekday,
+            rng=random.Random(base_seed + 100 + weekday),
+            constraints=[duration_constraint],
+        )
+        for weekday in (0, 1, 2, 3)
+    }
+    duration_ok = (
+        not has_subtype(duration_days[0], "illness_recovery")
+        and not has_subtype(duration_days[0], "illness_sleep")
+        and (
+            has_subtype(duration_days[1], "illness_recovery")
+            or has_subtype(duration_days[1], "illness_sleep")
+        )
+        and (
+            has_subtype(duration_days[2], "illness_recovery")
+            or has_subtype(duration_days[2], "illness_sleep")
+        )
+        and not has_subtype(duration_days[3], "illness_recovery")
+        and not has_subtype(duration_days[3], "illness_sleep")
+    )
+    _record_constraint_result("duration logic", duration_ok, "acute illness duration logic mismatch")
 
     print("\nFinal result:")
 
