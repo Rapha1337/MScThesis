@@ -131,13 +131,13 @@ def main():
 
     test_cases = [
         AcuteIllnessConstraint(
-            start_weekday=0,
+            start_weekday=4,
             duration_days=1,
             intensity="low",
             is_active=True,
         ),
         AcuteIllnessConstraint(
-            start_weekday=0,
+            start_weekday=4,
             duration_days=3,
             intensity="low",
             is_active=True,
