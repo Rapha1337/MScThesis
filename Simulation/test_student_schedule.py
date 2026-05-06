@@ -3,12 +3,19 @@ from __future__ import annotations
 """
 Lightweight diagnostic tests for student schedule generation.
 
-Important: Plausibility checks in this script are heuristic debugging aids.
+Important:
+Plausibility checks in this script are heuristic debugging aids.
 They are intentionally simple and should not be interpreted as formal realism validation.
+
+Hard failures:
+- technical schedule errors
+- weekly budget mismatches in normal cases
+
+Expected overload warnings:
+- weekly budget mismatches in the intentionally overloaded stress-test case
 """
 
 import random
-import sys
 
 from persona_wrappers import StudentHoursWrapper
 from schedule_model_student import (
@@ -16,12 +23,11 @@ from schedule_model_student import (
     DayEpisode,
     WEEKDAY_NAMES,
     YearPhase,
+    distribute_weekly_budgets_to_days,
     generate_full_day_schedule,
-    print_weekly_structure,
     validate_full_day_schedule,
     validate_weekly_budget_consistency,
     validate_weekly_structure,
-    distribute_weekly_budgets_to_days,
 )
 
 PHASES = [YearPhase.SEMESTER, YearPhase.EXAM_PHASE, YearPhase.HOLIDAY]
@@ -40,20 +46,27 @@ def _day_checks(
     hard_failures: list[str] = []
     warnings: list[str] = []
 
-    # Technical validity (hard failures where requested)
     hours = [ep.hour for ep in day_schedule]
+
+    # Technical validity: hard failures
     if len(day_schedule) != 24:
-        hard_failures.append(f"{WEEKDAY_NAMES[weekday]}: expected 24 episodes, got {len(day_schedule)}")
+        hard_failures.append(
+            f"{WEEKDAY_NAMES[weekday]}: expected 24 episodes, got {len(day_schedule)}"
+        )
+
     if len(set(hours)) != len(hours):
         hard_failures.append(f"{WEEKDAY_NAMES[weekday]}: duplicate hours detected")
+
     if any(h < 0 or h > 23 for h in hours):
         hard_failures.append(f"{WEEKDAY_NAMES[weekday]}: hour outside 0-23")
+
     if set(hours) != set(range(24)):
-        hard_failures.append(f"{WEEKDAY_NAMES[weekday]}: not all hours 0-23 present exactly once")
+        hard_failures.append(
+            f"{WEEKDAY_NAMES[weekday]}: not all hours 0-23 present exactly once"
+        )
 
     valid_activity_types = set(ActivityType)
-    invalid_types = [ep for ep in day_schedule if ep.activity_type not in valid_activity_types]
-    if invalid_types:
+    if any(ep.activity_type not in valid_activity_types for ep in day_schedule):
         hard_failures.append(f"{WEEKDAY_NAMES[weekday]}: invalid activity_type values present")
 
     sleep_hours = sum(1 for ep in day_schedule if ep.activity_type == ActivityType.SLEEP)
@@ -62,6 +75,7 @@ def _day_checks(
     elif sleep_hours < 6:
         warnings.append(f"{WEEKDAY_NAMES[weekday]}: sleep_hours={sleep_hours} < 6")
 
+    # Heuristic plausibility checks: warnings only
     wake_ups = [ep for ep in day_schedule if ep.activity_type == ActivityType.WAKE_UP]
     if len(wake_ups) > 1:
         warnings.append(f"{WEEKDAY_NAMES[weekday]}: wake_up occurs {len(wake_ups)} times")
@@ -83,6 +97,7 @@ def _day_checks(
             max_streak = max(max_streak, streak)
         else:
             streak = 0
+
     if max_streak > 10:
         warnings.append(f"{WEEKDAY_NAMES[weekday]}: productive_streak={max_streak} > 10")
 
@@ -97,23 +112,30 @@ def _day_checks(
                 warnings.append(f"{WEEKDAY_NAMES[weekday]}: social_time before 10:00 on weekday")
                 break
 
-    wake_hours = [ep.hour for ep in day_schedule if ep.activity_type == ActivityType.WAKE_UP]
-    if wake_hours:
-        wake_hour = wake_hours[0]
-        daytime_sleep = [ep.hour for ep in day_schedule if ep.activity_type == ActivityType.SLEEP and wake_hour < ep.hour < 18]
+    if wake_ups:
+        wake_hour = wake_ups[0].hour
+        daytime_sleep = [
+            ep.hour
+            for ep in day_schedule
+            if ep.activity_type == ActivityType.SLEEP and wake_hour < ep.hour < 18
+        ]
         if daytime_sleep:
-            warnings.append(f"{WEEKDAY_NAMES[weekday]}: sleep block after wake_up (possible conflict)")
+            warnings.append(f"{WEEKDAY_NAMES[weekday]}: sleep block after wake_up")
 
     if all(ep.activity_type != ActivityType.DOWNTIME for ep in day_schedule):
         warnings.append(f"{WEEKDAY_NAMES[weekday]}: no downtime at all")
 
     if phase == YearPhase.SEMESTER and weekday < 5:
-        budget_load = 0
-        for b in structure.budgets:
-            if (b.subtype or b.activity_type.value) in {"university", "paid_work", "studying"}:
-                budget_load += max(0, b.total_hours)
-        if budget_load > 0 and productive_hours == 0:
-            warnings.append(f"{WEEKDAY_NAMES[weekday]}: no productive activity on semester weekday despite positive core budgets")
+        core_budget_hours = 0
+        for budget in structure.budgets:
+            subtype = budget.subtype or budget.activity_type.value
+            if subtype in {"university", "paid_work", "studying"}:
+                core_budget_hours += max(0, budget.total_hours)
+
+        if core_budget_hours > 0 and productive_hours == 0:
+            warnings.append(
+                f"{WEEKDAY_NAMES[weekday]}: no productive activity on semester weekday despite positive core budgets"
+            )
 
     if weekday >= 5 and phase != YearPhase.EXAM_PHASE and productive_hours > 10:
         warnings.append(f"{WEEKDAY_NAMES[weekday]}: weekend productive_hours={productive_hours} > 10")
@@ -131,174 +153,107 @@ def _run_phase(
     warnings: list[str] = []
     expected_overload_warnings: list[str] = []
 
-
-
-def _is_productive(ep: DayEpisode) -> bool:
-    return ep.activity_type not in {ActivityType.SLEEP, ActivityType.DOWNTIME}
-
-
-def _day_checks(
-    day_schedule: list[DayEpisode],
-    weekday: int,
-    phase: YearPhase,
-    structure,
-) -> tuple[list[str], list[str]]:
-    hard_failures: list[str] = []
-    warnings: list[str] = []
-
-    # Technical validity (hard failures where requested)
-    hours = [ep.hour for ep in day_schedule]
-    if len(day_schedule) != 24:
-        hard_failures.append(f"{WEEKDAY_NAMES[weekday]}: expected 24 episodes, got {len(day_schedule)}")
-    if len(set(hours)) != len(hours):
-        hard_failures.append(f"{WEEKDAY_NAMES[weekday]}: duplicate hours detected")
-    if any(h < 0 or h > 23 for h in hours):
-        hard_failures.append(f"{WEEKDAY_NAMES[weekday]}: hour outside 0-23")
-    if set(hours) != set(range(24)):
-        hard_failures.append(f"{WEEKDAY_NAMES[weekday]}: not all hours 0-23 present exactly once")
-
-    valid_activity_types = set(ActivityType)
-    invalid_types = [ep for ep in day_schedule if ep.activity_type not in valid_activity_types]
-    if invalid_types:
-        hard_failures.append(f"{WEEKDAY_NAMES[weekday]}: invalid activity_type values present")
-
-    sleep_hours = sum(1 for ep in day_schedule if ep.activity_type == ActivityType.SLEEP)
-    if sleep_hours < 5:
-        hard_failures.append(f"{WEEKDAY_NAMES[weekday]}: sleep_hours={sleep_hours} < 5")
-    elif sleep_hours < 6:
-        warnings.append(f"{WEEKDAY_NAMES[weekday]}: sleep_hours={sleep_hours} < 6")
-
-    wake_ups = [ep for ep in day_schedule if ep.activity_type == ActivityType.WAKE_UP]
-    if len(wake_ups) > 1:
-        warnings.append(f"{WEEKDAY_NAMES[weekday]}: wake_up occurs {len(wake_ups)} times")
-
-    meal_subtypes = {ep.subtype for ep in day_schedule if ep.activity_type == ActivityType.EAT}
-    for meal in ("breakfast", "lunch", "dinner"):
-        if meal not in meal_subtypes:
-            warnings.append(f"{WEEKDAY_NAMES[weekday]}: no {meal}")
-
-    productive_hours = sum(1 for ep in day_schedule if _is_productive(ep))
-    if productive_hours > 14:
-        warnings.append(f"{WEEKDAY_NAMES[weekday]}: productive_hours={productive_hours} > 14")
-
-    max_streak = 0
-    streak = 0
-    for ep in sorted(day_schedule, key=lambda e: e.hour):
-        if _is_productive(ep):
-            streak += 1
-            max_streak = max(max_streak, streak)
-        else:
-            streak = 0
-    if max_streak > 10:
-        warnings.append(f"{WEEKDAY_NAMES[weekday]}: productive_streak={max_streak} > 10")
-
-    for ep in day_schedule:
-        if ep.activity_type == ActivityType.PHYSICAL_ACTIVITY and (ep.hour < 5 or ep.hour > 22):
-            warnings.append(f"{WEEKDAY_NAMES[weekday]}: physical_activity at {ep.hour:02d}:00")
-            break
-
-    if weekday < 5:
-        for ep in day_schedule:
-            if ep.activity_type == ActivityType.SOCIAL_TIME and ep.hour < 10:
-                warnings.append(f"{WEEKDAY_NAMES[weekday]}: social_time before 10:00 on weekday")
-                break
-
-    wake_hours = [ep.hour for ep in day_schedule if ep.activity_type == ActivityType.WAKE_UP]
-    if wake_hours:
-        wake_hour = wake_hours[0]
-        daytime_sleep = [ep.hour for ep in day_schedule if ep.activity_type == ActivityType.SLEEP and wake_hour < ep.hour < 18]
-        if daytime_sleep:
-            warnings.append(f"{WEEKDAY_NAMES[weekday]}: sleep block after wake_up (possible conflict)")
-
-    if all(ep.activity_type != ActivityType.DOWNTIME for ep in day_schedule):
-        warnings.append(f"{WEEKDAY_NAMES[weekday]}: no downtime at all")
-
-    if phase == YearPhase.SEMESTER and weekday < 5:
-        budget_load = 0
-        for b in structure.budgets:
-            if (b.subtype or b.activity_type.value) in {"university", "paid_work", "studying"}:
-                budget_load += max(0, b.total_hours)
-        if budget_load > 0 and productive_hours == 0:
-            warnings.append(f"{WEEKDAY_NAMES[weekday]}: no productive activity on semester weekday despite positive core budgets")
-
-    if weekday >= 5 and phase != YearPhase.EXAM_PHASE and productive_hours > 10:
-        warnings.append(f"{WEEKDAY_NAMES[weekday]}: weekend productive_hours={productive_hours} > 10")
-
-    return hard_failures, warnings
-
-
-def _run_phase(student: StudentHoursWrapper, phase: YearPhase, base_seed: int) -> tuple[list[str], list[str]]:
-    hard_failures: list[str] = []
-    warnings: list[str] = []
-
     structure = student.generate_week(phase=phase, seed=base_seed)
 
-    ws = validate_weekly_structure(structure)
-    warnings.extend([f"{phase.value}: {w}" for w in ws["warnings"]])
+    weekly_structure_check = validate_weekly_structure(structure)
+    warnings.extend([f"{phase.value}: {w}" for w in weekly_structure_check["warnings"]])
 
-    metadata_keys = {
+    required_metadata_keys = {
         "input_fitness_hours_week",
         "input_social_hours_week",
         "input_work_hours_week",
     }
-    for key in metadata_keys:
+
+    for key in required_metadata_keys:
         if key not in structure.metadata:
             hard_failures.append(f"{phase.value}: missing metadata key '{key}'")
 
-    structure.metadata["daily_budget_distribution"] = distribute_weekly_budgets_to_days(structure, random.Random(base_seed + 99))
+    structure.metadata["daily_budget_distribution"] = distribute_weekly_budgets_to_days(
+        structure,
+        random.Random(base_seed + 99),
+    )
 
     week_schedules: dict[int, list[DayEpisode]] = {}
+
     for weekday in range(7):
-        week_schedules[weekday] = generate_full_day_schedule(structure, weekday, rng=random.Random(base_seed + 100 + weekday))
+        week_schedules[weekday] = generate_full_day_schedule(
+            structure,
+            weekday,
+            rng=random.Random(base_seed + 100 + weekday),
+        )
 
     consistency = validate_weekly_budget_consistency(structure, week_schedules)
-    for w in consistency["warnings"]:
-        if "budget=" in w and "scheduled=" in w:
-            tagged = f"{phase.value}: {w}"
-            if treat_budget_mismatch_as_expected_warning:
-                expected_overload_warnings.append(tagged)
-            else:
-                hard_failures.append(tagged)
-            hard_failures.append(f"{phase.value}: {w}")
-        else:
-            warnings.append(f"{phase.value}: {w}")
 
-    phase_warning_count_before_days = len(warnings)
+    for consistency_warning in consistency["warnings"]:
+        tagged_warning = f"{phase.value}: {consistency_warning}"
+
+        if "budget=" in consistency_warning and "scheduled=" in consistency_warning:
+            if treat_budget_mismatch_as_expected_warning:
+                expected_overload_warnings.append(tagged_warning)
+            else:
+                hard_failures.append(tagged_warning)
+        else:
+            warnings.append(tagged_warning)
+
+    phase_day_warning_start = len(warnings)
 
     for weekday in range(7):
-        _soft = validate_full_day_schedule(week_schedules[weekday])
-        day_hard, day_warn = _day_checks(week_schedules[weekday], weekday, phase, structure)
-        hard_failures.extend([f"{phase.value}: {x}" for x in day_hard])
-        warnings.extend([f"{phase.value}: {x}" for x in day_warn])
+        # Keep existing model-level validation as additional soft diagnostics.
+        model_day_validation = validate_full_day_schedule(week_schedules[weekday])
+        warnings.extend(
+            [
+                f"{phase.value}: {WEEKDAY_NAMES[weekday]}: {w}"
+                for w in model_day_validation.get("warnings", [])
+            ]
+        )
+
+        day_hard_failures, day_warnings = _day_checks(
+            week_schedules[weekday],
+            weekday,
+            phase,
+            structure,
+        )
+
+        hard_failures.extend([f"{phase.value}: {x}" for x in day_hard_failures])
+        warnings.extend([f"{phase.value}: {x}" for x in day_warnings])
 
     print(f"\nPhase: {phase.value}")
-    print(f"Weekly structure: {'OK' if ws['ok'] else 'WARN'}")
-    print(f"Weekly budget consistency: {'OK' if consistency['ok'] else 'WARN/FAIL'}")
+    print(f"Weekly structure: {'OK' if weekly_structure_check['ok'] else 'WARN'}")
+
+    if consistency["ok"]:
+        print("Weekly budget consistency: OK")
+    elif treat_budget_mismatch_as_expected_warning:
+        print("Weekly budget consistency: EXPECTED OVERLOAD WARNINGS")
+    else:
+        print("Weekly budget consistency: WARN/FAIL")
+
     print("Weekly budget consistency:")
     for item in consistency["summary"]:
         print(
-            f"- {item['subtype']}: budget={item['budget_hours']}h, "
-            f"scheduled={item['scheduled_hours']}h, target_days={item['target_days']}, "
+            f"- {item['subtype']}: "
+            f"budget={item['budget_hours']}h, "
+            f"scheduled={item['scheduled_hours']}h, "
+            f"target_days={item['target_days']}, "
             f"actual_days={item['actual_days']}"
         )
 
-    phase_day_warnings = warnings[phase_warning_count_before_days:]
+    phase_day_warnings = warnings[phase_day_warning_start:]
     if phase_day_warnings:
         print("Plausibility warnings:")
-        for w in phase_day_warnings[:12]:
-            print(f"- {w.split(': ', 1)[1] if ': ' in w else w}")
+        for warning in phase_day_warnings[:12]:
+            readable_warning = warning.split(": ", 1)[1] if ": " in warning else warning
+            print(f"- {readable_warning}")
         if len(phase_day_warnings) > 12:
-            print(f"- ... and {len(phase_day_warnings)-12} more")
+            print(f"- ... and {len(phase_day_warnings) - 12} more")
     else:
         print("Plausibility warnings: none")
 
-    if treat_budget_mismatch_as_expected_warning and expected_overload_warnings:
+    if expected_overload_warnings:
         print("Expected overload warnings:")
-        for w in expected_overload_warnings:
-            print(f"- {w}")
+        for warning in expected_overload_warnings:
+            print(f"- {warning}")
 
     return hard_failures, warnings, expected_overload_warnings
-    return hard_failures, warnings
 
 
 def main() -> None:
@@ -306,67 +261,84 @@ def main() -> None:
 
     total_hard_failures: list[str] = []
     total_warnings: list[str] = []
-    expected_overload_warnings: list[str] = []
+    total_expected_overload_warnings: list[str] = []
 
-    student = StudentHoursWrapper(name="student_test", fitness_hours_week=6, social_hours_week=8, work_hours_week=5)
+    # Normal student: these phases should pass without hard failures.
+    normal_student = StudentHoursWrapper(
+        name="student_test",
+        fitness_hours_week=6,
+        social_hours_week=8,
+        work_hours_week=5,
+    )
+
     for i, phase in enumerate(PHASES):
-        hard, warn, expected = _run_phase(student, phase, base_seed=37 + i * 1000)
-        total_hard_failures.extend(hard)
-        total_warnings.extend(warn)
-        expected_overload_warnings.extend(expected)
+        hard_failures, warnings, expected_overload_warnings = _run_phase(
+            normal_student,
+            phase,
+            base_seed=37 + i * 1000,
+        )
+        total_hard_failures.extend(hard_failures)
+        total_warnings.extend(warnings)
+        total_expected_overload_warnings.extend(expected_overload_warnings)
 
-    student = StudentHoursWrapper(name="student_test", fitness_hours_week=6, social_hours_week=8, work_hours_week=5)
-    for i, phase in enumerate(PHASES):
-        hard, warn = _run_phase(student, phase, base_seed=37 + i * 1000)
-        total_hard_failures.extend(hard)
-        total_warnings.extend(warn)
+    # Edge case: overloaded student.
+    # Budget mismatches are expected here and should not fail the whole script.
+    overloaded_student = StudentHoursWrapper(
+        name="student_overloaded",
+        fitness_hours_week=14,
+        social_hours_week=16,
+        work_hours_week=25,
+    )
 
-    # Edge case: overloaded
-    overloaded = StudentHoursWrapper(name="student_overloaded", fitness_hours_week=14, social_hours_week=16, work_hours_week=25)
     print("\n--- Edge case: overloaded student (semester) ---")
-    hard, warn, expected = _run_phase(
-        overloaded,
+    hard_failures, warnings, expected_overload_warnings = _run_phase(
+        overloaded_student,
         YearPhase.SEMESTER,
         base_seed=9001,
         treat_budget_mismatch_as_expected_warning=True,
     )
-    total_hard_failures.extend(hard)
-    total_warnings.extend(warn)
-    expected_overload_warnings.extend(expected)
-    hard, warn = _run_phase(overloaded, YearPhase.SEMESTER, base_seed=9001)
-    total_hard_failures.extend(hard)
-    total_warnings.extend(warn)
+    total_hard_failures.extend(hard_failures)
+    total_warnings.extend(warnings)
+    total_expected_overload_warnings.extend(expected_overload_warnings)
 
-    # Edge case: low activity
-    low = StudentHoursWrapper(name="student_low_activity", fitness_hours_week=0, social_hours_week=1, work_hours_week=0)
+    # Edge case: low activity should still technically pass.
+    low_activity_student = StudentHoursWrapper(
+        name="student_low_activity",
+        fitness_hours_week=0,
+        social_hours_week=1,
+        work_hours_week=0,
+    )
+
     print("\n--- Edge case: low-activity student (semester) ---")
-    hard, warn, expected = _run_phase(low, YearPhase.SEMESTER, base_seed=1234)
-    total_hard_failures.extend(hard)
-    total_warnings.extend(warn)
-    expected_overload_warnings.extend(expected)
-    hard, warn = _run_phase(low, YearPhase.SEMESTER, base_seed=1234)
-    total_hard_failures.extend(hard)
-    total_warnings.extend(warn)
+    hard_failures, warnings, expected_overload_warnings = _run_phase(
+        low_activity_student,
+        YearPhase.SEMESTER,
+        base_seed=1234,
+    )
+    total_hard_failures.extend(hard_failures)
+    total_warnings.extend(warnings)
+    total_expected_overload_warnings.extend(expected_overload_warnings)
 
     print("\nFinal result:")
+
     if total_hard_failures:
         print(f"FAIL: {len(total_hard_failures)} hard failure(s).")
-        for hf in total_hard_failures[:15]:
-            print(f"- {hf}")
+        for failure in total_hard_failures[:15]:
+            print(f"- {failure}")
         if len(total_hard_failures) > 15:
-            print(f"- ... and {len(total_hard_failures)-15} more")
+            print(f"- ... and {len(total_hard_failures) - 15} more")
+
+        if total_expected_overload_warnings:
+            print(f"Expected overload warnings: {len(total_expected_overload_warnings)}")
+
         if total_warnings:
             print(f"WARNING SUMMARY: {len(total_warnings)} plausibility/soft warning(s).")
+
         raise SystemExit(1)
 
     print("PASS: no hard failures in normal or technical edge-case checks.")
-    print(f"Expected overload warnings: {len(expected_overload_warnings)}")
+    print(f"Expected overload warnings: {len(total_expected_overload_warnings)}")
     print(f"Plausibility warnings: {len(total_warnings)}")
-    print("PASS: no hard failures.")
-    if total_warnings:
-        print(f"WARNING SUMMARY: {len(total_warnings)} plausibility warning(s).")
-    else:
-        print("Warnings: none.")
 
 
 if __name__ == "__main__":
