@@ -511,14 +511,10 @@ def distribute_weekly_budgets_to_days(
     if rng is None:
         rng = random.Random()
     distribution: dict[int, list[WeeklyActivityBudget]] = {d: [] for d in range(7)}
-    heavy_subtypes = {"university", "paid_work", "studying", "physical_activity"}
-    day_heavy_load = {d: 0 for d in range(7)}
     for budget in structure.budgets:
         if budget.total_hours <= 0 or budget.target_days <= 0:
             continue
         selected_days = select_weekdays_for_budget(budget, rng)
-        if (budget.subtype or "") in heavy_subtypes and len(selected_days) > 1:
-            selected_days = sorted(selected_days, key=lambda d: (day_heavy_load[d], d))
         allocations = split_hours_across_days(budget.total_hours, len(selected_days), rng)
         for day, day_hours in zip(selected_days, allocations):
             distribution[day].append(
@@ -534,8 +530,6 @@ def distribute_weekly_budgets_to_days(
                     notes=list(budget.notes),
                 )
             )
-            if (budget.subtype or "") in heavy_subtypes:
-                day_heavy_load[day] += 1
     structure.metadata["daily_budget_distribution"] = distribution
     return distribution
 
@@ -567,65 +561,24 @@ def place_activity_in_day(
     if duration <= 0:
         return 0
     subtype = budget.subtype or budget.activity_type.value
-    can_replace_meals = subtype in {"university", "paid_work", "physical_activity"}
     window = budget.preferred_time_window or _activity_window(subtype, phase, weekday)
     start_min, end_max = window
     latest_start = max(start_min, end_max - duration)
     start_candidates = list(range(start_min, latest_start + 1))
     rng.shuffle(start_candidates)
     for start in start_candidates:
-        if all(
-            0 <= h < 24 and (schedule[h] is None or (can_replace_meals and schedule[h].activity_type == ActivityType.EAT))
-            for h in range(start, start + duration)
-        ):
+        if all(0 <= h < 24 and schedule[h] is None for h in range(start, start + duration)):
             for h in range(start, start + duration):
                 schedule[h] = DayEpisode(h, budget.activity_type, budget.flexibility, subtype)
             return duration
-    for candidate in range(duration - 1, 0, -1):
-        latest_short_start = max(start_min, end_max - candidate)
-        for start in range(start_min, latest_short_start + 1):
-            if all(
-                0 <= h < 24 and (schedule[h] is None or (can_replace_meals and schedule[h].activity_type == ActivityType.EAT))
-                for h in range(start, start + candidate)
-            ):
-                for h in range(start, start + candidate):
-                    schedule[h] = DayEpisode(h, budget.activity_type, budget.flexibility, subtype)
-                return candidate
-    return 0
-
-
-def _placement_priority(budget: WeeklyActivityBudget) -> int:
-    subtype = budget.subtype or ""
-    if subtype == "university" and budget.flexibility == BlockFlexibility.FIXED:
-        return 0
-    if subtype == "paid_work" and budget.flexibility == BlockFlexibility.FIXED:
-        return 1
-    if subtype == "physical_activity" and budget.flexibility == BlockFlexibility.FIXED:
-        return 2
-    if subtype == "studying":
-        return 3
-    if subtype == "social_time":
-        return 4
-    return 5
-
-
-def _relocate_or_warn_missing_meals(schedule: list[DayEpisode | None], wake_hour: int, structure: WeeklyStructure, weekday: int) -> None:
-    required = {"breakfast": (wake_hour + 1, min(wake_hour + 4, 24)), "lunch": (12, 15), "dinner": (18, 21)}
-    occupied_subtypes = {ep.subtype for ep in schedule if ep is not None and ep.activity_type == ActivityType.EAT}
-    for meal, (start, end) in required.items():
-        if meal in occupied_subtypes:
-            continue
-        placed = False
-        for h in range(start, end):
-            if not (0 <= h < 24):
-                continue
-            ep = schedule[h]
-            if ep is None or ep.activity_type == ActivityType.DOWNTIME or (ep.subtype in {"studying", "social_time"} and ep.flexibility == BlockFlexibility.FLEXIBLE):
-                schedule[h] = DayEpisode(h, ActivityType.EAT, BlockFlexibility.FIXED, meal)
-                placed = True
-                break
-        if not placed:
-            _add_schedule_warning(structure, f"{WEEKDAY_NAMES[weekday]}: could not place meal {meal}")
+    placed = 0
+    for h in range(start_min, min(24, end_max)):
+        if placed >= duration:
+            break
+        if schedule[h] is None:
+            schedule[h] = DayEpisode(h, budget.activity_type, budget.flexibility, subtype)
+            placed += 1
+    return placed
 
 
 def generate_full_day_schedule(weekly_structure: WeeklyStructure, weekday: int, rng: random.Random | None = None) -> list[DayEpisode]:
@@ -644,6 +597,15 @@ def generate_full_day_schedule(weekly_structure: WeeklyStructure, weekday: int, 
     if not isinstance(distribution, dict):
         distribution = distribute_weekly_budgets_to_days(weekly_structure, rng)
     daily_items = distribution.get(weekday, [])
+    for budget in daily_items:
+        placed = place_activity_in_day(schedule, budget, weekday, weekly_structure.phase, rng)
+        if placed < budget.total_hours:
+            warnings = weekly_structure.metadata.setdefault("daily_schedule_warnings", [])
+            warnings.append(
+                f"{WEEKDAY_NAMES[weekday]}:{budget.subtype or budget.activity_type.value} "
+                f"requested={budget.total_hours}h placed={placed}h"
+            )
+
     insert_meals(schedule, wake_hour)
     sorted_items = sorted(daily_items, key=_placement_priority)
     for budget in sorted_items:
