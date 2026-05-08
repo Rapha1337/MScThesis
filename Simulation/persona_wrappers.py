@@ -194,10 +194,11 @@ if __name__ == "__main__":
     BASE_SEED = 37
 
     student = StudentHoursWrapper(
-        name="student_test",
+        name="carework_test_student",
         fitness_hours_week=6,
         social_hours_week=8,
         work_hours_week=5,
+        carework_hours_week=7,
     )
 
     for phase in [YearPhase.SEMESTER, YearPhase.EXAM_PHASE, YearPhase.HOLIDAY]:
