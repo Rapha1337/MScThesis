@@ -352,6 +352,80 @@ def main() -> None:
     total_warnings.extend(warnings)
     total_expected_overload_warnings.extend(expected_overload_warnings)
 
+    # Edge case: explicit carework budget should be generated and scheduled.
+    carework_student = StudentHoursWrapper(
+        name="carework_student",
+        fitness_hours_week=6,
+        social_hours_week=8,
+        work_hours_week=5,
+        carework_hours_week=3,
+    )
+
+    print("\n--- Edge case: carework student (semester) ---")
+    carework_structure = carework_student.generate_week(phase=YearPhase.SEMESTER, seed=3210)
+    carework_budget = next((b for b in carework_structure.budgets if b.subtype == "carework"), None)
+    if carework_budget is None:
+        total_hard_failures.append("semester: carework_student missing carework budget")
+    elif carework_budget.total_hours != 3:
+        total_hard_failures.append(
+            f"semester: carework_student carework budget total={carework_budget.total_hours} expected=3"
+        )
+
+    hard_failures, warnings, expected_overload_warnings = _run_phase(
+        carework_student,
+        YearPhase.SEMESTER,
+        base_seed=3210,
+    )
+    total_hard_failures.extend(hard_failures)
+    total_warnings.extend(warnings)
+    total_expected_overload_warnings.extend(expected_overload_warnings)
+
+    carework_structure.metadata["daily_budget_distribution"] = distribute_weekly_budgets_to_days(
+        carework_structure,
+        random.Random(3210 + 99),
+    )
+    carework_week = {
+        weekday: generate_full_day_schedule(
+            carework_structure,
+            weekday,
+            rng=random.Random(3210 + 100 + weekday),
+        )
+        for weekday in range(7)
+    }
+    carework_hours_scheduled = sum(
+        1
+        for day_eps in carework_week.values()
+        for ep in day_eps
+        if ep.activity_type == ActivityType.CAREWORK and ep.subtype == "carework"
+    )
+    if abs(carework_hours_scheduled - 3) > 1:
+        total_hard_failures.append(
+            f"semester: carework_student scheduled carework={carework_hours_scheduled} expected approx 3"
+        )
+
+    # Edge case: explicit zero carework should keep no-carework behavior.
+    zero_carework_student = StudentHoursWrapper(
+        name="student_zero_carework",
+        fitness_hours_week=0,
+        social_hours_week=1,
+        work_hours_week=0,
+        carework_hours_week=0,
+    )
+
+    print("\n--- Edge case: zero-carework student (semester) ---")
+    zero_carework_structure = zero_carework_student.generate_week(phase=YearPhase.SEMESTER, seed=4321)
+    if any(b.subtype == "carework" for b in zero_carework_structure.budgets):
+        total_hard_failures.append("semester: zero-carework student should not have carework budget")
+
+    hard_failures, warnings, expected_overload_warnings = _run_phase(
+        zero_carework_student,
+        YearPhase.SEMESTER,
+        base_seed=4321,
+    )
+    total_hard_failures.extend(hard_failures)
+    total_warnings.extend(warnings)
+    total_expected_overload_warnings.extend(expected_overload_warnings)
+
     print("\n--- Constraint test: acute illness ---")
     constraint_student = StudentHoursWrapper(
         name="student_test",
