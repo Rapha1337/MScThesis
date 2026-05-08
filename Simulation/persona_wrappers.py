@@ -42,6 +42,7 @@ class StudentHoursWrapper:
     fitness_hours_week: float = 5.5
     social_hours_week: float = 10.0
     work_hours_week: float = 4.5
+    carework_hours_week: float | None = None
 
     seed_variation: bool = True
     variation_strength: float = 0.06
@@ -123,6 +124,7 @@ class StudentHoursWrapper:
             weekend_structure=base.weekend_structure,
             weekend_social_intensity=self._jitter(weekend_social_intensity, rng),
             social_hours_week=self.social_hours_week,
+            carework_hours_week=self.carework_hours_week,
         )
 
     def generate_week(
@@ -161,6 +163,7 @@ class StudentHoursWrapper:
                 "fitness_hours_week": self.fitness_hours_week,
                 "social_hours_week": self.social_hours_week,
                 "work_hours_week": self.work_hours_week,
+                "carework_hours_week": self.carework_hours_week,
             },
             "derived_structure_parameters": {
                 "schedule_rigidity": derived.schedule_rigidity,

@@ -6,6 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 import random
+import math
 
 
 
@@ -189,6 +190,10 @@ class StudentStructureParameters:
     # Zielwert für soziale Kontakte / soziale Aktivitäten in Stunden pro Woche.
     # Wenn None, verwendet das Modell die bisherige probabilistische Logik.
     social_hours_week: float | None = None
+
+    # Wöchentliche Carework-Stunden (Haushalt, Kinderbetreuung, Pflege/Caregiving).
+    # None: bisheriges Verhalten ohne explizites Carework-Budget.
+    carework_hours_week: float | None = None
 
 
 
@@ -601,10 +606,10 @@ def distribute_weekly_budgets_to_days(
         rng = random.Random()
 
     distribution: dict[int, list[WeeklyActivityBudget]] = {d: [] for d in range(7)}
-    heavy_subtypes = {"university", "paid_work", "studying", "physical_activity"}
+    heavy_subtypes = {"university", "paid_work", "studying", "carework", "physical_activity"}
     heavy_load_by_day: dict[int, int] = {d: 0 for d in range(7)}
 
-    budget_order = {"university": 0, "paid_work": 1, "physical_activity": 2, "studying": 3, "social_time": 4}
+    budget_order = {"university": 0, "paid_work": 1, "studying": 2, "carework": 3, "physical_activity": 4, "social_time": 5}
     budgets = sorted(structure.budgets, key=lambda b: budget_order.get(b.subtype or b.activity_type.value, 99))
 
     for budget in budgets:
@@ -661,6 +666,8 @@ def _activity_window(subtype: str, phase: YearPhase, weekday: int) -> tuple[int,
         return (17, 21) if phase == YearPhase.SEMESTER else (9, 18)
     if subtype == "physical_activity":
         return (15, 21)
+    if subtype == "carework":
+        return (17, 21)
     if subtype == "social_time":
         if weekday >= 5:
             return (14, 23)
@@ -686,6 +693,10 @@ def _fallback_windows_for_subtype(subtype: str, phase: YearPhase, weekday: int) 
     if subtype == "social_time":
         primary = (14, 23) if weekday >= 5 else (18, 23)
         return [primary, (10, 23)]
+    if subtype == "carework":
+        if weekday >= 5:
+            return [(9, 12), (14, 18), (17, 21)]
+        return [(17, 21), (18, 22), (7, 9)]
     return [_activity_window(subtype, phase, weekday)]
 
 
@@ -809,7 +820,10 @@ def apply_acute_illness_constraint(
     work_like = [
         ep.hour
         for ep in updated
-        if ep.activity_type == ActivityType.WORK and ep.subtype in {"paid_work", "university", "studying"}
+        if (
+            ep.activity_type == ActivityType.WORK and ep.subtype in {"paid_work", "university", "studying"}
+        )
+        or ep.activity_type == ActivityType.CAREWORK
     ]
 
     if constraint.intensity == "low":
@@ -1456,6 +1470,9 @@ def generate_student_week(
     social_h = round_to_nonnegative_int(params.social_hours_week if params.social_hours_week is not None else lerp(2, 10, p["weekend_social_intensity"]))
     uni_h = 0 if phase == YearPhase.HOLIDAY else round_to_nonnegative_int(lerp(8, 22, p["university_load"]))
     study_h = round_to_nonnegative_int(lerp(2, 24, p["study_intensity"]))
+    carework_h = 0
+    if params.carework_hours_week is not None:
+        carework_h = round_to_nonnegative_int(params.carework_hours_week)
     if phase == YearPhase.SEMESTER:
         study_h = max(3, int(study_h * 0.45))
     elif phase == YearPhase.EXAM_PHASE:
@@ -1471,6 +1488,16 @@ def generate_student_week(
     def _td(hours: int, expr: int) -> int:
         return 0 if hours <= 0 else expr
 
+
+    def _carework_target_days(hours: int) -> int:
+        if hours <= 0:
+            return 0
+        if hours <= 3:
+            return hours
+        if hours <= 10:
+            return min(7, math.ceil(hours / 2))
+        return 7
+
     structure.budgets = [
         WeeklyActivityBudget(ActivityType.WORK, "paid_work", work_h, _td(work_h, min(5, max(0, (work_h + 5)//6))), BlockFlexibility.FIXED, "weekday", [0,1,2,3,4], (8,18)),
         WeeklyActivityBudget(ActivityType.PHYSICAL_ACTIVITY, "physical_activity", fit_h, _td(fit_h, min(7, max(0, (fit_h + 2)//3))), BlockFlexibility.FIXED if params.sport_fixedness > 0.5 else BlockFlexibility.FLEXIBLE, "mixed", None, (14,21)),
@@ -1478,6 +1505,20 @@ def generate_student_week(
         WeeklyActivityBudget(ActivityType.WORK, "university", uni_h, _td(uni_h, min(5, max(0, (uni_h + 4)//6))), BlockFlexibility.FIXED, "weekday", [0,1,2,3,4], (8,16)),
         WeeklyActivityBudget(ActivityType.WORK, "studying", study_h, _td(study_h, min(6, max(0, (study_h + 2)//4))), BlockFlexibility.FLEXIBLE, "weekday", None, (10,21)),
     ]
+
+    if carework_h > 0:
+        structure.budgets.append(
+            WeeklyActivityBudget(
+                ActivityType.CAREWORK,
+                "carework",
+                carework_h,
+                _carework_target_days(carework_h),
+                BlockFlexibility.FLEXIBLE,
+                "mixed",
+                None,
+                (17, 21),
+            )
+        )
 
     return structure
 
@@ -1587,6 +1628,7 @@ def summarize_parameters(params: StudentStructureParameters) -> dict[str, object
         "location_switch_frequency": params.location_switch_frequency,
         "weekend_structure": params.weekend_structure,
         "weekend_social_intensity": params.weekend_social_intensity,
+        "carework_hours_week": params.carework_hours_week,
     }
 
 
