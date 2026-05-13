@@ -1,6 +1,12 @@
+from pathlib import Path
+import sys
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
+
 """Kleines Demo-Skript, das die Wetterumgebung ausführt und Zeitreihen plottet."""
 
-from pathlib import Path
 import random
 
 import matplotlib

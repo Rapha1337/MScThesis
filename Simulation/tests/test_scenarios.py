@@ -1,7 +1,13 @@
 from __future__ import annotations
 
-import random
 from pathlib import Path
+import sys
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
+
+import random
 
 import matplotlib.pyplot as plt
 import numpy as np
