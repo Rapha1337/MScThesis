@@ -98,3 +98,152 @@ def test_schedule_preservation_and_context_integration() -> None:
     assert [(e.hour, e.activity_type, e.subtype) for e in normal_before] == [(e.hour, e.activity_type, e.subtype) for e in normal_after]
     assert [(e.hour, e.activity_type, e.subtype) for e in constrained_before] == [(e.hour, e.activity_type, e.subtype) for e in constrained_after]
     assert "agent_state" in context and "energy" in context["agent_state"]
+
+
+def _illness_constraint(intensity: str) -> dict[str, object]:
+    return {
+        "name": "acute_illness",
+        "type": "AcuteIllnessConstraint",
+        "intensity": intensity,
+    }
+
+
+def _print_energy_example(
+    title: str,
+    *,
+    hour: int,
+    phase: YearPhase,
+    illness: str,
+    workload: str,
+    prior_pa: str,
+    energy,
+    interpretation: str,
+) -> None:
+    print(f"\n{title}")
+    print("Context:")
+    print(f"  phase: {phase.value}")
+    print(f"  hour: {hour}")
+    print(f"  illness: {illness}")
+    print(f"  workload: {workload}")
+    print(f"  prior PA: {prior_pa}")
+
+    print("\nEnergyState:")
+    print(f"  energy_level: {energy.energy_level}")
+    print(f"  fatigue_level: {energy.fatigue_level}")
+    print(f"  category: {energy.energy_category}")
+
+    print("\nDrivers:")
+    for key, value in energy.drivers.items():
+        print(f"  {key}: {value}")
+
+    print("\nInterpretation:")
+    print(f"  {interpretation}")
+
+
+def demo_energy_state_examples() -> None:
+    model = EnergyModel()
+    seed = 42
+
+    print("=== ENERGY STATE DEMO EXAMPLES ===")
+
+    energy_a = model.compute_energy_state(
+        hour=10,
+        phase=YearPhase.SEMESTER,
+        active_constraints=[],
+        constrained_schedule=_sched(5),
+        seed=seed,
+    )
+    _print_energy_example(
+        "Example A: Normal semester morning",
+        hour=10,
+        phase=YearPhase.SEMESTER,
+        illness="none",
+        workload="medium",
+        prior_pa="no",
+        energy=energy_a,
+        interpretation="Morning increases energy, while semester phase and medium workload slightly reduce it.",
+    )
+
+    energy_b = model.compute_energy_state(
+        hour=10,
+        phase=YearPhase.SEMESTER,
+        active_constraints=[_illness_constraint("mid")],
+        constrained_schedule=_sched(5),
+        seed=seed,
+    )
+    _print_energy_example(
+        "Example B: Semester morning with mid illness",
+        hour=10,
+        phase=YearPhase.SEMESTER,
+        illness="mid",
+        workload="medium",
+        prior_pa="no",
+        energy=energy_b,
+        interpretation="Energy is lower because mid illness adds a substantial penalty.",
+    )
+
+    energy_c = model.compute_energy_state(
+        hour=14,
+        phase=YearPhase.EXAM_PHASE,
+        active_constraints=[],
+        constrained_schedule=_sched(8),
+        seed=seed,
+    )
+    _print_energy_example(
+        "Example C: Exam phase with high workload",
+        hour=14,
+        phase=YearPhase.EXAM_PHASE,
+        illness="none",
+        workload="high",
+        prior_pa="no",
+        energy=energy_c,
+        interpretation="Energy is reduced by exam phase, high workload and the early-afternoon dip.",
+    )
+
+    energy_d = model.compute_energy_state(
+        hour=10,
+        phase=YearPhase.HOLIDAY,
+        active_constraints=[],
+        constrained_schedule=_sched(1),
+        seed=seed,
+    )
+    _print_energy_example(
+        "Example D: Holiday morning",
+        hour=10,
+        phase=YearPhase.HOLIDAY,
+        illness="none",
+        workload="low",
+        prior_pa="no",
+        energy=energy_d,
+        interpretation="Energy is higher because holiday has low phase load and morning has a positive component.",
+    )
+
+    energy_e = model.compute_energy_state(
+        hour=21,
+        phase=YearPhase.SEMESTER,
+        active_constraints=[],
+        constrained_schedule=_sched(4, pa_hours=[17, 18]),
+        seed=seed,
+    )
+    _print_energy_example(
+        "Example E: Evening after prior physical activity",
+        hour=21,
+        phase=YearPhase.SEMESTER,
+        illness="none",
+        workload="medium",
+        prior_pa="yes, 2 hours",
+        energy=energy_e,
+        interpretation="Energy is lower because of late evening time and prior physical activity earlier that day.",
+    )
+
+
+def test_demo_energy_state_examples_runs(capsys) -> None:
+    demo_energy_state_examples()
+    captured = capsys.readouterr()
+    assert "ENERGY STATE DEMO EXAMPLES" in captured.out
+    assert "Example A" in captured.out
+    assert "EnergyState" in captured.out
+
+
+if __name__ == "__main__":
+    demo_energy_state_examples()
