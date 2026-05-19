@@ -83,11 +83,22 @@ class SimulationRunner:
 
 
 if __name__ == "__main__":
+    from env_time_weather import TimeWeatherEnv
     from constraints.illness import AcuteIllnessConstraint
 
     env = TimeWeatherEnv(month=1)
-    persona = StudentHoursWrapper.from_zve_student_generic(name="demo_student")
-    illness = AcuteIllnessConstraint(name="acute_cold", intensity="mid", start_weekday=2, duration_days=2)
+
+    persona = StudentHoursWrapper.from_zve_student_generic(
+        name="demo_student"
+    )
+
+    illness = AcuteIllnessConstraint(
+        name="acute_cold",
+        intensity="mid",
+        start_weekday=2,
+        duration_days=2,
+    )
+
     manager = ConstraintManager([illness])
 
     runner = SimulationRunner(
