@@ -40,155 +40,6 @@ def _sched(load_hours: int, pa_hours: list[int] | None = None) -> list[dict[str,
     return out
 
 
-def _illness_constraint(intensity: str) -> list[dict[str, object]]:
-    return [{"name": "acute_illness", "type": "AcuteIllnessConstraint", "intensity": intensity}]
-
-
-def _print_energy_example(
-    *,
-    title: str,
-    context_lines: list[str],
-    energy_state,
-    interpretation: str,
-) -> None:
-    print(f"{title}")
-    print("Context:")
-    for line in context_lines:
-        print(f"  {line}")
-
-    print("\nEnergyState:")
-    print(f"  energy_level: {energy_state.energy_level:.3f}")
-    print(f"  fatigue_level: {energy_state.fatigue_level:.3f}")
-    print(f"  category: {energy_state.energy_category}")
-
-    print("\nDrivers:")
-    for key in [
-        "time_of_day_component",
-        "phase_load_penalty",
-        "illness_penalty",
-        "daily_workload_penalty",
-        "prior_activity_penalty",
-        "noise",
-    ]:
-        print(f"  {key}: {energy_state.drivers[key]:.3f}")
-
-    print("\nInterpretation:")
-    print(f"  {interpretation}")
-    print()
-
-
-def demo_energy_state_examples() -> None:
-    seed = 42
-    model = EnergyModel()
-
-    print("=== ENERGY STATE DEMO EXAMPLES ===\n")
-
-    # Example A: Normal semester day, no illness
-    example_a = model.compute_energy_state(
-        hour=10,
-        phase=YearPhase.SEMESTER,
-        active_constraints=[],
-        constrained_schedule=_sched(load_hours=5),
-        seed=seed,
-    )
-    _print_energy_example(
-        title="Example A: Normal semester morning",
-        context_lines=[
-            "phase: semester",
-            "hour: 10",
-            "illness: none",
-            "workload: medium",
-            "prior PA: no",
-        ],
-        energy_state=example_a,
-        interpretation="Morning increases energy, while semester phase slightly reduces it.",
-    )
-
-    # Example B: Semester with mid illness
-    example_b = model.compute_energy_state(
-        hour=10,
-        phase=YearPhase.SEMESTER,
-        active_constraints=_illness_constraint("mid"),
-        constrained_schedule=_sched(load_hours=5),
-        seed=seed,
-    )
-    _print_energy_example(
-        title="Example B: Semester day with mid illness",
-        context_lines=[
-            "phase: semester",
-            "hour: 10",
-            "illness: mid",
-            "workload: medium",
-            "prior PA: no",
-        ],
-        energy_state=example_b,
-        interpretation="Energy is lower because illness adds a substantial penalty.",
-    )
-
-    # Example C: Exam phase with high workload
-    example_c = model.compute_energy_state(
-        hour=14,
-        phase=YearPhase.EXAM_PHASE,
-        active_constraints=[],
-        constrained_schedule=_sched(load_hours=8),
-        seed=seed,
-    )
-    _print_energy_example(
-        title="Example C: Exam phase midday load",
-        context_lines=[
-            "phase: exam_phase",
-            "hour: 14",
-            "illness: none",
-            "workload: high",
-            "prior PA: no",
-        ],
-        energy_state=example_c,
-        interpretation="Energy is lower because exam phase and workload increase load.",
-    )
-
-    # Example D: Holiday, low workload
-    example_d = model.compute_energy_state(
-        hour=10,
-        phase=YearPhase.HOLIDAY,
-        active_constraints=[],
-        constrained_schedule=_sched(load_hours=1),
-        seed=seed,
-    )
-    _print_energy_example(
-        title="Example D: Holiday morning, low load",
-        context_lines=[
-            "phase: holiday",
-            "hour: 10",
-            "illness: none",
-            "workload: low",
-            "prior PA: no",
-        ],
-        energy_state=example_d,
-        interpretation="Energy is higher because phase load is low and morning component is positive.",
-    )
-
-    # Example E: Evening after earlier physical activity
-    example_e = model.compute_energy_state(
-        hour=21,
-        phase=YearPhase.SEMESTER,
-        active_constraints=[],
-        constrained_schedule=_sched(load_hours=4, pa_hours=[8, 17]),
-        seed=seed,
-    )
-    _print_energy_example(
-        title="Example E: Evening after prior physical activity",
-        context_lines=[
-            "phase: semester",
-            "hour: 21",
-            "illness: none",
-            "workload: medium",
-            "prior PA: yes (2h earlier today)",
-        ],
-        energy_state=example_e,
-        interpretation="Energy is lower because of evening time and prior PA penalty.",
-    )
-
-
 def test_energy_bounds_and_determinism() -> None:
     model = EnergyModel()
     s = _sched(5, [7])
@@ -220,7 +71,7 @@ def test_phase_illness_and_workload_effects() -> None:
     ill = model.compute_energy_state(
         hour=10,
         phase=YearPhase.SEMESTER,
-        active_constraints=_illness_constraint("high"),
+        active_constraints=[{"name": "acute_illness", "type": "AcuteIllnessConstraint", "intensity": "high"}],
         constrained_schedule=low_load,
         seed=7,
     )
@@ -247,15 +98,3 @@ def test_schedule_preservation_and_context_integration() -> None:
     assert [(e.hour, e.activity_type, e.subtype) for e in normal_before] == [(e.hour, e.activity_type, e.subtype) for e in normal_after]
     assert [(e.hour, e.activity_type, e.subtype) for e in constrained_before] == [(e.hour, e.activity_type, e.subtype) for e in constrained_after]
     assert "agent_state" in context and "energy" in context["agent_state"]
-
-
-def test_demo_energy_state_examples_runs(capsys) -> None:
-    demo_energy_state_examples()
-    captured = capsys.readouterr()
-    assert "ENERGY STATE DEMO EXAMPLES" in captured.out
-    assert "Example A" in captured.out
-    assert "EnergyState" in captured.out
-
-
-if __name__ == "__main__":
-    demo_energy_state_examples()
