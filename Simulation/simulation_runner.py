@@ -5,6 +5,7 @@ from typing import Any, TYPE_CHECKING
 
 from agent_context import build_agent_context
 from constraints.manager import ConstraintManager
+from energy_model import EnergyModel
 from persona_wrappers import StudentHoursWrapper
 from schedule_model_student import DayEpisode, YearPhase, generate_full_day_schedule
 
@@ -28,6 +29,7 @@ class SimulationRunner:
         self.seed = seed
         self.weekly_structure = self.persona.generate_week(phase=self.phase, seed=self.seed)
         self._last_world_info: dict[str, object] | None = None
+        self.energy_model = EnergyModel()
 
     def _episode_to_dict(self, episode: DayEpisode) -> dict[str, object]:
         return {
@@ -65,11 +67,20 @@ class SimulationRunner:
             {
                 "name": constraint.name,
                 "type": constraint.__class__.__name__,
+                "intensity": getattr(constraint, "intensity", None),
             }
             for constraint in self.constraint_manager.get_active_constraints(weekday)
         ]
 
         world_info = self._last_world_info if self._last_world_info is not None else self.reset_world()
+        hour = int(world_info.get("hour", 12)) if isinstance(world_info, dict) else 12
+        energy_state = self.energy_model.compute_energy_state(
+            hour=hour,
+            phase=self.phase,
+            active_constraints=active_constraints,
+            constrained_schedule=[self._episode_to_dict(ep) for ep in constrained_schedule],
+            seed=self.seed + weekday,
+        )
 
         return build_agent_context(
             persona_name=self.persona.name,
@@ -79,6 +90,7 @@ class SimulationRunner:
             active_constraints=active_constraints,
             normal_schedule=[self._episode_to_dict(ep) for ep in normal_schedule],
             constrained_schedule=[self._episode_to_dict(ep) for ep in constrained_schedule],
+            energy_state=energy_state,
         )
 
 
