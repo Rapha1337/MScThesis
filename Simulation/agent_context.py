@@ -9,8 +9,9 @@ def build_agent_context(
     active_constraints,
     normal_schedule,
     constrained_schedule,
+    energy_state=None,
 ) -> dict:
-    return {
+    context = {
         "persona_name": str(persona_name),
         "phase": getattr(phase, "value", str(phase)),
         "weekday": int(weekday),
@@ -19,3 +20,8 @@ def build_agent_context(
         "normal_schedule": list(normal_schedule or []),
         "constrained_schedule": list(constrained_schedule or []),
     }
+
+    if energy_state is not None:
+        context["agent_state"] = {"energy": energy_state.to_dict()}
+
+    return context
