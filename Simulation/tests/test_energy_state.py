@@ -279,6 +279,27 @@ def demo_energy_state_examples() -> None:
         interpretation="Energy is lower because of late evening time and prior physical activity earlier that day.",
     )
 
+    energy_f = model.compute_energy_state(
+        hour=22,
+        phase=YearPhase.EXAM_PHASE,
+        active_constraints=[],
+        constrained_schedule=_sched(8, pa_hours=[18]),
+        seed=seed,
+    )
+    _print_energy_example(
+        "Example F: High-stress evening after a demanding day",
+        hour=22,
+        phase=YearPhase.EXAM_PHASE,
+        illness="none",
+        workload="high",
+        prior_pa="yes, 1 hour",
+        energy=energy_f,
+        interpretation=(
+            "Energy is low because high_stress, high workload, late evening "
+            "and prior physical activity all reduce energy."
+        )
+    )
+
 
 def test_demo_energy_state_examples_runs(capsys) -> None:
     demo_energy_state_examples()
