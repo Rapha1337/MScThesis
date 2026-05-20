@@ -9,7 +9,7 @@ from agent_state import EnergyState
 class EnergyModel:
     """MVP heuristic model for momentary energy without changing schedule structure."""
 
-    def __init__(self, base_energy: float = 0.60) -> None:
+    def __init__(self, base_energy: float = 0.65) -> None:
         self.base_energy = base_energy
 
     def compute_energy_state(
@@ -73,7 +73,7 @@ class EnergyModel:
         if phase_value == "holiday":
             return 0.05
         if phase_value in {"normal", "semester"}:
-            return -0.05
+            return 0.0
         if phase_value in {"high_stress", "exam_phase"}:
             return -0.15
         return 0.0

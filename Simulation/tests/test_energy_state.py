@@ -82,6 +82,49 @@ def test_phase_illness_and_workload_effects() -> None:
     assert high.energy_level < low.energy_level
 
 
+def test_favorable_normal_situation_can_reach_high_energy() -> None:
+    model = EnergyModel()
+    low_load = _sched(0)
+    candidate_levels = [
+        model.compute_energy_state(
+            hour=10,
+            phase=YearPhase.SEMESTER,
+            active_constraints=[],
+            constrained_schedule=low_load,
+            seed=seed,
+        ).energy_level
+        for seed in range(500)
+    ]
+    assert max(candidate_levels) > 0.70
+
+
+def test_phase_ordering_normal_holiday_high_stress() -> None:
+    model = EnergyModel()
+    low_load = _sched(0)
+
+    model._stochastic_effect = lambda **_: 0.0  # type: ignore[method-assign]
+    normal = model.compute_energy_state(hour=10, phase=YearPhase.SEMESTER, active_constraints=[], constrained_schedule=low_load, seed=11)
+    holiday = model.compute_energy_state(hour=10, phase=YearPhase.HOLIDAY, active_constraints=[], constrained_schedule=low_load, seed=11)
+    high_stress = model.compute_energy_state(hour=10, phase=YearPhase.EXAM_PHASE, active_constraints=[], constrained_schedule=low_load, seed=11)
+
+    assert high_stress.energy_level < normal.energy_level
+    assert holiday.energy_level > normal.energy_level
+
+
+def test_high_illness_remains_strong_energy_penalty() -> None:
+    model = EnergyModel()
+    low_load = _sched(0)
+    healthy = model.compute_energy_state(hour=10, phase=YearPhase.SEMESTER, active_constraints=[], constrained_schedule=low_load, seed=9)
+    ill_high = model.compute_energy_state(
+        hour=10,
+        phase=YearPhase.SEMESTER,
+        active_constraints=[_illness_constraint("high")],
+        constrained_schedule=low_load,
+        seed=9,
+    )
+    assert healthy.energy_level - ill_high.energy_level >= 0.35
+
+
 def test_schedule_preservation_and_context_integration() -> None:
     persona = StudentHoursWrapper.from_zve_student_generic(name="energy_student")
     illness = AcuteIllnessConstraint(name="flu", intensity="mid", start_weekday=1, duration_days=2)
