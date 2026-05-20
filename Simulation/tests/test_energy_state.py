@@ -46,7 +46,6 @@ def test_energy_bounds_and_determinism() -> None:
     a = model.compute_energy_state(hour=10, phase=YearPhase.SEMESTER, active_constraints=[], constrained_schedule=s, seed=42)
     b = model.compute_energy_state(hour=10, phase=YearPhase.SEMESTER, active_constraints=[], constrained_schedule=s, seed=42)
     assert 0.0 <= a.energy_level <= 1.0
-    assert 0.0 <= a.fatigue_level <= 1.0
     assert a.to_dict() == b.to_dict()
 
 
@@ -172,7 +171,6 @@ def _print_energy_example(
 
     print("\nEnergyState:")
     print(f"  energy_level: {energy.energy_level}")
-    print(f"  fatigue_level: {energy.fatigue_level}")
     print(f"  category: {energy.energy_category}")
 
     print("\nDrivers:")
