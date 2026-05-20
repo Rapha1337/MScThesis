@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from cmath import phase
 from dataclasses import dataclass
 import random
 
@@ -195,18 +196,38 @@ class StudentWrapper:
         phase_value = YearPhase.coerce(phase)
         rng = random.Random(self.base_seed)
         personas: list[dict[str, object]] = []
+
         for idx in range(n_personas):
             persona_seed = rng.randint(0, 2**31 - 1)
-            structure = self.parameters.generate_week(phase=phase_value, seed=persona_seed)
+            persona_name = f"StudentPersona_{idx + 1:02d}"
+
+            # Create a copy-like wrapper with an individual persona name
+            persona_parameters = StudentHoursWrapper(
+                name=persona_name,
+                fitness_hours_week=self.parameters.fitness_hours_week,
+                social_hours_week=self.parameters.social_hours_week,
+                work_hours_week=self.parameters.work_hours_week,
+                carework_hours_week=self.parameters.carework_hours_week,
+                seed_variation=self.parameters.seed_variation,
+                variation_strength=self.parameters.variation_strength,
+            )
+
+            structure = persona_parameters.generate_week(
+                phase=phase_value,
+                seed=persona_seed,
+            )
+
             personas.append(
                 {
                     "persona_index": idx,
+                    "persona_name": persona_name,
                     "persona_seed": persona_seed,
                     "phase": phase_value.value,
-                    "wrapper": self.parameters,
+                    "wrapper": persona_parameters,
                     "weekly_structure": structure,
                 }
             )
+
         return personas
 
 
