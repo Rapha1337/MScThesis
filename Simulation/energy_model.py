@@ -21,21 +21,21 @@ class EnergyModel:
         constrained_schedule: list[dict[str, object]] | None,
         seed: int,
     ) -> EnergyState:
-        time_of_day_component = self._time_of_day_component(hour)
-        phase_load_penalty = self._phase_component(phase)
-        illness_penalty = self._illness_penalty(active_constraints or [])
-        daily_workload_penalty = self._daily_workload_penalty(constrained_schedule or [])
-        prior_activity_penalty = self._prior_activity_penalty(constrained_schedule or [], hour)
-        noise = self._noise(seed=seed, hour=hour, phase=phase)
+        time_of_day_effect = self._time_of_day_effect(hour)
+        phase_effect = self._phase_effect(phase)
+        illness_effect = self._illness_effect(active_constraints or [])
+        daily_workload_effect = self._daily_workload_effect(constrained_schedule or [])
+        prior_activity_effect = self._prior_activity_effect(constrained_schedule or [], hour)
+        stochastic_effect = self._stochastic_effect(seed=seed, hour=hour, phase=phase)
 
         energy = (
             self.base_energy
-            + time_of_day_component
-            + phase_load_penalty
-            - illness_penalty
-            - daily_workload_penalty
-            - prior_activity_penalty
-            + noise
+            + time_of_day_effect
+            + phase_effect
+            + illness_effect
+            + daily_workload_effect
+            + prior_activity_effect
+            + stochastic_effect
         )
         energy_level = round(self._clamp(energy), 3)
         fatigue_level = round(1.0 - energy_level, 3)
@@ -46,16 +46,16 @@ class EnergyModel:
             energy_category=self._category(energy_level),
             description="Simulated momentary subjective energetic state",
             drivers={
-                "time_of_day_component": round(time_of_day_component, 3),
-                "phase_load_penalty": round(phase_load_penalty, 3),
-                "illness_penalty": round(illness_penalty, 3),
-                "daily_workload_penalty": round(daily_workload_penalty, 3),
-                "prior_activity_penalty": round(prior_activity_penalty, 3),
-                "noise": round(noise, 3),
+                "time_of_day_effect": round(time_of_day_effect, 3),
+                "phase_effect": round(phase_effect, 3),
+                "illness_effect": round(illness_effect, 3),
+                "daily_workload_effect": round(daily_workload_effect, 3),
+                "prior_activity_effect": round(prior_activity_effect, 3),
+                "stochastic_effect": round(stochastic_effect, 3),
             },
         )
 
-    def _time_of_day_component(self, hour: int) -> float:
+    def _time_of_day_effect(self, hour: int) -> float:
         if 6 <= hour <= 8:
             return -0.08
         if 9 <= hour <= 11:
@@ -68,19 +68,19 @@ class EnergyModel:
             return -0.12
         return 0.0
 
-    def _phase_component(self, phase: Any) -> float:
+    def _phase_effect(self, phase: Any) -> float:
         phase_value = getattr(phase, "value", str(phase)).lower()
         if phase_value == "holiday":
             return 0.05
-        if phase_value == "semester":
+        if phase_value in {"normal", "semester"}:
             return -0.05
-        if phase_value == "exam_phase":
+        if phase_value in {"high_stress", "exam_phase"}:
             return -0.15
         return 0.0
 
-    def _illness_penalty(self, active_constraints: list[dict[str, object]]) -> float:
+    def _illness_effect(self, active_constraints: list[dict[str, object]]) -> float:
         intensity = self._extract_illness_intensity(active_constraints)
-        return {"low": 0.10, "mid": 0.25, "high": 0.40}.get(intensity, 0.0)
+        return {"low": -0.10, "mid": -0.25, "high": -0.40}.get(intensity, 0.0)
 
     def _extract_illness_intensity(self, active_constraints: list[dict[str, object]]) -> str | None:
         for constraint in active_constraints:
@@ -96,7 +96,7 @@ class EnergyModel:
                 return value
         return None
 
-    def _daily_workload_penalty(self, schedule: list[dict[str, object]]) -> float:
+    def _daily_workload_effect(self, schedule: list[dict[str, object]]) -> float:
         load_hours = 0
         for ep in schedule:
             at = str(ep.get("activity_type", "")).lower()
@@ -104,25 +104,29 @@ class EnergyModel:
             if at == "work" or subtype in {"university", "studying", "paid_work", "work"}:
                 load_hours += 1
         if load_hours >= 7:
-            return 0.10
+            return -0.10
         if load_hours >= 4:
-            return 0.05
+            return -0.05
         return 0.0
 
-    def _prior_activity_penalty(self, schedule: list[dict[str, object]], hour: int) -> float:
+    def _prior_activity_effect(self, schedule: list[dict[str, object]], hour: int) -> float:
         prior_pa_hours = sum(
             1
             for ep in schedule
             if int(ep.get("hour", -1)) < hour and str(ep.get("activity_type", "")).lower() == "physical_activity"
         )
         if prior_pa_hours >= 2:
-            return 0.10
+            return -0.10
         if prior_pa_hours >= 1:
-            return 0.05
+            return -0.05
         return 0.0
 
-    def _noise(self, *, seed: int, hour: int, phase: Any) -> float:
-        phase_key = getattr(phase, "value", str(phase))
+    def _stochastic_effect(self, *, seed: int, hour: int, phase: Any) -> float:
+        phase_key = getattr(phase, "value", str(phase)).lower()
+        if phase_key == "semester":
+            phase_key = "normal"
+        elif phase_key == "exam_phase":
+            phase_key = "high_stress"
         local_seed = f"energy:{seed}:{hour}:{phase_key}"
         return random.Random(local_seed).uniform(-0.05, 0.05)
 

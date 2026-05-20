@@ -183,6 +183,43 @@ class StudentHoursWrapper:
             },
         }
 
+
+@dataclass
+class StudentWrapper:
+    """Factory wrapper for deterministic persona generation with per-persona seeds."""
+
+    parameters: StudentHoursWrapper
+    base_seed: int = 123
+
+    def create_personas(self, n_personas: int = 30, phase: YearPhase | str = YearPhase.NORMAL) -> list[dict[str, object]]:
+        phase_value = YearPhase.coerce(phase)
+        rng = random.Random(self.base_seed)
+        personas: list[dict[str, object]] = []
+        for idx in range(n_personas):
+            persona_seed = rng.randint(0, 2**31 - 1)
+            structure = self.parameters.generate_week(phase=phase_value, seed=persona_seed)
+            personas.append(
+                {
+                    "persona_index": idx,
+                    "persona_seed": persona_seed,
+                    "phase": phase_value.value,
+                    "wrapper": self.parameters,
+                    "weekly_structure": structure,
+                }
+            )
+        return personas
+
+
+def create_personas(
+    n_personas: int = 30,
+    base_seed: int = 123,
+    phase: YearPhase | str = YearPhase.NORMAL,
+    parameters: StudentHoursWrapper | None = None,
+) -> list[dict[str, object]]:
+    """Backward-compatible convenience API for deterministic persona batches."""
+    wrapper = StudentWrapper(parameters=parameters or StudentHoursWrapper.from_zve_student_generic(), base_seed=base_seed)
+    return wrapper.create_personas(n_personas=n_personas, phase=phase)
+
 if __name__ == "__main__":
     from schedule_model_student import (
         print_weekly_structure,
@@ -201,7 +238,7 @@ if __name__ == "__main__":
         carework_hours_week=7,
     )
 
-    for phase in [YearPhase.SEMESTER, YearPhase.EXAM_PHASE, YearPhase.HOLIDAY]:
+    for phase in [YearPhase.NORMAL, YearPhase.HIGH_STRESS, YearPhase.HOLIDAY]:
         print(f"\n=== {student.name} | {phase.value.upper()} ===")
 
         structure = student.generate_week(

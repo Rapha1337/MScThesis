@@ -33,9 +33,24 @@ class ActivityType(str, Enum):
 
 
 class YearPhase(str, Enum):
-    SEMESTER = "semester"
-    EXAM_PHASE = "exam_phase"
+    NORMAL = "normal"
+    HIGH_STRESS = "high_stress"
     HOLIDAY = "holiday"
+    # Backward-compatible aliases
+    SEMESTER = "normal"
+    EXAM_PHASE = "high_stress"
+
+    @classmethod
+    def coerce(cls, phase: "YearPhase | str") -> "YearPhase":
+        """Coerce legacy and generic phase values to the internal enum."""
+        if isinstance(phase, cls):
+            return phase
+        value = str(phase).strip().lower()
+        if value == "semester":
+            return cls.NORMAL
+        if value == "exam_phase":
+            return cls.HIGH_STRESS
+        return cls(value)
 
 
 
@@ -1598,4 +1613,3 @@ if __name__ == "__main__":
 
 # Backward-compatible re-export
 from constraints.illness import AcuteIllnessConstraint
-
