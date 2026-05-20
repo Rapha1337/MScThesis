@@ -38,11 +38,8 @@ class EnergyModel:
             + stochastic_effect
         )
         energy_level = round(self._clamp(energy), 3)
-        fatigue_level = round(1.0 - energy_level, 3)
-
         return EnergyState(
             energy_level=energy_level,
-            fatigue_level=fatigue_level,
             energy_category=self._category(energy_level),
             description="Simulated momentary subjective energetic state",
             drivers={
