@@ -30,8 +30,8 @@ def main() -> None:
     print(f"public_holiday_count: {len(public_holiday_events)}")
     print(f"illness_event_count: {len(illness_events)}")
 
-    print("first_12_weeks:")
-    for week in year.weeks[:12]:
+    print("full_year_week_overview:")
+    for week in year.weeks:
         print(
             f"  - week={week.week_index:02d} phase={week.phase} "
             f"block={week.fixed_block_tag or '-'} events={week.active_event_ids}"
