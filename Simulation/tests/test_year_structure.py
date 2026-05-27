@@ -85,8 +85,9 @@ def test_public_holidays_are_events_not_phases() -> None:
     assert 9 <= len(public_events) <= 13
     for event in public_events:
         assert event.duration_days == 1
-        assert event.intensity == "low"
+        assert event.intensity is None
         assert event.source == "calendar"
+    assert all(event.intensity != "low" for event in public_events)
 
 
 def test_active_event_ids_attached_to_all_affected_weeks() -> None:

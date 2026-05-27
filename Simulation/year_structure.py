@@ -69,7 +69,7 @@ class ConstraintEvent:
     start_week: int = 0
     start_day: int = 0
     duration_days: int = 1
-    intensity: str = "low"
+    intensity: str | None = None
     parameters: dict[str, object] = field(default_factory=dict)
     source: str = "stochastic"
     metadata: dict[str, object] = field(default_factory=dict)
@@ -321,7 +321,7 @@ class YearStructureGenerator:
                         start_week=sw,
                         start_day=sd,
                         duration_days=1,
-                        intensity=self.config.event_default_intensity.get("public_holiday", "low"),
+                        intensity=None,
                         source="calendar",
                         metadata={"calendar_type": "synthetic_dach_like"},
                     )
@@ -398,8 +398,8 @@ class YearStructureGenerator:
             raise ValueError("illness_intensity_probs keys must be low/medium/high")
 
         for _, intensity in config.event_default_intensity.items():
-            if intensity not in ALLOWED_INTENSITIES:
-                raise ValueError("event_default_intensity values must be low/medium/high")
+            if intensity is not None and intensity not in ALLOWED_INTENSITIES:
+                raise ValueError("event_default_intensity values must be low/medium/high when provided")
 
     def _validate_probabilities(self, probs: dict[object, float], name: str) -> None:
         if not probs:
@@ -417,8 +417,14 @@ class YearStructureGenerator:
             raise ValueError("start_day must be between 0 and 6")
         if event.duration_days < 1:
             raise ValueError("duration_days must be >= 1")
-        if event.intensity not in ALLOWED_INTENSITIES:
-            raise ValueError("intensity must be canonical: low/medium/high")
+        if event.event_type == "illness":
+            if event.intensity not in ALLOWED_INTENSITIES:
+                raise ValueError("illness intensity must be canonical: low/medium/high")
+        elif event.event_type == "public_holiday":
+            if event.intensity is not None:
+                raise ValueError("public_holiday intensity must be None")
+        elif event.intensity is not None and event.intensity not in ALLOWED_INTENSITIES:
+            raise ValueError("intensity must be canonical when provided: low/medium/high")
 
     def _validate_weeks(self, weeks: list[WeekPlan], n_weeks: int) -> None:
         if len(weeks) != n_weeks:
