@@ -161,6 +161,8 @@ class YearStructureGenerator:
 
         mins = {k: v[0] for k, v in self.config.phase_target_ranges.items()}
         maxs = {k: v[1] for k, v in self.config.phase_target_ranges.items()}
+        weeks = [WeekPlan(week_index=i, phase="normal") for i in range(n_weeks)]
+        reserved_holiday_indices = self._reserve_fixed_holiday_blocks(weeks=weeks, n_weeks=n_weeks, rng=rng)
 
         counts = mins.copy()
         remaining = n_weeks - sum(counts.values())
@@ -176,9 +178,31 @@ class YearStructureGenerator:
             counts[choice] += 1
             remaining -= 1
 
+        counts["holiday"] = max(counts["holiday"], len(reserved_holiday_indices))
+        if counts["holiday"] > maxs["holiday"]:
+            counts["holiday"] = maxs["holiday"]
+
+        non_holiday_total = n_weeks - counts["holiday"]
+        if counts["normal"] + counts["high_stress"] > non_holiday_total:
+            overflow = counts["normal"] + counts["high_stress"] - non_holiday_total
+            reduce_high = min(overflow, counts["high_stress"] - mins["high_stress"])
+            counts["high_stress"] -= max(0, reduce_high)
+            overflow -= max(0, reduce_high)
+            reduce_normal = min(overflow, counts["normal"] - mins["normal"])
+            counts["normal"] -= max(0, reduce_normal)
+            overflow -= max(0, reduce_normal)
+            if overflow > 0:
+                take_from_high = min(overflow, counts["high_stress"])
+                counts["high_stress"] -= take_from_high
+                overflow -= take_from_high
+                counts["normal"] = max(0, counts["normal"] - overflow)
+
+        fill_counts = counts.copy()
+        fill_counts["holiday"] = max(0, counts["holiday"] - len(reserved_holiday_indices))
+
         phase_values: list[str] = []
         for phase in phases:
-            phase_values.extend([phase] * counts[phase])
+            phase_values.extend([phase] * fill_counts[phase])
         rng.shuffle(phase_values)
 
         if self.config.allow_phase_adjacency_rules:
@@ -192,10 +216,48 @@ class YearStructureGenerator:
                 if not changed:
                     break
 
-        weeks = [WeekPlan(week_index=i, phase=phase_values[i]) for i in range(n_weeks)]
-        self._assign_holiday_block_tags(weeks=weeks, n_weeks=n_weeks, rng=rng)
+        free_indices = [idx for idx in range(n_weeks) if idx not in reserved_holiday_indices]
+        for pos, idx in enumerate(free_indices):
+            weeks[idx].phase = phase_values[pos]
+        for idx in reserved_holiday_indices:
+            weeks[idx].phase = "holiday"
         self._validate_weeks(weeks, n_weeks)
         return weeks
+
+    def _reserve_fixed_holiday_blocks(self, weeks: list[WeekPlan], n_weeks: int, rng: random.Random) -> set[int]:
+        reserved: set[int] = set()
+        for tag, (min_v, max_v) in self.config.holiday_block_ranges.items():
+            block_len = rng.randint(min_v, max_v)
+            windows = self.config.holiday_block_placement_windows.get(tag, [(0, n_weeks - 1)])
+            start = self._sample_block_start(windows=windows, block_len=block_len, n_weeks=n_weeks, rng=rng)
+            if start is None:
+                continue
+            for idx in range(start, start + block_len):
+                weeks[idx].phase = "holiday"
+                weeks[idx].fixed_block_tag = tag
+                reserved.add(idx)
+        return reserved
+
+    def _sample_block_start(
+        self,
+        windows: list[tuple[int, int]],
+        block_len: int,
+        n_weeks: int,
+        rng: random.Random,
+    ) -> int | None:
+        valid_starts: list[int] = []
+        for start, end in windows:
+            lo = max(0, start)
+            hi = min(n_weeks - 1, end)
+            if hi < lo:
+                continue
+            latest_start = hi - block_len + 1
+            if latest_start < lo:
+                continue
+            valid_starts.extend(range(lo, latest_start + 1))
+        if not valid_starts:
+            return None
+        return rng.choice(valid_starts)
 
     def sample_constraint_events(
         self,
@@ -307,61 +369,6 @@ class YearStructureGenerator:
                 raise ValueError(f"Invalid phase in week plan: {week.phase}")
             counts[week.phase] += 1
         return counts
-
-    def _assign_holiday_block_tags(self, weeks: list[WeekPlan], n_weeks: int, rng: random.Random) -> None:
-        holiday_indices = [w.week_index for w in weeks if w.phase == "holiday"]
-        if not holiday_indices:
-            return
-
-        target_by_tag: dict[str, int] = {}
-        for tag, (min_v, max_v) in self.config.holiday_block_ranges.items():
-            target_by_tag[tag] = rng.randint(min_v, max_v)
-
-        total_target = sum(target_by_tag.values())
-        if total_target > len(holiday_indices):
-            overflow = total_target - len(holiday_indices)
-            for tag in sorted(target_by_tag.keys(), key=lambda k: target_by_tag[k], reverse=True):
-                if overflow <= 0:
-                    break
-                min_for_tag = self.config.holiday_block_ranges[tag][0]
-                reducible = max(0, target_by_tag[tag] - min_for_tag)
-                take = min(reducible, overflow)
-                target_by_tag[tag] -= take
-                overflow -= take
-
-        assigned: dict[int, str] = {}
-        for tag, count in target_by_tag.items():
-            windows = self.config.holiday_block_placement_windows.get(tag, [(0, n_weeks - 1)])
-            candidates: list[int] = []
-            for start, end in windows:
-                center = rng.randint(max(0, start), min(n_weeks - 1, end))
-                half = max(0, count // 2)
-                for idx in range(center - half, center - half + count):
-                    jitter = rng.randint(-self.config.holiday_block_jitter_weeks, self.config.holiday_block_jitter_weeks)
-                    j = idx + jitter
-                    if 0 <= j < n_weeks:
-                        candidates.append(j)
-            for idx in candidates:
-                if idx in assigned:
-                    continue
-                if idx not in holiday_indices:
-                    continue
-                assigned[idx] = tag
-                if sum(1 for t in assigned.values() if t == tag) >= count:
-                    break
-
-        remaining_holiday_indices = [idx for idx in holiday_indices if idx not in assigned]
-        for tag, count in target_by_tag.items():
-            missing = count - sum(1 for t in assigned.values() if t == tag)
-            while missing > 0 and remaining_holiday_indices:
-                pick = rng.choice(remaining_holiday_indices)
-                remaining_holiday_indices.remove(pick)
-                assigned[pick] = tag
-                missing -= 1
-
-        for week in weeks:
-            if week.week_index in assigned:
-                week.fixed_block_tag = assigned[week.week_index]
 
     def _validate_config(self, config: YearStructureConfig) -> None:
         if config.n_weeks < 1:
