@@ -164,6 +164,60 @@ def generate_student_year(
     return year_grids
 
 
+def generate_realistic_student_year(
+    *,
+    persona_seed: int,
+    year_seed: int | None = None,
+    fitness_hours_week: float = 5.5,
+    social_hours_week: float = 10.0,
+    work_hours_week: float = 4.5,
+    n_weeks: int = 52,
+) -> dict[str, object]:
+    """Generate one realistic student year with mixed phases and sampled events."""
+    import random
+
+    from persona_wrappers import StudentHoursWrapper
+    from schedule_model_student import YearPhase, generate_full_day_schedule
+    from year_structure import YearStructureGenerator
+
+    effective_year_seed = persona_seed if year_seed is None else year_seed
+    student = StudentHoursWrapper(
+        name="student_realistic_year",
+        fitness_hours_week=fitness_hours_week,
+        social_hours_week=social_hours_week,
+        work_hours_week=work_hours_week,
+    )
+    generator = YearStructureGenerator()
+    year_structure = generator.generate_year(
+        persona_id=student.name,
+        persona_seed=effective_year_seed,
+        parameters=student,
+        n_weeks=n_weeks,
+    )
+
+    year_grids: list[list[list[str]]] = []
+    for week_plan in year_structure.weeks:
+        phase_value = YearPhase.coerce(week_plan.phase)
+        week_seed = persona_seed + week_plan.week_index * 10_000 + effective_year_seed
+        weekly_structure = student.generate_week(phase=phase_value, seed=week_seed)
+
+        full_week: dict[int, list[object]] = {}
+        for weekday in range(7):
+            day_rng = random.Random(week_seed + weekday)
+            full_day = generate_full_day_schedule(weekly_structure, weekday, rng=day_rng)
+            full_week[weekday] = full_day
+        year_grids.append(week_to_7x24_activity_grid(full_week))
+
+    return {
+        "year_grids": year_grids,
+        "year_structure": year_structure,
+        "phase_counts": dict(year_structure.phase_counts),
+        "block_counts": dict(year_structure.metadata.get("block_counts", {})),
+        "public_holiday_count": sum(1 for event in year_structure.events if event.event_type == "public_holiday"),
+        "illness_event_count": sum(1 for event in year_structure.events if event.event_type == "illness"),
+    }
+
+
 def compare_year_structures(
     year_a: list[list[list[str]]],
     year_b: list[list[list[str]]],
@@ -262,6 +316,42 @@ def run_between_seed_year_variance(
     return summary
 
 
+def run_between_agent_realistic_year_variance(
+    *,
+    n_agents: int = 200,
+    base_seed: int = 123,
+    n_weeks: int = 52,
+) -> dict[str, object]:
+    """Between-agent variance for realistic mixed-phase years."""
+    import random
+
+    rng = random.Random(base_seed)
+    agent_seeds = [rng.randint(0, 2**31 - 1) for _ in range(n_agents)]
+
+    generated_years = [
+        generate_realistic_student_year(persona_seed=seed, year_seed=seed, n_weeks=n_weeks)
+        for seed in agent_seeds
+    ]
+    years = [x["year_grids"] for x in generated_years]
+    phase_counts = [x["phase_counts"] for x in generated_years]
+    block_counts = [x.get("block_counts", {}) for x in generated_years]
+    public_holiday_counts = [int(x.get("public_holiday_count", 0)) for x in generated_years]
+    illness_event_counts = [int(x["illness_event_count"]) for x in generated_years]
+
+    summary = summarize_pairwise_year_variance(years)
+    summary["n_agents"] = n_agents
+    summary["n_weeks_per_agent"] = n_weeks
+    summary["base_seed"] = base_seed
+    summary["example_phase_counts"] = phase_counts[0] if phase_counts else {}
+    summary["example_block_counts"] = block_counts[0] if block_counts else {}
+    summary["example_public_holiday_count"] = public_holiday_counts[0] if public_holiday_counts else 0
+    summary["example_illness_event_count"] = illness_event_counts[0] if illness_event_counts else 0
+    summary["mean_public_holiday_count"] = mean(public_holiday_counts) if public_holiday_counts else 0.0
+    summary["mean_illness_event_count"] = mean(illness_event_counts) if illness_event_counts else 0.0
+    summary["max_illness_event_count"] = max(illness_event_counts) if illness_event_counts else 0
+    return summary
+
+
 def run_within_seed_week_variance(
     *,
     persona_seed: int = 12345,
@@ -289,6 +379,42 @@ def run_within_seed_week_variance(
     summary = summarize_pairwise_week_variance(weeks)
     summary["persona_seed"] = persona_seed
     summary["n_week_indices"] = len(week_indices)
+    return summary
+
+
+def run_within_agent_realistic_year_variance(
+    *,
+    persona_seed: int = 12345,
+    n_years: int = 20,
+    base_year_seed: int = 222,
+    n_weeks: int = 52,
+) -> dict[str, object]:
+    """Within-agent variance across multiple realistic year realizations."""
+    import random
+
+    rng = random.Random(base_year_seed)
+    year_seeds = [rng.randint(0, 2**31 - 1) for _ in range(n_years)]
+    generated_years = [
+        generate_realistic_student_year(persona_seed=persona_seed, year_seed=ys, n_weeks=n_weeks)
+        for ys in year_seeds
+    ]
+    years = [x["year_grids"] for x in generated_years]
+    phase_counts = [x["phase_counts"] for x in generated_years]
+    block_counts = [x.get("block_counts", {}) for x in generated_years]
+    public_holiday_counts = [int(x.get("public_holiday_count", 0)) for x in generated_years]
+    illness_event_counts = [int(x.get("illness_event_count", 0)) for x in generated_years]
+
+    summary = summarize_pairwise_year_variance(years)
+    summary["persona_seed"] = persona_seed
+    summary["n_years"] = n_years
+    summary["base_year_seed"] = base_year_seed
+    summary["n_weeks_per_year"] = n_weeks
+    summary["example_phase_counts"] = phase_counts[0] if phase_counts else {}
+    summary["example_block_counts"] = block_counts[0] if block_counts else {}
+    summary["example_public_holiday_count"] = public_holiday_counts[0] if public_holiday_counts else 0
+    summary["example_illness_event_count"] = illness_event_counts[0] if illness_event_counts else 0
+    summary["mean_public_holiday_count"] = mean(public_holiday_counts) if public_holiday_counts else 0.0
+    summary["mean_illness_event_count"] = mean(illness_event_counts) if illness_event_counts else 0.0
     return summary
 
 
