@@ -164,6 +164,24 @@ def generate_student_year(
     return year_grids
 
 
+
+
+def _event_active_on_day(event: object, week_index: int, weekday: int) -> bool:
+    start_abs = int(getattr(event, "start_week")) * 7 + int(getattr(event, "start_day"))
+    day_abs = week_index * 7 + weekday
+    return start_abs <= day_abs < start_abs + int(getattr(event, "duration_days"))
+
+
+def _apply_public_holiday_to_day(day_schedule: list[object]) -> list[object]:
+    from schedule_model_student import ActivityType, DayEpisode
+
+    adjusted: list[object] = []
+    for ep in day_schedule:
+        if ep.activity_type == ActivityType.WORK and ep.subtype in {"university", "paid_work", "studying"}:
+            adjusted.append(DayEpisode(ep.hour, ActivityType.DOWNTIME, ep.flexibility, "public_holiday"))
+        else:
+            adjusted.append(ep)
+    return adjusted
 def generate_realistic_student_year(
     *,
     persona_seed: int,
@@ -204,7 +222,34 @@ def generate_realistic_student_year(
         full_week: dict[int, list[object]] = {}
         for weekday in range(7):
             day_rng = random.Random(week_seed + weekday)
-            full_day = generate_full_day_schedule(weekly_structure, weekday, rng=day_rng)
+            active_events = [
+                event for event in year_structure.events if _event_active_on_day(event, week_plan.week_index, weekday)
+            ]
+            illness_constraints = []
+            has_public_holiday = False
+            for event in active_events:
+                if event.event_type == "illness":
+                    from constraints.illness import AcuteIllnessConstraint
+
+                    intensity = "mid" if event.intensity == "medium" else str(event.intensity or "low")
+                    illness_constraints.append(
+                        AcuteIllnessConstraint(
+                            duration_days=1,
+                            start_weekday=weekday,
+                            intensity=intensity,
+                        )
+                    )
+                elif event.event_type == "public_holiday":
+                    has_public_holiday = True
+
+            full_day = generate_full_day_schedule(
+                weekly_structure,
+                weekday,
+                rng=day_rng,
+                constraints=illness_constraints or None,
+            )
+            if has_public_holiday:
+                full_day = _apply_public_holiday_to_day(full_day)
             full_week[weekday] = full_day
         year_grids.append(week_to_7x24_activity_grid(full_week))
 
