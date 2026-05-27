@@ -51,7 +51,7 @@ def main() -> None:
         print(
             "  - "
             f"id={event.event_id}, start_week={event.start_week}, start_day={event.start_day}, "
-            f"duration_days={event.duration_days}, intensity={event.intensity}, source={event.source}"
+            f"duration_days={event.duration_days}, intensity={event.intensity if event.intensity is not None else '-'}, source={event.source}"
         )
 
 
