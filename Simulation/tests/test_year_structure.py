@@ -8,7 +8,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from year_structure import ALLOWED_PHASES, YearStructureGenerator
+from year_structure import ALLOWED_PHASES, YearStructureConfig, YearStructureGenerator
 
 
 class _DummyParams:
@@ -104,3 +104,40 @@ def test_active_event_ids_attached_to_all_affected_weeks() -> None:
             week = week_by_id[week_idx]
             assert event.event_id in week.active_event_ids
             assert any(entry.get("event_id") == event.event_id for entry in week.constraints_week_view)
+
+
+def test_fixed_holiday_blocks_stay_inside_configured_windows_and_are_contiguous() -> None:
+    config = YearStructureConfig(
+        holiday_block_placement_windows={
+            "winter_holiday": [(0, 7), (47, 51)],
+            "summer_holiday": [(23, 36)],
+        }
+    )
+    generator = YearStructureGenerator(config=config)
+    year = generator.generate_year(persona_id="p4", persona_seed=2026, parameters=_DummyParams())
+
+    summer_weeks = [w.week_index for w in year.weeks if w.fixed_block_tag == "summer_holiday"]
+    winter_weeks = [w.week_index for w in year.weeks if w.fixed_block_tag == "winter_holiday"]
+    assert summer_weeks
+    assert winter_weeks
+
+    summer_windows = config.holiday_block_placement_windows["summer_holiday"]
+    winter_windows = config.holiday_block_placement_windows["winter_holiday"]
+
+    assert all(any(start <= idx <= end for start, end in summer_windows) for idx in summer_weeks)
+    assert all(any(start <= idx <= end for start, end in winter_windows) for idx in winter_weeks)
+
+    assert summer_weeks == list(range(min(summer_weeks), max(summer_weeks) + 1))
+    assert winter_weeks == list(range(min(winter_weeks), max(winter_weeks) + 1))
+
+
+def test_no_summer_holiday_at_week_zero_if_not_in_summer_window() -> None:
+    config = YearStructureConfig(
+        holiday_block_placement_windows={
+            "winter_holiday": [(0, 7), (47, 51)],
+            "summer_holiday": [(23, 36)],
+        }
+    )
+    generator = YearStructureGenerator(config=config)
+    year = generator.generate_year(persona_id="p5", persona_seed=4040, parameters=_DummyParams())
+    assert all(not (w.week_index == 0 and w.fixed_block_tag == "summer_holiday") for w in year.weeks)
