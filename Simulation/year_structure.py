@@ -38,16 +38,23 @@ class YearStructureConfig:
     )
     holiday_block_jitter_weeks: int = 1
 
+    # Illness is calibrated as a schedule-relevant functional limitation, not as
+    # a medical diagnosis or a direct import of sick-leave statistics. Country
+    # statistics describe reported work incapacity and vary by job, reporting
+    # rules, and insurance context; the model samples only episodes that should
+    # visibly affect daily structure.
     illness_enabled: bool = True
-    illness_occurrence_prob = 0.80
-    illness_episode_count_probs = {
-        0: 0.20,
-        1: 0.50,
-        2: 0.25,
-        3: 0.05,
-    }
+    illness_occurrence_prob: float = 0.80
+    illness_episode_count_probs: dict[int, float] = field(
+        default_factory=lambda: {
+            0: 0.20,
+            1: 0.55,
+            2: 0.20,
+            3: 0.05,
+        }
+    )
     illness_duration_days_probs: dict[int, float] = field(
-        default_factory=lambda: {1: 0.15, 2: 0.30, 3: 0.30, 4: 0.15, 5: 0.10}
+        default_factory=lambda: {1: 0.15, 2: 0.30, 3: 0.30, 4: 0.15, 5: 0.07, 6: 0.03}
     )
     illness_intensity_probs: dict[str, float] = field(
         default_factory=lambda: {"low": 0.55, "medium": 0.35, "high": 0.10}
