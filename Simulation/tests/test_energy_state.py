@@ -89,6 +89,57 @@ def test_runner_context_outputs_medium_for_legacy_mid_constraint() -> None:
     assert context["active_constraints"][0]["intensity"] == "medium"
 
 
+def test_acute_illness_intensities_match_functional_schedule_interpretation() -> None:
+    from schedule_model_student import ActivityType, BlockFlexibility, DayEpisode
+
+    base_day = []
+    for hour in range(24):
+        activity = ActivityType.DOWNTIME
+        subtype = "default_downtime"
+        if hour <= 5:
+            activity = ActivityType.SLEEP
+            subtype = "night_sleep"
+        elif hour == 6:
+            activity = ActivityType.WAKE_UP
+            subtype = "morning_wake_up"
+        elif hour == 7:
+            activity = ActivityType.EAT
+            subtype = "breakfast"
+        elif 8 <= hour <= 13:
+            activity = ActivityType.WORK
+            subtype = "university"
+        elif 14 <= hour <= 15:
+            activity = ActivityType.PHYSICAL_ACTIVITY
+            subtype = "training"
+        elif 16 <= hour <= 17:
+            activity = ActivityType.SOCIAL_TIME
+            subtype = "friends"
+        base_day.append(DayEpisode(hour, activity, BlockFlexibility.FLEXIBLE, subtype))
+
+    def count(day, activity_type, subtype=None):
+        return sum(
+            1
+            for episode in day
+            if episode.activity_type == activity_type and (subtype is None or episode.subtype == subtype)
+        )
+
+    low = AcuteIllnessConstraint(duration_days=1, intensity="low").apply(base_day, 0)
+    medium = AcuteIllnessConstraint(duration_days=1, intensity="medium").apply(base_day, 0)
+    high = AcuteIllnessConstraint(duration_days=1, intensity="high").apply(base_day, 0)
+
+    assert count(low, ActivityType.PHYSICAL_ACTIVITY) > 0
+    assert count(low, ActivityType.WORK) == count(base_day, ActivityType.WORK)
+    assert count(low, ActivityType.DOWNTIME, "illness_recovery") > 0
+
+    assert count(medium, ActivityType.PHYSICAL_ACTIVITY) == 0
+    assert count(medium, ActivityType.WORK) < count(base_day, ActivityType.WORK)
+    assert count(medium, ActivityType.SLEEP) >= count(base_day, ActivityType.SLEEP) + 2
+
+    assert count(high, ActivityType.PHYSICAL_ACTIVITY) == 0
+    assert count(high, ActivityType.WORK) == 0
+    assert count(high, ActivityType.SLEEP) >= count(base_day, ActivityType.SLEEP) + 3
+
+
 def test_time_of_day_pattern() -> None:
     model = EnergyModel()
     s = _sched(0)

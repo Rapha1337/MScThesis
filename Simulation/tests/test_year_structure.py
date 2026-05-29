@@ -15,6 +15,27 @@ class _DummyParams:
     pass
 
 
+def _expected_value(distribution: dict[object, float]) -> float:
+    return sum(float(value) * probability for value, probability in distribution.items())
+
+
+def test_default_illness_calibration_matches_functional_schedule_model() -> None:
+    config = YearStructureConfig()
+
+    assert config.illness_occurrence_prob == 0.80
+    assert config.illness_episode_count_probs == {0: 0.20, 1: 0.55, 2: 0.20, 3: 0.05}
+    assert config.illness_duration_days_probs == {1: 0.15, 2: 0.30, 3: 0.30, 4: 0.15, 5: 0.07, 6: 0.03}
+    assert config.illness_intensity_probs == {"low": 0.55, "medium": 0.35, "high": 0.10}
+
+    expected_conditional_episodes = _expected_value(config.illness_episode_count_probs)
+    expected_episodes_per_year = config.illness_occurrence_prob * expected_conditional_episodes
+    expected_duration_days = _expected_value(config.illness_duration_days_probs)
+
+    assert round(expected_conditional_episodes, 2) == 1.10
+    assert round(expected_episodes_per_year, 2) == 0.88
+    assert round(expected_duration_days, 2) == 2.78
+
+
 def test_generate_year_default_has_52_weeks() -> None:
     generator = YearStructureGenerator()
     year = generator.generate_year(persona_id="p1", persona_seed=123, parameters=_DummyParams())
