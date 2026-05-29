@@ -8,6 +8,7 @@ from agent_context import build_agent_context
 from constraints.manager import ConstraintManager
 from constraints.illness import AcuteIllnessConstraint
 from energy_model import EnergyModel
+from intensity import normalize_intensity
 from persona_wrappers import StudentHoursWrapper
 from schedule_model_student import (
     ActivityType,
@@ -115,11 +116,7 @@ class SimulationRunner:
         return active_events
 
     def _illness_intensity_for_constraint(self, intensity: str | None) -> str:
-        if intensity == "medium":
-            return "mid"
-        if intensity in {"low", "mid", "high"}:
-            return intensity
-        return "low"
+        return str(normalize_intensity(intensity, default="low"))
 
     def _events_to_constraints(
         self,

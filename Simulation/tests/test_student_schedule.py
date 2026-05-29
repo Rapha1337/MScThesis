@@ -482,26 +482,26 @@ def main() -> None:
     )
     _record_constraint_result("low illness", low_ok, "acute illness low: constraint behavior mismatch")
 
-    mid_constraint = AcuteIllnessConstraint(start_weekday=0, duration_days=1, intensity="mid")
-    mid_day = generate_full_day_schedule(
+    medium_constraint = AcuteIllnessConstraint(start_weekday=0, duration_days=1, intensity="medium")
+    medium_day = generate_full_day_schedule(
         constraint_structure,
         0,
         rng=random.Random(base_seed + 100),
-        constraints=[mid_constraint],
+        constraints=[medium_constraint],
     )
-    mid_cmp = compare_counts(base_week[0], mid_day)
-    mid_valid = validate_full_day_schedule(mid_day)["ok"]
-    mid_ok = (
-        mid_valid
-        and mid_cmp["physical_illness"] == 0
-        and mid_cmp["social_illness"] == 0
-        and (mid_cmp["work_original"] == 0 or mid_cmp["work_illness"] < mid_cmp["work_original"])
+    medium_cmp = compare_counts(base_week[0], medium_day)
+    medium_valid = validate_full_day_schedule(medium_day)["ok"]
+    medium_ok = (
+        medium_valid
+        and medium_cmp["physical_illness"] == 0
+        and medium_cmp["social_illness"] == 0
+        and (medium_cmp["work_original"] == 0 or medium_cmp["work_illness"] < medium_cmp["work_original"])
         and (
-            mid_cmp["sleep_illness"] >= mid_cmp["sleep_original"]
-            or mid_cmp["recovery_illness"] > mid_cmp["recovery_original"]
+            medium_cmp["sleep_illness"] >= medium_cmp["sleep_original"]
+            or medium_cmp["recovery_illness"] > medium_cmp["recovery_original"]
         )
     )
-    _record_constraint_result("mid illness", mid_ok, "acute illness mid: constraint behavior mismatch")
+    _record_constraint_result("medium illness", medium_ok, "acute illness medium: constraint behavior mismatch")
 
     high_constraint = AcuteIllnessConstraint(start_weekday=0, duration_days=1, intensity="high")
     high_day = generate_full_day_schedule(

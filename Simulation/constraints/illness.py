@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .base import Constraint
+from intensity import normalize_intensity
 
 
 @dataclass
@@ -20,8 +21,7 @@ class AcuteIllnessConstraint(Constraint):
             raise ValueError("duration_days must be >= 0")
         if not 0 <= self.start_weekday <= 6:
             raise ValueError("start_weekday must be between 0 and 6")
-        if self.intensity not in {"low", "mid", "high"}:
-            raise ValueError("intensity must be one of: low, mid, high")
+        self.intensity = str(normalize_intensity(self.intensity))
 
     def is_active_on_weekday(self, weekday: int) -> bool:
         if not self.is_active or self.duration_days == 0:
@@ -58,7 +58,7 @@ class AcuteIllnessConstraint(Constraint):
         if self.intensity == "low":
             _replace_hours(physical[len(physical) // 2 :], ActivityType.DOWNTIME, "illness_recovery")
             _replace_hours(social[len(social) // 2 :], ActivityType.DOWNTIME, "illness_recovery")
-        elif self.intensity == "mid":
+        elif self.intensity == "medium":
             _replace_hours(physical, ActivityType.DOWNTIME, "illness_recovery")
             _replace_hours(social, ActivityType.DOWNTIME, "illness_recovery")
             _replace_hours(work_like[len(work_like) // 2 :], ActivityType.DOWNTIME, "illness_recovery")
@@ -67,7 +67,7 @@ class AcuteIllnessConstraint(Constraint):
             _replace_hours(social, ActivityType.DOWNTIME, "illness_recovery")
             _replace_hours(work_like, ActivityType.DOWNTIME, "illness_recovery")
 
-        sleep_targets = 2 if self.intensity == "mid" else 3 if self.intensity == "high" else 0
+        sleep_targets = 2 if self.intensity == "medium" else 3 if self.intensity == "high" else 0
         if sleep_targets > 0:
             preferred_sleep_hours = [22, 21, 20, 7, 6, 5]
             converted = 0
