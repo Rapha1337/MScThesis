@@ -49,6 +49,38 @@ def test_energy_bounds_and_determinism() -> None:
     assert a.to_dict() == b.to_dict()
 
 
+def test_energy_model_reference_values_stay_unchanged() -> None:
+    model = EnergyModel()
+    energy = model.compute_energy_state(
+        hour=10,
+        phase=YearPhase.SEMESTER,
+        active_constraints=[],
+        constrained_schedule=_sched(5),
+        seed=42,
+    )
+
+    assert energy.energy_level == 0.722
+    assert energy.energy_category == "high"
+    assert energy.drivers == {
+        "time_of_day_effect": 0.08,
+        "phase_effect": 0.0,
+        "illness_effect": 0.0,
+        "daily_workload_effect": -0.05,
+        "prior_activity_effect": 0.0,
+        "stochastic_effect": 0.042,
+    }
+
+
+def test_energy_category_uses_low_medium_high() -> None:
+    model = EnergyModel()
+
+    assert {model._category(level) for level in [0.0, 0.329, 0.33, 0.659, 0.66, 1.0]} == {
+        "low",
+        "medium",
+        "high",
+    }
+
+
 def test_medium_illness_intensity_is_canonical() -> None:
     illness = AcuteIllnessConstraint(name="flu", intensity="medium", start_weekday=0, duration_days=1)
     assert illness.intensity == "medium"
@@ -231,6 +263,15 @@ def test_schedule_preservation_and_context_integration() -> None:
     assert [(e.hour, e.activity_type, e.subtype) for e in normal_before] == [(e.hour, e.activity_type, e.subtype) for e in normal_after]
     assert [(e.hour, e.activity_type, e.subtype) for e in constrained_before] == [(e.hour, e.activity_type, e.subtype) for e in constrained_after]
     assert "agent_state" in context and "energy" in context["agent_state"]
+    assert "energy_state" not in context
+    assert "energy_state" not in context["agent_state"]
+
+    energy_context = context["agent_state"]["energy"]
+    assert "energy_level" in energy_context
+    assert "energy_category" in energy_context
+    assert "energy_factors" in energy_context
+    assert "energy_state" not in energy_context
+    assert energy_context["energy_category"] in {"low", "medium", "high"}
 
 
 def _illness_constraint(intensity: str) -> dict[str, object]:
@@ -260,11 +301,11 @@ def _print_energy_example(
     print(f"  workload: {workload}")
     print(f"  prior PA: {prior_pa}")
 
-    print("\nEnergyState:")
+    print("\nEnergy level result:")
     print(f"  energy_level: {energy.energy_level}")
-    print(f"  category: {energy.energy_category}")
+    print(f"  energy_category: {energy.energy_category}")
 
-    print("\nDrivers:")
+    print("\nEnergy factors:")
     for key, value in energy.drivers.items():
         print(f"  {key}: {value}")
 
@@ -276,7 +317,7 @@ def demo_energy_state_examples() -> None:
     model = EnergyModel()
     seed = 42
 
-    print("=== ENERGY STATE DEMO EXAMPLES ===")
+    print("=== ENERGY LEVEL DEMO EXAMPLES ===")
 
     energy_a = model.compute_energy_state(
         hour=10,
@@ -393,9 +434,11 @@ def demo_energy_state_examples() -> None:
 def test_demo_energy_state_examples_runs(capsys) -> None:
     demo_energy_state_examples()
     captured = capsys.readouterr()
-    assert "ENERGY STATE DEMO EXAMPLES" in captured.out
+    assert "ENERGY LEVEL DEMO EXAMPLES" in captured.out
     assert "Example A" in captured.out
-    assert "EnergyState" in captured.out
+    assert "energy_level" in captured.out
+    assert "energy_category" in captured.out
+    assert "EnergyState" not in captured.out
 
 
 if __name__ == "__main__":
