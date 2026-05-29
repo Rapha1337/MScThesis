@@ -30,6 +30,17 @@ def main() -> None:
     print(f"public_holiday_count: {len(public_holiday_events)}")
     print(f"illness_event_count: {len(illness_events)}")
 
+    high_stress_weeks = [week.week_index for week in year.weeks if week.phase == "high_stress"]
+    high_stress_blocks: list[list[int]] = []
+    for week_idx in high_stress_weeks:
+        if high_stress_blocks and week_idx == high_stress_blocks[-1][-1] + 1:
+            high_stress_blocks[-1].append(week_idx)
+        else:
+            high_stress_blocks.append([week_idx])
+    print("high_stress_blocks:")
+    for block in high_stress_blocks:
+        print(f"  - weeks={block[0]:02d}-{block[-1]:02d} length={len(block)}")
+
     print("full_year_week_overview:")
     for week in year.weeks:
         print(

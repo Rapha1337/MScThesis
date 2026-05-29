@@ -212,32 +212,145 @@ class YearStructureGenerator:
                 overflow -= take_from_high
                 counts["normal"] = max(0, counts["normal"] - overflow)
 
-        fill_counts = counts.copy()
-        fill_counts["holiday"] = max(0, counts["holiday"] - len(reserved_holiday_indices))
+        self._place_high_stress_blocks(
+            weeks=weeks,
+            target_count=counts["high_stress"],
+            rng=rng,
+        )
 
-        phase_values: list[str] = []
-        for phase in phases:
-            phase_values.extend([phase] * fill_counts[phase])
-        rng.shuffle(phase_values)
+        extra_holiday_count = max(0, counts["holiday"] - len(reserved_holiday_indices))
+        available_for_extra_holiday = [
+            idx
+            for idx in range(n_weeks)
+            if weeks[idx].phase == "normal" and idx not in reserved_holiday_indices
+        ]
+        extra_holiday_indices = set(
+            rng.sample(
+                available_for_extra_holiday,
+                k=min(extra_holiday_count, len(available_for_extra_holiday)),
+            )
+        )
+        for idx in extra_holiday_indices:
+            weeks[idx].phase = "holiday"
 
-        if self.config.allow_phase_adjacency_rules:
-            for _ in range(6):
-                changed = False
-                for i in range(1, len(phase_values) - 1):
-                    if phase_values[i] == "high_stress" and phase_values[i - 1] != "high_stress" and phase_values[i + 1] != "high_stress":
-                        j = rng.randrange(len(phase_values))
-                        phase_values[i], phase_values[j] = phase_values[j], phase_values[i]
-                        changed = True
-                if not changed:
-                    break
-
-        free_indices = [idx for idx in range(n_weeks) if idx not in reserved_holiday_indices]
-        for pos, idx in enumerate(free_indices):
-            weeks[idx].phase = phase_values[pos]
         for idx in reserved_holiday_indices:
             weeks[idx].phase = "holiday"
         self._validate_weeks(weeks, n_weeks)
         return weeks
+
+    def _place_high_stress_blocks(
+        self,
+        weeks: list[WeekPlan],
+        target_count: int,
+        rng: random.Random,
+    ) -> None:
+        remaining = max(0, target_count)
+        holiday_preferences = [
+            ("winter_holiday", 1, 3),
+            ("summer_holiday", 2, 4),
+        ]
+
+        for pref_idx, (tag, min_len, max_len) in enumerate(holiday_preferences):
+            if remaining <= 0:
+                break
+
+            block_weeks = [week.week_index for week in weeks if week.fixed_block_tag == tag]
+            if not block_weeks:
+                continue
+
+            later_minimum = sum(
+                later_min
+                for later_tag, later_min, _ in holiday_preferences[pref_idx + 1 :]
+                if any(week.fixed_block_tag == later_tag for week in weeks)
+            )
+            if remaining <= later_minimum:
+                continue
+
+            holiday_start = min(block_weeks)
+            available_before: list[int] = []
+            idx = holiday_start - 1
+            while idx >= 0 and self._is_free_normal_week(weeks[idx]):
+                available_before.append(idx)
+                idx -= 1
+            available_before.reverse()
+            if not available_before:
+                continue
+
+            max_usable = min(max_len, len(available_before), remaining - later_minimum)
+            if max_usable <= 0:
+                continue
+            desired_min = min(min_len, max_usable)
+            block_len = rng.randint(desired_min, max_usable)
+            for week_idx in available_before[-block_len:]:
+                weeks[week_idx].phase = "high_stress"
+            remaining -= block_len
+
+        self._place_remaining_high_stress_blocks(weeks=weeks, target_count=remaining, rng=rng)
+
+    def _place_remaining_high_stress_blocks(
+        self,
+        weeks: list[WeekPlan],
+        target_count: int,
+        rng: random.Random,
+    ) -> None:
+        remaining = max(0, target_count)
+        for block_len in self._split_high_stress_remainder(remaining=remaining, rng=rng):
+            runs = [run for run in self._free_normal_runs(weeks) if len(run) >= block_len]
+            if not runs:
+                runs = self._free_normal_runs(weeks)
+            if not runs:
+                break
+
+            run = rng.choice(runs)
+            effective_len = min(block_len, len(run))
+            start_offset = rng.randrange(0, len(run) - effective_len + 1)
+            for week_idx in run[start_offset : start_offset + effective_len]:
+                weeks[week_idx].phase = "high_stress"
+
+    def _split_high_stress_remainder(self, remaining: int, rng: random.Random) -> list[int]:
+        if remaining <= 0:
+            return []
+
+        block_count = min(3, max(1, (remaining + 2) // 3))
+        lengths: list[int] = []
+        weeks_left = remaining
+        blocks_left = block_count
+
+        while blocks_left > 0:
+            if blocks_left == 1:
+                lengths.append(weeks_left)
+                break
+
+            min_rest = 2 * (blocks_left - 1)
+            max_rest = 3 * (blocks_left - 1)
+            preferred_min_current = 2 if weeks_left >= 2 * blocks_left else 1
+            min_current = max(preferred_min_current, weeks_left - max_rest)
+            max_current = min(3, weeks_left - min_rest)
+            if max_current < min_current:
+                max_current = min_current
+
+            block_len = rng.randint(min_current, max_current)
+            lengths.append(block_len)
+            weeks_left -= block_len
+            blocks_left -= 1
+
+        return lengths
+
+    def _free_normal_runs(self, weeks: list[WeekPlan]) -> list[list[int]]:
+        runs: list[list[int]] = []
+        current: list[int] = []
+        for week in weeks:
+            if self._is_free_normal_week(week):
+                current.append(week.week_index)
+            elif current:
+                runs.append(current)
+                current = []
+        if current:
+            runs.append(current)
+        return runs
+
+    def _is_free_normal_week(self, week: WeekPlan) -> bool:
+        return week.phase == "normal" and week.fixed_block_tag is None
 
     def _reserve_fixed_holiday_blocks(self, weeks: list[WeekPlan], n_weeks: int, rng: random.Random) -> set[int]:
         reserved: set[int] = set()

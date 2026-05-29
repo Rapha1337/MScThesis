@@ -158,3 +158,95 @@ def test_year_structure_normalizes_legacy_mid_config_to_medium() -> None:
     assert illness_events
     assert all(event.intensity == "medium" for event in illness_events)
     assert generator.config.illness_intensity_probs == {"medium": 1.0}
+
+
+def _phase_indices(year, phase: str) -> list[int]:
+    return [week.week_index for week in year.weeks if week.phase == phase]
+
+
+def _contiguous_blocks(indices: list[int]) -> list[list[int]]:
+    if not indices:
+        return []
+    blocks: list[list[int]] = [[indices[0]]]
+    for idx in indices[1:]:
+        if idx == blocks[-1][-1] + 1:
+            blocks[-1].append(idx)
+        else:
+            blocks.append([idx])
+    return blocks
+
+
+def _exam_friendly_config() -> YearStructureConfig:
+    return YearStructureConfig(
+        phase_target_ranges={
+            "normal": (34, 34),
+            "high_stress": (6, 6),
+            "holiday": (12, 12),
+        },
+        holiday_block_ranges={"winter_holiday": (4, 4), "summer_holiday": (8, 8)},
+        holiday_block_placement_windows={
+            "winter_holiday": [(48, 51)],
+            "summer_holiday": [(30, 37)],
+        },
+    )
+
+
+def test_high_stress_count_stays_in_configured_range() -> None:
+    config = YearStructureConfig(
+        phase_target_ranges={"normal": (30, 34), "high_stress": (6, 10), "holiday": (12, 16)}
+    )
+    generator = YearStructureGenerator(config=config)
+    year = generator.generate_year(persona_id="p6", persona_seed=111, parameters=_DummyParams())
+
+    low, high = config.phase_target_ranges["high_stress"]
+    assert low <= year.phase_counts["high_stress"] <= high
+
+
+def test_high_stress_does_not_overwrite_fixed_holiday_blocks() -> None:
+    generator = YearStructureGenerator(config=_exam_friendly_config())
+    year = generator.generate_year(persona_id="p7", persona_seed=222, parameters=_DummyParams())
+
+    for week in year.weeks:
+        if week.fixed_block_tag in {"winter_holiday", "summer_holiday"}:
+            assert week.phase == "holiday"
+
+
+def test_high_stress_has_multi_week_block_when_count_allows() -> None:
+    generator = YearStructureGenerator(config=_exam_friendly_config())
+    year = generator.generate_year(persona_id="p8", persona_seed=333, parameters=_DummyParams())
+
+    high_stress_blocks = _contiguous_blocks(_phase_indices(year, "high_stress"))
+    assert year.phase_counts["high_stress"] >= 2
+    assert any(len(block) >= 2 for block in high_stress_blocks)
+
+
+def test_high_stress_prefers_weeks_directly_before_summer_holiday_when_available() -> None:
+    generator = YearStructureGenerator(config=_exam_friendly_config())
+    year = generator.generate_year(persona_id="p9", persona_seed=444, parameters=_DummyParams())
+
+    summer_weeks = [week.week_index for week in year.weeks if week.fixed_block_tag == "summer_holiday"]
+    summer_start = min(summer_weeks)
+
+    assert [year.weeks[idx].phase for idx in range(summer_start - 2, summer_start)] == [
+        "high_stress",
+        "high_stress",
+    ]
+
+
+def test_high_stress_prefers_weeks_directly_before_or_near_winter_holiday_when_available() -> None:
+    generator = YearStructureGenerator(config=_exam_friendly_config())
+    year = generator.generate_year(persona_id="p10", persona_seed=555, parameters=_DummyParams())
+
+    winter_weeks = [week.week_index for week in year.weeks if week.fixed_block_tag == "winter_holiday"]
+    winter_start = min(winter_weeks)
+    nearby_before_winter = range(max(0, winter_start - 3), winter_start)
+
+    assert any(year.weeks[idx].phase == "high_stress" for idx in nearby_before_winter)
+
+
+def test_year_structure_deterministic_with_grouped_high_stress_blocks() -> None:
+    generator = YearStructureGenerator(config=_exam_friendly_config())
+    a = generator.generate_year(persona_id="p11", persona_seed=666, parameters=_DummyParams())
+    b = generator.generate_year(persona_id="p11", persona_seed=666, parameters=_DummyParams())
+
+    assert asdict(a) == asdict(b)
