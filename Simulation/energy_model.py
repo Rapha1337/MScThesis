@@ -4,6 +4,7 @@ import random
 from typing import Any
 
 from agent_state import EnergyState
+from intensity import normalize_intensity
 
 
 class EnergyModel:
@@ -77,7 +78,7 @@ class EnergyModel:
 
     def _illness_effect(self, active_constraints: list[dict[str, object]]) -> float:
         intensity = self._extract_illness_intensity(active_constraints)
-        return {"low": -0.10, "mid": -0.25, "high": -0.40}.get(intensity, 0.0)
+        return {"low": -0.10, "medium": -0.25, "high": -0.40}.get(intensity, 0.0)
 
     def _extract_illness_intensity(self, active_constraints: list[dict[str, object]]) -> str | None:
         for constraint in active_constraints:
@@ -88,9 +89,10 @@ class EnergyModel:
             intensity = constraint.get("intensity")
             if intensity is None:
                 continue
-            value = str(intensity).lower()
-            if value in {"low", "mid", "high"}:
-                return value
+            try:
+                return normalize_intensity(intensity)
+            except ValueError:
+                continue
         return None
 
     def _daily_workload_effect(self, schedule: list[dict[str, object]]) -> float:

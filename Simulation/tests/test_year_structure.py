@@ -142,3 +142,19 @@ def test_no_summer_holiday_at_week_zero_if_not_in_summer_window() -> None:
     generator = YearStructureGenerator(config=config)
     year = generator.generate_year(persona_id="p5", persona_seed=4040, parameters=_DummyParams())
     assert all(not (w.week_index == 0 and w.fixed_block_tag == "summer_holiday") for w in year.weeks)
+
+
+def test_year_structure_normalizes_legacy_mid_config_to_medium() -> None:
+    config = YearStructureConfig(
+        illness_duration_days_probs={1: 1.0},
+        illness_intensity_probs={"mid": 1.0},
+    )
+    config.illness_occurrence_prob = 1.0
+    config.illness_episode_count_probs = {1: 1.0}
+    generator = YearStructureGenerator(config=config)
+    year = generator.generate_year(persona_id="p5", persona_seed=2027, parameters=_DummyParams())
+
+    illness_events = [event for event in year.events if event.event_type == "illness"]
+    assert illness_events
+    assert all(event.intensity == "medium" for event in illness_events)
+    assert generator.config.illness_intensity_probs == {"medium": 1.0}

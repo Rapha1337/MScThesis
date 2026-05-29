@@ -49,6 +49,46 @@ def test_energy_bounds_and_determinism() -> None:
     assert a.to_dict() == b.to_dict()
 
 
+def test_medium_illness_intensity_is_canonical() -> None:
+    illness = AcuteIllnessConstraint(name="flu", intensity="medium", start_weekday=0, duration_days=1)
+    assert illness.intensity == "medium"
+
+
+def test_legacy_mid_illness_alias_normalizes_to_medium() -> None:
+    illness = AcuteIllnessConstraint(name="flu", intensity="mid", start_weekday=0, duration_days=1)
+    assert illness.intensity == "medium"
+
+
+def test_energy_model_treats_legacy_mid_as_medium() -> None:
+    model = EnergyModel()
+    schedule = _sched(2)
+    medium = model.compute_energy_state(
+        hour=10,
+        phase=YearPhase.SEMESTER,
+        active_constraints=[_illness_constraint("medium")],
+        constrained_schedule=schedule,
+        seed=17,
+    )
+    legacy_mid = model.compute_energy_state(
+        hour=10,
+        phase=YearPhase.SEMESTER,
+        active_constraints=[_illness_constraint("mid")],
+        constrained_schedule=schedule,
+        seed=17,
+    )
+    assert medium.to_dict() == legacy_mid.to_dict()
+
+
+def test_runner_context_outputs_medium_for_legacy_mid_constraint() -> None:
+    persona = StudentHoursWrapper.from_zve_student_generic(name="energy_student")
+    illness = AcuteIllnessConstraint(name="flu", intensity="mid", start_weekday=1, duration_days=2)
+    runner = SimulationRunner(persona, YearPhase.SEMESTER, FakeEnv(), ConstraintManager([illness]), seed=37)
+
+    context = runner.get_day_context(1)
+
+    assert context["active_constraints"][0]["intensity"] == "medium"
+
+
 def test_time_of_day_pattern() -> None:
     model = EnergyModel()
     s = _sched(0)
@@ -126,7 +166,7 @@ def test_high_illness_remains_strong_energy_penalty() -> None:
 
 def test_schedule_preservation_and_context_integration() -> None:
     persona = StudentHoursWrapper.from_zve_student_generic(name="energy_student")
-    illness = AcuteIllnessConstraint(name="flu", intensity="mid", start_weekday=1, duration_days=2)
+    illness = AcuteIllnessConstraint(name="flu", intensity="medium", start_weekday=1, duration_days=2)
     runner = SimulationRunner(persona, YearPhase.SEMESTER, FakeEnv(), ConstraintManager([illness]), seed=37)
 
     normal_before = runner.generate_normal_day(1)
@@ -208,19 +248,19 @@ def demo_energy_state_examples() -> None:
     energy_b = model.compute_energy_state(
         hour=10,
         phase=YearPhase.SEMESTER,
-        active_constraints=[_illness_constraint("mid")],
+        active_constraints=[_illness_constraint("medium")],
         constrained_schedule=_sched(5),
         seed=seed,
     )
     _print_energy_example(
-        "Example B: Semester morning with mid illness",
+        "Example B: Semester morning with medium illness",
         hour=10,
         phase=YearPhase.SEMESTER,
-        illness="mid",
+        illness="medium",
         workload="medium",
         prior_pa="no",
         energy=energy_b,
-        interpretation="Energy is lower because mid illness adds a substantial penalty.",
+        interpretation="Energy is lower because medium illness adds a substantial penalty.",
     )
 
     energy_c = model.compute_energy_state(

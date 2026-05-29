@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 import random
 
+from intensity import CANONICAL_INTENSITIES, normalize_intensity
+
 ALLOWED_PHASES = {"normal", "high_stress", "holiday"}
-ALLOWED_INTENSITIES = {"low", "medium", "high"}
+ALLOWED_INTENSITIES = CANONICAL_INTENSITIES
 
 
 @dataclass
@@ -53,7 +55,7 @@ class YearStructureConfig:
 
     public_holidays_enabled: bool = True
     public_holiday_days_range: tuple[int, int] = (9, 13)
-    event_default_intensity: dict[str, str] = field(
+    event_default_intensity: dict[str, str | None] = field(
         default_factory=lambda: {"public_holiday": "low", "illness": "low"}
     )
 
@@ -103,7 +105,20 @@ class YearStructure:
 class YearStructureGenerator:
     def __init__(self, config: YearStructureConfig | None = None) -> None:
         self.config = config or YearStructureConfig()
+        self._normalize_config_intensities(self.config)
         self._validate_config(self.config)
+
+    def _normalize_config_intensities(self, config: YearStructureConfig) -> None:
+        normalized_probs: dict[str, float] = {}
+        for intensity, probability in config.illness_intensity_probs.items():
+            canonical = str(normalize_intensity(intensity))
+            normalized_probs[canonical] = normalized_probs.get(canonical, 0.0) + float(probability)
+        config.illness_intensity_probs = normalized_probs
+
+        config.event_default_intensity = {
+            event_type: normalize_intensity(intensity, allow_none=True)
+            for event_type, intensity in config.event_default_intensity.items()
+        }
 
     def generate_year(
         self,
@@ -276,7 +291,7 @@ class YearStructureGenerator:
                 start_week = rng.randrange(n_weeks)
                 start_day = rng.randrange(7)
                 duration_days = int(self._sample_discrete(rng, self.config.illness_duration_days_probs))
-                intensity = str(self._sample_discrete(rng, self.config.illness_intensity_probs))
+                intensity = str(normalize_intensity(self._sample_discrete(rng, self.config.illness_intensity_probs)))
 
                 max_days_available = (n_weeks - start_week - 1) * 7 + (7 - start_day)
                 event_meta: dict[str, object] = {}
