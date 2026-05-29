@@ -152,7 +152,7 @@ def main():
         AcuteIllnessConstraint(
             start_weekday=1,
             duration_days=2,
-            intensity="mid",
+            intensity="medium",
             is_active=True,
         ),
         AcuteIllnessConstraint(
