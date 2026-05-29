@@ -231,7 +231,7 @@ def generate_realistic_student_year(
                 if event.event_type == "illness":
                     from constraints.illness import AcuteIllnessConstraint
 
-                    intensity = "mid" if event.intensity == "medium" else str(event.intensity or "low")
+                    intensity = str(event.intensity or "low")
                     illness_constraints.append(
                         AcuteIllnessConstraint(
                             duration_days=1,
