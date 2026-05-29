@@ -364,7 +364,7 @@ class SimulationRunner:
 
         world_info = self._last_world_info if self._last_world_info is not None else self.reset_world()
 
-        energy_state = self.energy_model.compute_energy_state(
+        energy_level_result = self.energy_model.compute_energy_state(
             hour=hour,
             phase=phase,
             active_constraints=active_constraints,
@@ -380,7 +380,7 @@ class SimulationRunner:
             active_constraints=active_constraints,
             normal_schedule=[self._episode_to_dict(ep) for ep in normal_schedule],
             constrained_schedule=[self._episode_to_dict(ep) for ep in constrained_schedule],
-            energy_state=energy_state,
+            energy_level_result=energy_level_result,
         )
 
 

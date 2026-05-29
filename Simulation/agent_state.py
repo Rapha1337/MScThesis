@@ -13,9 +13,12 @@ class EnergyState:
     drivers: dict[str, float]
 
     def to_dict(self) -> dict[str, object]:
+        energy_factors = dict(self.drivers)
         return {
             "energy_level": self.energy_level,
             "energy_category": self.energy_category,
             "description": self.description,
-            "drivers": dict(self.drivers),
+            "energy_factors": energy_factors,
+            # Legacy alias for existing consumers; prefer energy_factors in new code.
+            "drivers": dict(energy_factors),
         }
