@@ -48,7 +48,8 @@ class SimulationRunner:
 
         self.year_structure = None
         self._weekly_structure_cache: dict[int, Any] = {}
-        self._day_schedule_cache: dict[tuple[int, int], list[DayEpisode]] = {}
+        self._baseline_day_schedule_cache: dict[tuple[int, int], list[DayEpisode]] = {}
+        self._constrained_day_schedule_cache: dict[tuple[int, int], list[DayEpisode]] = {}
 
         if self.use_year_structure:
             self.year_structure = YearStructureGenerator().generate_year(
@@ -136,16 +137,15 @@ class SimulationRunner:
                 getattr(event, "intensity", None)
             )
 
-            start_week = int(getattr(event, "start_week", getattr(event, "week_index", week_index)))
-            start_day = int(getattr(event, "start_day", getattr(event, "weekday", weekday)))
-            duration_days = int(getattr(event, "duration_days", 1))
-
+            # Events are pre-filtered to the requested absolute day. Convert them
+            # into a day-local constraint so multi-week illness episodes remain
+            # active after crossing a week boundary.
             constraints.append(
                 AcuteIllnessConstraint(
                     name=getattr(event, "event_id", "year_structure_illness"),
                     intensity=intensity,
-                    start_weekday=start_day,
-                    duration_days=duration_days,
+                    start_weekday=weekday,
+                    duration_days=1,
                 )
             )
 
@@ -209,6 +209,28 @@ class SimulationRunner:
         self._weekly_structure_cache[week_index] = weekly_structure
         return weekly_structure
 
+    def _generate_baseline_day_schedule_for_weekday(
+        self,
+        week_index: int,
+        weekday: int,
+    ) -> list[DayEpisode]:
+        cache_key = (week_index, weekday)
+
+        if cache_key in self._baseline_day_schedule_cache:
+            return self._baseline_day_schedule_cache[cache_key]
+
+        weekly_structure = self._get_weekly_structure_for_week(week_index)
+        day_seed = self.seed + week_index * 10_000 + weekday
+
+        day_schedule = generate_full_day_schedule(
+            weekly_structure,
+            weekday,
+            rng=random.Random(day_seed),
+        )
+
+        self._baseline_day_schedule_cache[cache_key] = day_schedule
+        return day_schedule
+
     def _generate_day_schedule_for_weekday(
         self,
         week_index: int,
@@ -216,8 +238,8 @@ class SimulationRunner:
     ) -> list[DayEpisode]:
         cache_key = (week_index, weekday)
 
-        if cache_key in self._day_schedule_cache:
-            return self._day_schedule_cache[cache_key]
+        if cache_key in self._constrained_day_schedule_cache:
+            return self._constrained_day_schedule_cache[cache_key]
 
         weekly_structure = self._get_weekly_structure_for_week(week_index)
         active_events = self._get_active_events_for_day(week_index, weekday)
@@ -242,7 +264,7 @@ class SimulationRunner:
             weekday,
         )
 
-        self._day_schedule_cache[cache_key] = day_schedule
+        self._constrained_day_schedule_cache[cache_key] = day_schedule
         return day_schedule
 
     def generate_normal_day(self, weekday: int) -> list[DayEpisode]:
@@ -254,7 +276,7 @@ class SimulationRunner:
             )
 
         week_index, _, _ = self._derive_time_indices()
-        return self._generate_day_schedule_for_weekday(week_index, weekday)
+        return self._generate_baseline_day_schedule_for_weekday(week_index, weekday)
 
     def generate_constrained_day(self, weekday: int) -> list[DayEpisode]:
         if not self.use_year_structure:
@@ -312,10 +334,13 @@ class SimulationRunner:
         }
 
     def get_day_context(self, weekday: int) -> dict:
+        event_constraints: list[Any] = []
         if self.use_year_structure:
             week_index, _, hour = self._derive_time_indices()
-            normal_schedule = self._generate_day_schedule_for_weekday(week_index, weekday)
-            constrained_schedule = normal_schedule
+            active_events = self._get_active_events_for_day(week_index, weekday)
+            event_constraints = self._events_to_constraints(active_events, week_index, weekday)
+            normal_schedule = self._generate_baseline_day_schedule_for_weekday(week_index, weekday)
+            constrained_schedule = self._generate_day_schedule_for_weekday(week_index, weekday)
             phase = YearPhase.coerce(self._get_week_plan(week_index).phase)
         else:
             normal_schedule = self.generate_normal_day(weekday)
@@ -324,13 +349,17 @@ class SimulationRunner:
             world_info = self._last_world_info if self._last_world_info is not None else self.reset_world()
             hour = int(world_info.get("hour", 12)) if isinstance(world_info, dict) else 12
 
+        active_constraint_objects = [
+            *event_constraints,
+            *self.constraint_manager.get_active_constraints(weekday),
+        ]
         active_constraints = [
             {
                 "name": constraint.name,
                 "type": constraint.__class__.__name__,
                 "intensity": getattr(constraint, "intensity", None),
             }
-            for constraint in self.constraint_manager.get_active_constraints(weekday)
+            for constraint in active_constraint_objects
         ]
 
         world_info = self._last_world_info if self._last_world_info is not None else self.reset_world()

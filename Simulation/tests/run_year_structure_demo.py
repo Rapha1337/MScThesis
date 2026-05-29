@@ -55,6 +55,16 @@ def main() -> None:
     for week in holiday_examples:
         print(f"  - week={week.week_index:02d} tag={week.fixed_block_tag} phase={week.phase}")
 
+    print("example_illness_events:")
+    if not illness_events:
+        print("  - none")
+    for event in illness_events[:8]:
+        print(
+            "  - "
+            f"id={event.event_id}, start_week={event.start_week}, start_day={event.start_day}, "
+            f"duration_days={event.duration_days}, intensity={event.intensity}, source={event.source}"
+        )
+
     print("example_public_holiday_events:")
     if not public_holiday_events:
         print("  - none")
