@@ -58,7 +58,32 @@ def _accessibility_entry(hour: int) -> dict[str, object]:
         },
         "accessibility": {
             "current_location": "home",
-            "targets": {},
+            "targets": {
+                "home": {
+                    "location": "home",
+                    "distance_km": 0.0,
+                    "travel_times_min": {"walk": 0.0, "bike": 0.0, "car": 0.0},
+                    "source": "same_location",
+                },
+                "workplace": {
+                    "location": "workplace",
+                    "distance_km": 3.0,
+                    "travel_times_min": {"walk": 37.5, "bike": 12.0, "car": 6.0},
+                    "source": "fixture",
+                },
+                "indoor_activity": {
+                    "location": "indoor_activity",
+                    "distance_km": 1.2,
+                    "travel_times_min": {"walk": 15.0, "bike": 4.8, "car": 2.4},
+                    "source": "fixture",
+                },
+                "outdoor_activity": {
+                    "location": "outdoor_activity",
+                    "distance_km": 0.6,
+                    "travel_times_min": {"walk": 7.5, "bike": 2.4, "car": 1.2},
+                    "source": "fixture",
+                },
+            },
             "heuristic_note": "fixture",
         },
     }
@@ -126,31 +151,22 @@ def test_simulation_runner_day_context_returns_merged_hourly_context() -> None:
     json.dumps(context)
 
 
-def test_hourly_context_entries_include_schedule_accessibility_energy_and_environment_fields() -> None:
+def test_hourly_context_entries_include_compact_llm_facing_fields() -> None:
     context = _runner_context()
     required_fields = {
         "hour",
         "activity_type",
         "subtype",
-        "flexibility",
         "current_location",
-        "previous_location",
-        "location_changed_from_previous_hour",
-        "travel_from_previous_location",
-        "accessibility_from_current_location",
-        "energy_level",
-        "energy_score",
-        "energy_category",
-        "energy_effects",
-        "energy_drivers",
         "active_constraints",
+        "poi_accessibility",
+        "energy_level",
         "month",
         "season",
         "temperature_c",
         "feels_like_c",
         "precipitation_mm",
         "is_wet",
-        "weather_condition",
         "sun_frac",
         "is_daylight",
         "humidity_pct",
@@ -159,6 +175,53 @@ def test_hourly_context_entries_include_schedule_accessibility_energy_and_enviro
     }
 
     assert all(required_fields.issubset(entry) for entry in context["hourly_context_24h"])
+
+
+def test_hourly_context_excludes_non_llm_aliases_and_transition_debug_fields() -> None:
+    context = _runner_context()
+    excluded_fields = {
+        "energy_score",
+        "energy_category",
+        "category",
+        "previous_location",
+        "location_changed_from_previous_hour",
+        "travel_from_previous_location",
+        "accessibility_from_current_location",
+        "weather_condition",
+    }
+
+    assert all(excluded_fields.isdisjoint(entry) for entry in context["hourly_context_24h"])
+
+
+def test_hourly_context_poi_accessibility_is_compact() -> None:
+    context = _runner_context()
+
+    for entry in context["hourly_context_24h"]:
+        poi_accessibility = entry["poi_accessibility"]
+        assert set(poi_accessibility) == {"workplace", "indoor_activity", "outdoor_activity"}
+        for target_payload in poi_accessibility.values():
+            assert set(target_payload) == {"distance_km", "travel_times_min"}
+            assert set(target_payload["travel_times_min"]) == {"walk", "bike", "car"}
+
+
+def test_hourly_context_contains_weather_fields_and_excludes_weather_condition() -> None:
+    context = _runner_context()
+    weather_fields = {
+        "month",
+        "season",
+        "temperature_c",
+        "feels_like_c",
+        "precipitation_mm",
+        "is_wet",
+        "sun_frac",
+        "is_daylight",
+        "humidity_pct",
+        "wind_m_s",
+        "snow_cover",
+    }
+
+    assert all(weather_fields.issubset(entry) for entry in context["hourly_context_24h"])
+    assert all("weather_condition" not in entry for entry in context["hourly_context_24h"])
 
 
 def test_build_hourly_context_validates_hour_alignment() -> None:
@@ -194,6 +257,26 @@ def test_hourly_context_uses_constrained_schedule_not_normal_schedule() -> None:
     assert hourly_entry["subtype"] in {"illness_recovery", "illness_sleep"}
 
 
+
+def test_hourly_context_includes_active_illness_constraints_when_active() -> None:
+    illness = AcuteIllnessConstraint(name="demo_flu", intensity="medium", start_weekday=1, duration_days=1)
+    context = _runner_context(ConstraintManager([illness]))
+
+    for entry in context["hourly_context_24h"]:
+        assert entry["active_constraints"] == [
+            {"type": "AcuteIllnessConstraint", "name": "demo_flu", "intensity": "medium"}
+        ]
+
+
+def test_hourly_accessibility_and_energy_debug_structures_preserve_diagnostics() -> None:
+    context = _runner_context()
+
+    assert "previous_location" in context["hourly_accessibility_24h"][1]
+    assert "travel_from_previous_location" in context["hourly_accessibility_24h"][1]
+    assert "drivers" in context["hourly_energy_24h"][0]
+    assert "energy_effects" in context["hourly_energy_24h"][0]
+
+
 def test_hourly_context_environment_fields_exclude_old_mobility_fields() -> None:
     context = _runner_context()
     old_mobility_fields = {
@@ -212,3 +295,5 @@ def test_hourly_context_environment_fields_exclude_old_mobility_fields() -> None
     }
 
     assert all(old_mobility_fields.isdisjoint(entry) for entry in context["hourly_context_24h"])
+    serialized = json.dumps(context["hourly_context_24h"])
+    assert all(field not in serialized for field in old_mobility_fields)
