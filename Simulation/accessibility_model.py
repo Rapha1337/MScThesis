@@ -269,11 +269,11 @@ class AccessibilityModel:
         if origin not in LOCATION_ANCHORS:
             valid = ", ".join(LOCATION_ANCHORS)
             raise ValueError(f"Unsupported origin location '{origin}'. Expected one of: {valid}")
-        if destination not in ACCESSIBLE_TARGET_LOCATIONS:
-            valid = ", ".join(ACCESSIBLE_TARGET_LOCATIONS)
+        if destination not in LOCATION_ANCHORS:
+            valid = ", ".join(LOCATION_ANCHORS)
             raise ValueError(f"Unsupported destination location '{destination}'. Expected one of: {valid}")
 
-        if origin == "unknown":
+        if origin == "unknown" or destination == "unknown":
             return None, UNKNOWN_SOURCE
         if origin == destination:
             return 0.0, "same_location"
@@ -330,16 +330,41 @@ class AccessibilityModel:
     ) -> list[dict[str, object]]:
         """Serialize hourly location-aware accessibility for schedule entries."""
         hourly_context: list[dict[str, object]] = []
-        for entry in hourly_schedule:
+        previous_location: str | None = None
+
+        for index, entry in enumerate(hourly_schedule):
             hour = _entry_get(entry, "hour", None)
             current_location = infer_current_location(entry, study_location=study_location)
+
+            if index == 0:
+                location_changed = False
+                travel_from_previous_location = None
+            else:
+                location_changed = previous_location != current_location
+                distance_km, source = self.get_pairwise_distance_km(
+                    previous_location or "unknown",
+                    current_location,
+                )
+                travel_from_previous_location = {
+                    "origin": previous_location,
+                    "destination": current_location,
+                    "distance_km": distance_km,
+                    "travel_times_min": calculate_travel_times_min(distance_km, self.speeds_kmh),
+                    "source": source,
+                }
+
             hourly_context.append(
                 {
                     "hour": hour,
                     "current_location": current_location,
+                    "previous_location": previous_location,
+                    "location_changed_from_previous_hour": location_changed,
+                    "travel_from_previous_location": travel_from_previous_location,
                     "accessibility": self.get_access_from_location(current_location),
                 }
             )
+            previous_location = current_location
+
         return hourly_context
 
     def to_dict(self) -> dict[str, object]:
