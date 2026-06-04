@@ -1,3 +1,6 @@
+# Legacy OSM/BernMap mobility model. Keep this file in place for existing
+# environment imports and tests; use accessibility_model.py for lightweight
+# survey-distance accessibility values in LLM context generation.
 from __future__ import annotations
 
 from dataclasses import dataclass
