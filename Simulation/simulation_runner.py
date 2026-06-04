@@ -32,6 +32,7 @@ class SimulationRunner:
         seed: int = 37,
         n_weeks: int = 52,
         use_year_structure: bool = True,
+        accessibility_model: Any | None = None,
     ) -> None:
         self.persona = persona
         self.phase = phase
@@ -40,6 +41,7 @@ class SimulationRunner:
         self.seed = seed
         self.n_weeks = n_weeks
         self.use_year_structure = use_year_structure
+        self.accessibility_model = accessibility_model
 
         self._last_world_info: dict[str, object] | None = None
         self.energy_model = EnergyModel()
@@ -381,6 +383,7 @@ class SimulationRunner:
             normal_schedule=[self._episode_to_dict(ep) for ep in normal_schedule],
             constrained_schedule=[self._episode_to_dict(ep) for ep in constrained_schedule],
             energy_level_result=energy_level_result,
+            accessibility_model=self.accessibility_model,
         )
 
 
