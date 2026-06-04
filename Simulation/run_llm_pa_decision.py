@@ -29,7 +29,7 @@ client = OpenAI(
     base_url="https://gpustack.unibe.ch/v1",
 )
 
-DEFAULT_CONTEXT_PATH = SIMULATION_DIR / "output" / "llm_day_contexts.json"
+DEFAULT_CONTEXT_PATH = SIMULATION_DIR / "output" / "llm_day_contexts_heterogeneous_test.json"
 OUTPUT_DIR = SIMULATION_DIR / "output"
 COMBINED_OUTPUT_PATH = OUTPUT_DIR / "llm_pa_decisions_all_agents.txt"
 
@@ -40,7 +40,7 @@ Du unterstützt ein agentenbasiertes Modell, indem du einen einzelnen Agenten-Ta
 Aufgabe:
 Stelle den simulierten Agenten dar und entscheide aus seiner Perspektive, ob er an diesem Tag körperliche Aktivität (PA) durchführen würde oder nicht.
 
-Nutze ausschliesslich den bereitgestellten Tageskontext. Erfinde keine zusätzlichen Termine, Motivationen, Gesundheitszustände, sozialen Ereignisse, Orte, Wetterbedingungen oder Einschränkungen.
+Nutze ausschliesslich den bereitgestellten Tageskontext. Erfinde keine zusätzlichen Termine, Motivationen, Gesundheitszustände, sozialen Ereignisse, Orte, Wetterbedingungen, Einschränkungen oder Aktivitätsarten.
 
 Die simulierten Agenten basieren auf Personen, die zum Zeitpunkt der Befragung körperlich inaktiv waren und die WHO-Empfehlungen für körperliche Aktivität nicht erfüllten. Berücksichtige daher, dass PA für diese Agenten nicht als stark etablierte Alltagsgewohnheit angenommen werden soll.
 
@@ -74,13 +74,15 @@ Wichtige Felder:
 - sun_frac: relativer Sonnen-/Lichtanteil
 - is_daylight: ob Tageslicht vorhanden ist
 - snow_cover: ob Schnee liegt
-- poi_accessibility enthält für Indoor- und Outdoor-Aktivitätsmöglichkeiten die Distanz sowie geschätzte Reisezeiten mit verschiedenen Verkehrsmitteln, z. B. walk, bike und car.
-Berücksichtige alle angegebenen Verkehrsmittel als mögliche Zugangsoptionen. Nutze nicht automatisch nur die Gehzeit. Wenn ein Aktivitätsort mit dem Fahrrad oder Auto deutlich schneller erreichbar ist als zu Fuss, soll dies als geringere Zugangsbarriere gewertet werden.
+- poi_accessibility: Erreichbarkeit von Indoor- und Outdoor-Aktivitätsmöglichkeiten inklusive Distanz und geschätzter Reisezeiten mit verschiedenen Verkehrsmitteln, z. B. walk, bike und car
 
-Die Reisezeit ist primär als Zugangshürde zu interpretieren. Sie zählt nicht automatisch selbst als PA. Transportbezogene PA kann nur dann als PA gewertet werden, wenn der Kontext nahelegt, dass der Agent die Strecke aktiv zurücklegt, z. B. zu Fuss oder mit dem Fahrrad.
+Erreichbarkeit:
+Berücksichtige bei poi_accessibility alle angegebenen Verkehrsmittel als mögliche Zugangsoptionen. Nutze nicht automatisch nur die Gehzeit. Wenn ein Aktivitätsort mit dem Fahrrad oder Auto deutlich schneller erreichbar ist als zu Fuss, soll dies als geringere Zugangsbarriere gewertet werden.
+
+Die Reisezeit ist primär als Zugangshürde zu interpretieren. Sie zählt nicht automatisch selbst als PA. Auto zählt nicht als PA. Fahrrad oder Gehen können nur dann als transportbezogene PA gewertet werden, wenn der Kontext nahelegt, dass der Agent die Strecke aktiv zurücklegt.
 
 PA-Definition:
-PA wird breit verstanden als körperliche Bewegung, die Energieverbrauch erfordert. Dazu können Sport, Training, Spazieren, Gehen, Radfahren oder aktive Fortbewegung zählen, wenn dies im Kontext als relevante Bewegungshandlung sinnvoll ist.
+PA wird breit verstanden als körperliche Bewegung, die Energieverbrauch erfordert. Dazu können Sport, Training, Gehen, Radfahren oder aktive Fortbewegung zählen, wenn dies im Kontext als relevante Bewegungshandlung sinnvoll ist.
 
 Schlaf, Essen, Arbeit, Universität, Carework oder passive Downtime sollen nicht automatisch als PA interpretiert werden. Transportbezogene Bewegung kann als PA zählen, wenn sie im Kontext sinnvoll als aktive Bewegung verstanden werden kann.
 
@@ -96,16 +98,19 @@ Berücksichtige den gesamten Tageskontext:
 
 Entscheide nicht mechanisch. Hohe Energie bedeutet nicht automatisch PA. Schlechtes Wetter bedeutet nicht automatisch keine PA. Freie Zeit bedeutet nicht automatisch PA. Gute Erreichbarkeit bedeutet nicht automatisch PA.
 
-Fehlende geplante PA-Slots bedeuten aber auch nicht automatisch, dass keine PA durchgeführt wird. PA kann spontan während freier Zeitfenster, Downtime, Open Time, Between-Blocks-Zeit oder aktiver Fortbewegung entstehen. Berücksichtige solche Zeitfenster als mögliche PA-Gelegenheiten, ohne daraus automatisch PA abzuleiten.
+Verwende energy_level nicht als direkte Motivation. Energie beschreibt nur die verfügbare körperliche oder mentale Ressource, nicht die Absicht oder Motivation zur PA.
 
-Nenne keine konkrete Aktivitätsart, wenn sie nicht direkt aus dem Kontext ableitbar ist. Falls PA wahrscheinlich ist, beschreibe sie allgemein als leichte, moderate, Indoor-, Outdoor- oder transportbezogene PA.
+Die Jahresphase darf nicht als direkte Motivation interpretiert werden. Holiday bedeutet nur, dass Tagesstruktur und freie Zeit anders aussehen können. High_stress bedeutet nur, dass Belastung und Tagesstruktur anders aussehen können. Leite daraus keine höhere oder tiefere Bewegungsmotivation ab.
 
-Erfinde keine konkreten Aktivitätsarten wie Joggen, Home-Workout, Stretching, Gym oder Sportzentrum. Beschreibe PA lediglich Allgemein.
+Fehlende geplante PA-Slots bedeuten nicht automatisch, dass keine PA durchgeführt wird. PA kann spontan während freier Zeitfenster, Downtime, Open Time, Between-Blocks-Zeit oder aktiver Fortbewegung entstehen. Berücksichtige solche Zeitfenster als mögliche PA-Gelegenheiten, ohne daraus automatisch PA abzuleiten.
+
+Nenne keine spezifischen Aktivitätsarten wie Spaziergang, Joggen, Home-Workout, Stretching, Gym, Sportzentrum oder Fahrradtour, ausser sie sind explizit im Kontext enthalten. Beschreibe PA stattdessen allgemein als leichte PA, moderate PA, Indoor-PA, Outdoor-PA oder transportbezogene PA.
 
 Beispiele:
 1. Viel freie Zeit, mittlere bis hohe Energie, gute Erreichbarkeit, keine starken Hindernisse -> PA kann möglich sein, ist bei inaktiven Agenten aber nur dann wahrscheinlich, wenn mehrere Kontextfaktoren zusammen deutlich dafür sprechen.
 2. Stark verdichteter Tag, wenig freie Zeit, tiefe Energie, ungünstiger Kontext -> eher keine PA.
-3. Gemischter Tag, begrenzte freie Zeit, mittlere Energie, schlechtes Wetter, aber gute Indoor-Erreichbarkeit -> leichte/moderate PA kann sinnvoll sein, muss aber gegen die fehlende etablierte PA-Gewohnheit abgewogen werden.
+3. Gemischter Tag, begrenzte freie Zeit, mittlere Energie, schlechtes Wetter, aber gute Indoor-Erreichbarkeit -> leichte/moderate Indoor-PA kann sinnvoll sein, muss aber gegen die fehlende etablierte PA-Gewohnheit abgewogen werden.
+4. Gute Fahrrad- oder Auto-Erreichbarkeit senkt die Zugangshürde zu Aktivitätsmöglichkeiten. Auto ist dabei keine PA; Fahrrad kann nur bei aktiver Fortbewegung als transportbezogene PA berücksichtigt werden.
 
 Antworte kurz und klar.
 Verwende keine Tabelle.
