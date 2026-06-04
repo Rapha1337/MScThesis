@@ -180,3 +180,93 @@ def test_build_hourly_accessibility_serializes_schedule_without_mutation() -> No
     assert hourly[1]["accessibility"]["targets"]["indoor_activity"]["distance_km"] == pytest.approx(2.1)
     assert hourly[2]["accessibility"]["targets"]["indoor_activity"]["distance_km"] == 0.0
     assert schedule[1] == {"hour": 9, "activity_type": "work", "subtype": "paid_work"}
+
+
+def _assert_hourly_accessibility_shape(hourly: list[dict[str, object]]) -> None:
+    assert len(hourly) == 24
+    for index, entry in enumerate(hourly):
+        assert "current_location" in entry
+        assert "previous_location" in entry
+        assert "location_changed_from_previous_hour" in entry
+        assert "travel_from_previous_location" in entry
+        if index == 0:
+            assert entry["previous_location"] is None
+            assert entry["location_changed_from_previous_hour"] is False
+            assert entry["travel_from_previous_location"] is None
+        else:
+            assert entry["previous_location"] == hourly[index - 1]["current_location"]
+            travel = entry["travel_from_previous_location"]
+            assert isinstance(travel, dict)
+            assert set(travel["travel_times_min"]) == {"walk", "bike", "car"}
+
+
+def test_simulation_runner_day_context_builds_hourly_accessibility_from_generated_schedule() -> None:
+    from agent_context import build_agent_context
+    from persona_wrappers import StudentHoursWrapper
+    from schedule_model_student import YearPhase
+    from simulation_runner import SimulationRunner
+
+    class FakeEnv:
+        def reset(self, seed=None, options=None):
+            del options
+            return None, {"seed": seed, "hour": 9, "state": "reset"}
+
+        def step(self, action: int = 0):
+            return None, 0.0, False, False, {"action": action, "hour": 10, "state": "stepped"}
+
+    model = _demo_model()
+    persona = StudentHoursWrapper.from_zve_student_generic(name="accessibility_runner_student")
+    runner = SimulationRunner(
+        persona=persona,
+        phase=YearPhase.SEMESTER,
+        env=FakeEnv(),
+        seed=37,
+        use_year_structure=True,
+        accessibility_model=model,
+    )
+
+    contexts = [runner.get_day_context(weekday=weekday) for weekday in range(7)]
+    context = next(
+        (candidate for candidate in contexts if any(
+            entry["location_changed_from_previous_hour"]
+            for entry in candidate["hourly_accessibility_24h"]
+        )),
+        contexts[0],
+    )
+
+    assert "accessibility_model" in context
+    assert "hourly_accessibility_24h" in context
+    hourly = context["hourly_accessibility_24h"]
+    _assert_hourly_accessibility_shape(hourly)
+
+    assert [entry["hour"] for entry in hourly] == [entry["hour"] for entry in context["constrained_schedule"]]
+
+    has_location_change = any(entry["location_changed_from_previous_hour"] for entry in hourly)
+    if not has_location_change:
+        deterministic_schedule = [
+            {"hour": hour, "activity_type": "sleep", "subtype": "night_sleep"}
+            if hour < 8 or hour >= 22
+            else {"hour": hour, "activity_type": "work", "subtype": "paid_work"}
+            if 9 <= hour < 17
+            else {"hour": hour, "activity_type": "downtime", "subtype": "open_time"}
+            for hour in range(24)
+        ]
+        context = build_agent_context(
+            persona_name="fixture_student",
+            phase="semester",
+            weekday=0,
+            world_info={"hour": 9},
+            active_constraints=[],
+            normal_schedule=deterministic_schedule,
+            constrained_schedule=deterministic_schedule,
+            accessibility_model=model,
+        )
+        hourly = context["hourly_accessibility_24h"]
+        _assert_hourly_accessibility_shape(hourly)
+        has_location_change = any(entry["location_changed_from_previous_hour"] for entry in hourly)
+
+    assert has_location_change
+    transition = next(entry for entry in hourly if entry["location_changed_from_previous_hour"])
+    assert transition["previous_location"] != transition["current_location"]
+    assert transition["travel_from_previous_location"] is not None
+    assert set(transition["travel_from_previous_location"]["travel_times_min"]) == {"walk", "bike", "car"}

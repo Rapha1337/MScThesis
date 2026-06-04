@@ -14,6 +14,7 @@ from schedule_model_student import (
     ActivityType,
     DayEpisode,
     YearPhase,
+    distribute_weekly_budgets_to_days,
     generate_full_day_schedule,
 )
 from year_structure import YearStructureGenerator
@@ -65,6 +66,7 @@ class SimulationRunner:
                 phase=self.phase,
                 seed=self.seed,
             )
+            self._ensure_daily_budget_distribution(self.weekly_structure, self.seed)
 
     def _episode_to_dict(self, episode: DayEpisode) -> dict[str, object]:
         return {
@@ -191,6 +193,14 @@ class SimulationRunner:
 
         return updated_schedule
 
+    def _ensure_daily_budget_distribution(self, weekly_structure: Any, seed: int) -> None:
+        metadata = getattr(weekly_structure, "metadata", None)
+        if isinstance(metadata, dict) and "daily_budget_distribution" not in metadata:
+            distribute_weekly_budgets_to_days(
+                weekly_structure,
+                rng=random.Random(seed),
+            )
+
     def _get_weekly_structure_for_week(self, week_index: int) -> Any:
         if not self.use_year_structure:
             return self.weekly_structure
@@ -207,6 +217,7 @@ class SimulationRunner:
             phase=phase,
             seed=week_seed,
         )
+        self._ensure_daily_budget_distribution(weekly_structure, week_seed)
 
         self._weekly_structure_cache[week_index] = weekly_structure
         return weekly_structure
@@ -335,25 +346,35 @@ class SimulationRunner:
             ],
         }
 
-    def get_day_context(self, weekday: int) -> dict:
+    def get_day_context(self, weekday: int | None = None) -> dict:
+        """Build a serialized day context for the current simulated week.
+
+        When ``weekday`` is omitted, it is derived from ``_sim_hour``. Passing an
+        explicit weekday is intentionally still supported for inspection and
+        tests, even if it differs from the weekday implied by ``_sim_hour``; in
+        that case the runner uses the current simulated week/hour together with
+        the requested weekday.
+        """
         event_constraints: list[Any] = []
+        week_index, derived_weekday, hour = self._derive_time_indices()
+        requested_weekday = derived_weekday if weekday is None else int(weekday)
+
         if self.use_year_structure:
-            week_index, _, hour = self._derive_time_indices()
-            active_events = self._get_active_events_for_day(week_index, weekday)
-            event_constraints = self._events_to_constraints(active_events, week_index, weekday)
-            normal_schedule = self._generate_baseline_day_schedule_for_weekday(week_index, weekday)
-            constrained_schedule = self._generate_day_schedule_for_weekday(week_index, weekday)
+            active_events = self._get_active_events_for_day(week_index, requested_weekday)
+            event_constraints = self._events_to_constraints(active_events, week_index, requested_weekday)
+            normal_schedule = self._generate_baseline_day_schedule_for_weekday(week_index, requested_weekday)
+            constrained_schedule = self._generate_day_schedule_for_weekday(week_index, requested_weekday)
             phase = YearPhase.coerce(self._get_week_plan(week_index).phase)
         else:
-            normal_schedule = self.generate_normal_day(weekday)
-            constrained_schedule = self.generate_constrained_day(weekday)
+            normal_schedule = self.generate_normal_day(requested_weekday)
+            constrained_schedule = self.generate_constrained_day(requested_weekday)
             phase = self.phase
             world_info = self._last_world_info if self._last_world_info is not None else self.reset_world()
             hour = int(world_info.get("hour", 12)) if isinstance(world_info, dict) else 12
 
         active_constraint_objects = [
             *event_constraints,
-            *self.constraint_manager.get_active_constraints(weekday),
+            *self.constraint_manager.get_active_constraints(requested_weekday),
         ]
         active_constraints = [
             {
@@ -371,13 +392,13 @@ class SimulationRunner:
             phase=phase,
             active_constraints=active_constraints,
             constrained_schedule=[self._episode_to_dict(ep) for ep in constrained_schedule],
-            seed=self.seed + weekday,
+            seed=self.seed + requested_weekday,
         )
 
         return build_agent_context(
             persona_name=self.persona.name,
             phase=phase,
-            weekday=weekday,
+            weekday=requested_weekday,
             world_info=world_info,
             active_constraints=active_constraints,
             normal_schedule=[self._episode_to_dict(ep) for ep in normal_schedule],
