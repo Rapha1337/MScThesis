@@ -263,7 +263,7 @@ def test_schedule_preservation_and_context_integration() -> None:
     assert [(e.hour, e.activity_type, e.subtype) for e in normal_before] == [(e.hour, e.activity_type, e.subtype) for e in normal_after]
     assert [(e.hour, e.activity_type, e.subtype) for e in constrained_before] == [(e.hour, e.activity_type, e.subtype) for e in constrained_after]
     assert "agent_state" in context and "energy" in context["agent_state"]
-    assert "energy_state" not in context
+    assert "energy_state" in context
     assert "energy_state" not in context["agent_state"]
 
     energy_context = context["agent_state"]["energy"]
@@ -443,3 +443,114 @@ def test_demo_energy_state_examples_runs(capsys) -> None:
 
 if __name__ == "__main__":
     demo_energy_state_examples()
+
+
+def test_runner_day_context_returns_hourly_energy_24h_shape_and_json() -> None:
+    import json
+
+    persona = StudentHoursWrapper.from_zve_student_generic(name="hourly_energy_student")
+    runner = SimulationRunner(
+        persona,
+        YearPhase.SEMESTER,
+        FakeEnv(),
+        ConstraintManager(),
+        seed=37,
+        use_year_structure=False,
+    )
+
+    context = runner.get_day_context(1)
+
+    assert "hourly_energy_24h" in context
+    hourly = context["hourly_energy_24h"]
+    assert len(hourly) == 24
+    assert [entry["hour"] for entry in hourly] == list(range(24))
+    assert all("hour" in entry for entry in hourly)
+    assert all("energy_level" in entry or "category" in entry for entry in hourly)
+    assert all("energy_score" in entry for entry in hourly)
+    assert all("energy_effects" in entry or "drivers" in entry for entry in hourly)
+    assert "energy_state" in context
+    json.dumps(context)
+
+
+def test_hourly_energy_context_uses_constrained_schedule_activity_and_prior_activity() -> None:
+    persona = StudentHoursWrapper.from_zve_student_generic(name="hourly_energy_schedule_student")
+    runner = SimulationRunner(
+        persona,
+        YearPhase.SEMESTER,
+        FakeEnv(),
+        ConstraintManager(),
+        seed=37,
+        use_year_structure=False,
+    )
+    runner.energy_model._stochastic_effect = lambda **_: 0.0  # type: ignore[method-assign]
+    normal_schedule = _sched(0)
+    constrained_schedule = _sched(0, pa_hours=[7])
+
+    hourly_from_constrained = runner._build_hourly_energy_context(
+        phase=YearPhase.SEMESTER,
+        active_constraints=[],
+        constrained_schedule=constrained_schedule,
+        seed=37,
+    )
+    hourly_from_normal = runner._build_hourly_energy_context(
+        phase=YearPhase.SEMESTER,
+        active_constraints=[],
+        constrained_schedule=normal_schedule,
+        seed=37,
+    )
+
+    assert hourly_from_constrained[7]["activity_type"] == "physical_activity"
+    assert hourly_from_constrained[7]["activity_type"] != normal_schedule[7]["activity_type"]
+    assert hourly_from_constrained[10]["drivers"]["prior_activity_effect"] == -0.05
+    assert hourly_from_normal[10]["drivers"]["prior_activity_effect"] == 0.0
+    assert hourly_from_constrained[10]["energy_score"] < hourly_from_normal[10]["energy_score"]
+
+
+def test_runner_hourly_energy_reflects_active_illness_effect() -> None:
+    persona = StudentHoursWrapper.from_zve_student_generic(name="hourly_energy_ill_student")
+    illness = AcuteIllnessConstraint(name="flu", intensity="medium", start_weekday=1, duration_days=1)
+    runner = SimulationRunner(
+        persona,
+        YearPhase.SEMESTER,
+        FakeEnv(),
+        ConstraintManager([illness]),
+        seed=37,
+        use_year_structure=False,
+    )
+
+    context = runner.get_day_context(1)
+    hourly = context["hourly_energy_24h"]
+
+    assert context["active_constraints"][0]["intensity"] == "medium"
+    assert all(entry["drivers"]["illness_effect"] == -0.25 for entry in hourly)
+    assert all(entry["active_constraints"][0]["intensity"] == "medium" for entry in hourly)
+
+
+def test_runner_hourly_energy_high_stress_is_lower_than_normal_with_same_inputs() -> None:
+    persona = StudentHoursWrapper.from_zve_student_generic(name="hourly_energy_phase_student")
+    runner = SimulationRunner(
+        persona,
+        YearPhase.SEMESTER,
+        FakeEnv(),
+        ConstraintManager(),
+        seed=37,
+        use_year_structure=False,
+    )
+    runner.energy_model._stochastic_effect = lambda **_: 0.0  # type: ignore[method-assign]
+    schedule = _sched(2)
+
+    normal = runner._build_hourly_energy_context(
+        phase=YearPhase.SEMESTER,
+        active_constraints=[],
+        constrained_schedule=schedule,
+        seed=37,
+    )
+    high_stress = runner._build_hourly_energy_context(
+        phase=YearPhase.EXAM_PHASE,
+        active_constraints=[],
+        constrained_schedule=schedule,
+        seed=37,
+    )
+
+    assert high_stress[10]["drivers"]["phase_effect"] < normal[10]["drivers"]["phase_effect"]
+    assert high_stress[10]["energy_score"] < normal[10]["energy_score"]
