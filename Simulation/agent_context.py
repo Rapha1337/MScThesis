@@ -8,6 +8,52 @@ def _as_hourly_list(name: str, entries) -> list[dict[str, object]]:
     return hourly
 
 
+POI_ACCESSIBILITY_TARGETS = ("workplace", "indoor_activity", "outdoor_activity")
+TRANSPORT_MODES = ("walk", "bike", "car")
+
+
+def _compact_active_constraints(constraints) -> list[dict[str, object]]:
+    compact: list[dict[str, object]] = []
+    for constraint in list(constraints or []):
+        if not isinstance(constraint, dict):
+            continue
+        entry: dict[str, object] = {}
+        for key in ("type", "name", "intensity"):
+            if key in constraint and constraint[key] is not None:
+                entry[key] = constraint[key]
+        if entry:
+            compact.append(entry)
+    return compact
+
+
+def _compact_travel_times(travel_times) -> dict[str, object]:
+    if not isinstance(travel_times, dict):
+        return {}
+    return {mode: travel_times[mode] for mode in TRANSPORT_MODES if mode in travel_times}
+
+
+def _compact_poi_accessibility(accessibility_entry: dict[str, object]) -> dict[str, dict[str, object]]:
+    accessibility = accessibility_entry.get("accessibility")
+    if not isinstance(accessibility, dict):
+        return {}
+
+    targets = accessibility.get("targets")
+    if not isinstance(targets, dict):
+        return {}
+
+    poi_accessibility: dict[str, dict[str, object]] = {}
+    for target in POI_ACCESSIBILITY_TARGETS:
+        target_payload = targets.get(target)
+        if not isinstance(target_payload, dict):
+            continue
+        poi_accessibility[target] = {
+            "distance_km": target_payload.get("distance_km"),
+            "travel_times_min": _compact_travel_times(target_payload.get("travel_times_min")),
+        }
+
+    return poi_accessibility
+
+
 def build_hourly_context_24h(
     constrained_schedule,
     hourly_accessibility_24h,
@@ -42,35 +88,21 @@ def build_hourly_context_24h(
                 f"energy_hour={energy_hour}, environment_hour={environment_hour}"
             )
 
-        energy_effects = energy_entry.get("energy_effects", energy_entry.get("energy_factors"))
-        energy_drivers = energy_entry.get("drivers", energy_effects)
-
         hourly_context.append(
             {
                 "hour": schedule_hour,
                 "activity_type": schedule_entry.get("activity_type"),
                 "subtype": schedule_entry.get("subtype"),
-                "flexibility": schedule_entry.get("flexibility"),
                 "current_location": accessibility_entry.get("current_location"),
-                "previous_location": accessibility_entry.get("previous_location"),
-                "location_changed_from_previous_hour": accessibility_entry.get(
-                    "location_changed_from_previous_hour"
-                ),
-                "travel_from_previous_location": accessibility_entry.get("travel_from_previous_location"),
-                "accessibility_from_current_location": accessibility_entry.get("accessibility"),
+                "active_constraints": _compact_active_constraints(energy_entry.get("active_constraints")),
+                "poi_accessibility": _compact_poi_accessibility(accessibility_entry),
                 "energy_level": energy_entry.get("energy_level"),
-                "energy_score": energy_entry.get("energy_score", energy_entry.get("energy_level")),
-                "energy_category": energy_entry.get("energy_category", energy_entry.get("category")),
-                "energy_effects": energy_effects,
-                "energy_drivers": energy_drivers,
-                "active_constraints": energy_entry.get("active_constraints"),
                 "month": environment_entry.get("month"),
                 "season": environment_entry.get("season"),
                 "temperature_c": environment_entry.get("temperature_c"),
                 "feels_like_c": environment_entry.get("feels_like_c"),
                 "precipitation_mm": environment_entry.get("precipitation_mm"),
                 "is_wet": environment_entry.get("is_wet"),
-                "weather_condition": environment_entry.get("weather_condition"),
                 "sun_frac": environment_entry.get("sun_frac"),
                 "is_daylight": environment_entry.get("is_daylight"),
                 "humidity_pct": environment_entry.get("humidity_pct"),

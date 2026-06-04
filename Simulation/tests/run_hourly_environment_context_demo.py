@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from argparse import ArgumentParser
 from pathlib import Path
-import json
 import sys
 import types
 
@@ -146,9 +146,53 @@ class DemoBernMap:
         return distance_km / speed_kmh * 60.0
 
 
-def run_demo() -> None:
-    persona = StudentHoursWrapper.from_zve_student_generic(name="hourly_environment_demo_student")
-    env = TimeWeatherEnv(month=1, sample_rate_hours=1, horizon_hours=24 * 60, bern_map=DemoBernMap())
+def _constraint_summary(constraints: list[dict[str, object]] | None) -> str:
+    if not constraints:
+        return "-"
+    return ",".join(
+        f"{constraint.get('name', constraint.get('type', 'constraint'))}:{constraint.get('intensity', '-')}"
+        for constraint in constraints
+    )
+
+
+def _poi_summary(entry: dict[str, object], target: str) -> str:
+    poi = entry.get("poi_accessibility", {})
+    if not isinstance(poi, dict) or target not in poi:
+        return "-"
+    target_payload = poi[target]
+    if not isinstance(target_payload, dict):
+        return "-"
+    travel_times = target_payload.get("travel_times_min", {})
+    if not isinstance(travel_times, dict):
+        travel_times = {}
+    distance = target_payload.get("distance_km")
+    walk = travel_times.get("walk")
+    bike = travel_times.get("bike")
+    car = travel_times.get("car")
+    return f"{distance}km w/b/c={walk}/{bike}/{car}m"
+
+
+def _parse_args() -> object:
+    parser = ArgumentParser(description="Print a full-day compact hourly LLM-context demo.")
+    parser.add_argument("--day-index", type=int, default=0, help="Absolute simulated day index from year start.")
+    parser.add_argument("--seed", type=int, default=37, help="Seed for persona/year/weather simulation.")
+    parser.add_argument(
+        "--persona-index",
+        type=int,
+        default=0,
+        help="Optional index suffix for the demo persona name; useful when comparing deterministic variants.",
+    )
+    return parser.parse_args()
+
+
+def run_demo(day_index: int = 0, seed: int = 37, persona_index: int = 0) -> None:
+    if day_index < 0:
+        raise ValueError("day_index must be >= 0")
+
+    persona = StudentHoursWrapper.from_zve_student_generic(
+        name=f"hourly_environment_demo_student_{persona_index}"
+    )
+    env = TimeWeatherEnv(month=1, sample_rate_hours=1, horizon_hours=24 * 365, bern_map=DemoBernMap())
     accessibility_model = build_accessibility_model(
         workplace_distance_km=3.0,
         indoor_activity_distance_km=1.2,
@@ -158,46 +202,63 @@ def run_demo() -> None:
         persona=persona,
         phase=YearPhase.SEMESTER,
         env=env,
-        seed=37,
-        use_year_structure=False,
+        seed=seed,
+        use_year_structure=True,
         accessibility_model=accessibility_model,
     )
+    runner.reset_world()
+    runner._sim_hour = day_index * 24
 
     context = runner.get_day_context()
     hourly_context = context["hourly_context_24h"]
-    transition_hour = next(
-        (
-            entry["hour"]
-            for entry in hourly_context
-            if entry["location_changed_from_previous_hour"]
-        ),
-        10,
+    week_index = (day_index // 7) % runner.n_weeks
+    weekday = day_index % 7
+    phase = context["phase"]
+    month = hourly_context[0]["month"]
+    active_constraints = context.get("active_constraints", [])
+    active_events = []
+    if runner.year_structure is not None:
+        active_events = [
+            getattr(event, "event_id", str(event))
+            for event in runner._get_active_events_for_day(week_index, weekday)
+        ]
+
+    print("Hourly environment/context demo")
+    print(
+        "Header: "
+        f"day_index={day_index}, week_index={week_index}, weekday={weekday}, "
+        f"phase={phase}, month={month}, "
+        f"active_events={active_events or '-'}, "
+        f"active_constraints={_constraint_summary(active_constraints)}"
     )
-    selected_hours = {
-        max(0, transition_hour - 1),
-        transition_hour,
-        min(23, transition_hour + 1),
-    }
-
-    selected = [
-        {
-            "hour": entry["hour"],
-            "activity_type": entry["activity_type"],
-            "subtype": entry["subtype"],
-            "current_location": entry["current_location"],
-            "travel_from_previous_location": entry["travel_from_previous_location"],
-            "energy_score": entry["energy_score"],
-            "energy_level": entry["energy_level"],
-            "weather_condition": entry["weather_condition"],
-            "temperature_c": entry["temperature_c"],
-        }
-        for entry in hourly_context
-        if entry["hour"] in selected_hours
-    ]
-
-    print("Selected merged hourly_context_24h entries around a location transition:")
-    print(json.dumps(selected, indent=2, sort_keys=True))
+    print(
+        "| hour | activity/subtype | location | energy | constraints | temp | feels | "
+        "humidity | wind | precip/wet | sun/daylight | indoor POI | outdoor POI |"
+    )
+    print(
+        "|---:|---|---|---:|---|---:|---:|---:|---:|---|---|---|---|"
+    )
+    for entry in hourly_context:
+        precip_wet = f"{entry['precipitation_mm']}mm/{entry['is_wet']}"
+        sun_daylight = f"{entry['sun_frac']}/{entry['is_daylight']}"
+        print(
+            "| "
+            f"{entry['hour']} | "
+            f"{entry['activity_type']}/{entry['subtype']} | "
+            f"{entry['current_location']} | "
+            f"{entry['energy_level']} | "
+            f"{_constraint_summary(entry.get('active_constraints'))} | "
+            f"{entry['temperature_c']} | "
+            f"{entry['feels_like_c']} | "
+            f"{entry['humidity_pct']} | "
+            f"{entry['wind_m_s']} | "
+            f"{precip_wet} | "
+            f"{sun_daylight} | "
+            f"{_poi_summary(entry, 'indoor_activity')} | "
+            f"{_poi_summary(entry, 'outdoor_activity')} |"
+        )
 
 
 if __name__ == "__main__":
-    run_demo()
+    args = _parse_args()
+    run_demo(day_index=args.day_index, seed=args.seed, persona_index=args.persona_index)
