@@ -53,6 +53,55 @@ class EnergyModel:
             },
         )
 
+    def compute_hourly_energy_24h(
+        self,
+        *,
+        phase: Any,
+        active_constraints: list[dict[str, object]] | None,
+        constrained_schedule: list[dict[str, object]] | None,
+        seed: int,
+    ) -> list[dict[str, object]]:
+        """Compute serialized energy context for each hour in a constrained day.
+
+        The model is still momentary: this helper simply evaluates the existing
+        ``compute_energy_state`` logic for hours 0..23 against the same
+        constrained daily schedule so daily workload and prior-activity drivers
+        remain schedule-aware.
+        """
+        schedule = list(constrained_schedule or [])
+        by_hour = {int(ep.get("hour", -1)): ep for ep in schedule}
+        hourly_energy: list[dict[str, object]] = []
+
+        for hour in range(24):
+            energy_state = self.compute_energy_state(
+                hour=hour,
+                phase=phase,
+                active_constraints=active_constraints,
+                constrained_schedule=schedule,
+                seed=seed,
+            )
+            payload = energy_state.to_dict()
+            episode = by_hour.get(hour, {})
+            active_constraint_payload = [dict(constraint) for constraint in (active_constraints or [])]
+
+            hourly_energy.append(
+                {
+                    "hour": hour,
+                    "activity_type": episode.get("activity_type"),
+                    "subtype": episode.get("subtype"),
+                    "energy_level": payload["energy_level"],
+                    "energy_score": payload["energy_level"],
+                    "energy_category": payload["energy_category"],
+                    "category": payload["energy_category"],
+                    "description": payload["description"],
+                    "energy_effects": dict(payload["energy_factors"]),
+                    "drivers": dict(payload["drivers"]),
+                    "active_constraints": active_constraint_payload,
+                }
+            )
+
+        return hourly_energy
+
     def _time_of_day_effect(self, hour: int) -> float:
         if 6 <= hour <= 8:
             return -0.08

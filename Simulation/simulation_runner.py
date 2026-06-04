@@ -346,6 +346,35 @@ class SimulationRunner:
             ],
         }
 
+    def _build_hourly_energy_context(
+        self,
+        *,
+        phase: YearPhase,
+        active_constraints: list[dict[str, object]],
+        constrained_schedule: list[dict[str, object]],
+        seed: int,
+    ) -> list[dict[str, object]]:
+        """Build JSON-serializable hourly energy context from the constrained schedule."""
+        return self.energy_model.compute_hourly_energy_24h(
+            phase=phase,
+            active_constraints=active_constraints,
+            constrained_schedule=constrained_schedule,
+            seed=seed,
+        )
+
+    def _build_hourly_environment_context(
+        self,
+        *,
+        day_start_sim_hour: int,
+    ) -> list[dict[str, object]] | None:
+        """Build hourly weather/time context when the environment supports it."""
+        if not hasattr(self.env, "build_hourly_environment_24h"):
+            return None
+
+        return self.env.build_hourly_environment_24h(
+            start_t=int(day_start_sim_hour),
+        )
+
     def get_day_context(self, weekday: int | None = None) -> dict:
         """Build a serialized day context for the current simulated week.
 
@@ -358,6 +387,10 @@ class SimulationRunner:
         event_constraints: list[Any] = []
         week_index, derived_weekday, hour = self._derive_time_indices()
         requested_weekday = derived_weekday if weekday is None else int(weekday)
+        if weekday is None:
+            day_start_sim_hour = (self._sim_hour // 24) * 24
+        else:
+            day_start_sim_hour = week_index * 7 * 24 + requested_weekday * 24
 
         if self.use_year_structure:
             active_events = self._get_active_events_for_day(week_index, requested_weekday)
@@ -387,12 +420,23 @@ class SimulationRunner:
 
         world_info = self._last_world_info if self._last_world_info is not None else self.reset_world()
 
+        constrained_schedule_context = [self._episode_to_dict(ep) for ep in constrained_schedule]
+
         energy_level_result = self.energy_model.compute_energy_state(
             hour=hour,
             phase=phase,
             active_constraints=active_constraints,
-            constrained_schedule=[self._episode_to_dict(ep) for ep in constrained_schedule],
+            constrained_schedule=constrained_schedule_context,
             seed=self.seed + requested_weekday,
+        )
+        hourly_energy_24h = self._build_hourly_energy_context(
+            phase=phase,
+            active_constraints=active_constraints,
+            constrained_schedule=constrained_schedule_context,
+            seed=self.seed + requested_weekday,
+        )
+        hourly_environment_24h = self._build_hourly_environment_context(
+            day_start_sim_hour=day_start_sim_hour,
         )
 
         return build_agent_context(
@@ -402,9 +446,11 @@ class SimulationRunner:
             world_info=world_info,
             active_constraints=active_constraints,
             normal_schedule=[self._episode_to_dict(ep) for ep in normal_schedule],
-            constrained_schedule=[self._episode_to_dict(ep) for ep in constrained_schedule],
+            constrained_schedule=constrained_schedule_context,
             energy_level_result=energy_level_result,
             accessibility_model=self.accessibility_model,
+            hourly_energy_24h=hourly_energy_24h,
+            hourly_environment_24h=hourly_environment_24h,
         )
 
 
