@@ -45,4 +45,9 @@ def build_agent_context(
             accessibility_payload = dict(accessibility_context)
         context["accessibility_model"] = accessibility_payload
 
+        if hasattr(accessibility_context, "build_hourly_accessibility"):
+            context["hourly_accessibility_24h"] = accessibility_context.build_hourly_accessibility(
+                context["constrained_schedule"],
+            )
+
     return context
