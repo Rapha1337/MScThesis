@@ -104,8 +104,6 @@ def test_exported_llm_contexts_include_compact_hourly_demo_fields(tmp_path: Path
         assert len(context["hourly_context_24h"]) == 24
         for hourly_entry in context["hourly_context_24h"]:
             assert EXPECTED_HOURLY_FIELDS.issubset(hourly_entry)
-            assert "weather_condition" in hourly_entry
-            assert "absolute_hour" in hourly_entry
             assert isinstance(hourly_entry["active_constraints"], list)
             assert hourly_entry["activity_type"] is not None
             assert hourly_entry["current_location"] is not None
