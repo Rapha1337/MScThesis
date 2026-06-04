@@ -161,6 +161,7 @@ def test_hourly_context_entries_include_compact_llm_facing_fields() -> None:
         "active_constraints",
         "poi_accessibility",
         "energy_level",
+        "energy_category",
         "month",
         "season",
         "temperature_c",
@@ -181,7 +182,6 @@ def test_hourly_context_excludes_non_llm_aliases_and_transition_debug_fields() -
     context = _runner_context()
     excluded_fields = {
         "energy_score",
-        "energy_category",
         "category",
         "previous_location",
         "location_changed_from_previous_hour",
@@ -191,6 +191,27 @@ def test_hourly_context_excludes_non_llm_aliases_and_transition_debug_fields() -
     }
 
     assert all(excluded_fields.isdisjoint(entry) for entry in context["hourly_context_24h"])
+
+
+
+def test_hourly_context_copies_energy_category_from_hourly_energy() -> None:
+    schedule = [_schedule_entry(hour) for hour in range(24)]
+    accessibility = [_accessibility_entry(hour) for hour in range(24)]
+    energy = [_energy_entry(hour) for hour in range(24)]
+    environment = [_environment_entry(hour) for hour in range(24)]
+    energy[6] = {**energy[6], "energy_level": 0.2, "energy_category": "low"}
+    energy[12] = {**energy[12], "energy_level": 0.6, "energy_category": "medium"}
+    energy[18] = {**energy[18], "energy_level": 0.9, "energy_category": "high"}
+
+    hourly_context = build_hourly_context_24h(schedule, accessibility, energy, environment)
+
+    for index, entry in enumerate(hourly_context):
+        assert "energy_level" in entry
+        assert "energy_category" in entry
+        assert entry["energy_category"] == energy[index]["energy_category"]
+        assert entry["energy_category"] in {"low", "medium", "high"}
+        assert "energy_score" not in entry
+        assert "category" not in entry
 
 
 def test_hourly_context_poi_accessibility_is_compact() -> None:

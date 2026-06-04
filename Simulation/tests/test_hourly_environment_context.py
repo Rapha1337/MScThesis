@@ -277,3 +277,33 @@ def test_simulation_runner_context_includes_hourly_environment_when_supported() 
     assert len(context["hourly_environment_24h"]) == 24
     assert [entry["hour"] for entry in context["hourly_environment_24h"]] == list(range(24))
     assert env.requested_start_t == 2 * 24
+
+
+def test_demo_finds_example_day_for_each_generated_year_phase() -> None:
+    tests_dir = Path(__file__).resolve().parent
+    if str(tests_dir) not in sys.path:
+        sys.path.append(str(tests_dir))
+
+    from run_hourly_environment_context_demo import build_demo_runner, find_phase_example_day_indices
+
+    runner = build_demo_runner(seed=37, persona_index=0)
+    examples = find_phase_example_day_indices(runner)
+
+    assert set(examples) >= {"normal", "high_stress", "holiday"}
+    for phase, day_index in examples.items():
+        week_index = day_index // 7
+        assert runner.year_structure is not None
+        assert runner.year_structure.weeks[week_index].phase == phase
+
+
+def test_demo_phase_example_helper_reports_missing_phases_without_crashing() -> None:
+    tests_dir = Path(__file__).resolve().parent
+    if str(tests_dir) not in sys.path:
+        sys.path.append(str(tests_dir))
+
+    from run_hourly_environment_context_demo import find_phase_example_day_indices
+
+    class RunnerWithoutYearStructure:
+        year_structure = None
+
+    assert find_phase_example_day_indices(RunnerWithoutYearStructure()) == {}

@@ -97,6 +97,7 @@ def build_hourly_context_24h(
                 "active_constraints": _compact_active_constraints(energy_entry.get("active_constraints")),
                 "poi_accessibility": _compact_poi_accessibility(accessibility_entry),
                 "energy_level": energy_entry.get("energy_level"),
+                "energy_category": energy_entry.get("energy_category"),
                 "month": environment_entry.get("month"),
                 "season": environment_entry.get("season"),
                 "temperature_c": environment_entry.get("temperature_c"),
