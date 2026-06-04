@@ -32,6 +32,17 @@ class StudentHoursWrapper:
         Weekly hours for social contacts / social activities.
     work_hours_week:
         Weekly hours for paid work.
+    carework_hours_week:
+        Weekly hours for care work.
+    workplace_distance_km:
+        Home-based distance to workplace / university-like activities. Stored for
+        accessibility initialization; it does not alter schedule generation.
+    indoor_activity_distance_km:
+        Home-based distance to indoor physical/social activity POIs. Stored for
+        accessibility initialization; it does not alter schedule generation.
+    outdoor_activity_distance_km:
+        Home-based distance to outdoor activity POIs. Stored for accessibility
+        initialization; it does not alter schedule generation.
 
     University and studying are intentionally kept close to the existing
     StudentStructureParameters defaults. Small seed-based variation can be added
@@ -44,6 +55,9 @@ class StudentHoursWrapper:
     social_hours_week: float = 10.0
     work_hours_week: float = 4.5
     carework_hours_week: float | None = None
+    workplace_distance_km: float | None = 3.0
+    indoor_activity_distance_km: float | None = 1.2
+    outdoor_activity_distance_km: float | None = 0.6
 
     seed_variation: bool = True
     variation_strength: float = 0.06
@@ -59,6 +73,9 @@ class StudentHoursWrapper:
             fitness_hours_week=5.5,
             social_hours_week=10.0,
             work_hours_week=4.5,
+            workplace_distance_km=3.0,
+            indoor_activity_distance_km=1.2,
+            outdoor_activity_distance_km=0.6,
         )
 
     def _rng(self, seed: int | None = None) -> random.Random:
@@ -155,17 +172,39 @@ class StudentHoursWrapper:
         structure.metadata["input_work_hours_week"] = self.work_hours_week
         return structure
 
+    def schedule_input_parameters(self) -> dict[str, float | None]:
+        """Return wrapper inputs that are behaviorally mapped to schedule generation."""
+        return {
+            "fitness_hours_week": self.fitness_hours_week,
+            "social_hours_week": self.social_hours_week,
+            "work_hours_week": self.work_hours_week,
+            "carework_hours_week": self.carework_hours_week,
+        }
+
+    def accessibility_input_parameters(self) -> dict[str, float | None]:
+        """Return wrapper inputs used to initialize the accessibility model."""
+        return {
+            "workplace_distance_km": self.workplace_distance_km,
+            "indoor_activity_distance_km": self.indoor_activity_distance_km,
+            "outdoor_activity_distance_km": self.outdoor_activity_distance_km,
+        }
+
+    def input_parameters(self) -> dict[str, float | None]:
+        """Return all agent initialization inputs accepted by this wrapper."""
+        return {
+            **self.schedule_input_parameters(),
+            **self.accessibility_input_parameters(),
+        }
+
     def summary(self, seed: int | None = None) -> dict[str, object]:
         """Return both the hour inputs and the derived structure parameters."""
         derived = self.to_structure_parameters(seed=seed)
         return {
             "name": self.name,
-            "hour_inputs": {
-                "fitness_hours_week": self.fitness_hours_week,
-                "social_hours_week": self.social_hours_week,
-                "work_hours_week": self.work_hours_week,
-                "carework_hours_week": self.carework_hours_week,
-            },
+            "input_parameters": self.input_parameters(),
+            "schedule_inputs": self.schedule_input_parameters(),
+            "accessibility_inputs": self.accessibility_input_parameters(),
+            "hour_inputs": self.schedule_input_parameters(),
             "derived_structure_parameters": {
                 "schedule_rigidity": derived.schedule_rigidity,
                 "phase_variability": derived.phase_variability,
@@ -208,6 +247,9 @@ class StudentWrapper:
                 social_hours_week=self.parameters.social_hours_week,
                 work_hours_week=self.parameters.work_hours_week,
                 carework_hours_week=self.parameters.carework_hours_week,
+                workplace_distance_km=self.parameters.workplace_distance_km,
+                indoor_activity_distance_km=self.parameters.indoor_activity_distance_km,
+                outdoor_activity_distance_km=self.parameters.outdoor_activity_distance_km,
                 seed_variation=self.parameters.seed_variation,
                 variation_strength=self.parameters.variation_strength,
             )
