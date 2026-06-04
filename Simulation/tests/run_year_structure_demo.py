@@ -14,7 +14,7 @@ from year_structure import YearStructureGenerator
 def main() -> None:
     persona = StudentHoursWrapper.from_zve_student_generic(name="demo_student")
     generator = YearStructureGenerator()
-    year = generator.generate_year(persona_id=persona.name, persona_seed=123, parameters=persona)
+    year = generator.generate_year(persona_id=persona.name, persona_seed=245, parameters=persona)
 
     block_counts: dict[str, int] = {}
     for week in year.weeks:
