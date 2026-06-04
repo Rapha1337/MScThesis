@@ -139,4 +139,3 @@ Raphael Reinalter
 MSc Thesis Project  
 Institute of Sport Science  
 University of Bern, Switzerland
-
