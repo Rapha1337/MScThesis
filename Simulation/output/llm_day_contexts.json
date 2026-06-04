@@ -1,0 +1,4524 @@
+{
+  "simulation_metadata": {
+    "base_seed": 37,
+    "day_index": 21,
+    "n_personas": 5
+  },
+  "llm_contexts": [
+    {
+      "persona_id": "StudentPersona_01",
+      "seed": 393430179,
+      "day_index": 21,
+      "phase": "holiday",
+      "weekday": 0,
+      "task_description": "Use the compact 24-hour schedule, energy, quantitative weather, daylight, constraints, location, and POI-accessibility context to reason about this persona's day.",
+      "input_parameters": {
+        "fitness_hours_week": 6.0,
+        "social_hours_week": 8.0,
+        "work_hours_week": 5.0,
+        "carework_hours_week": 7.0,
+        "workplace_distance_km": 3.0,
+        "indoor_activity_distance_km": 1.2,
+        "outdoor_activity_distance_km": 0.6,
+        "day_index": 21
+      },
+      "selected_schedule_parameters": {
+        "name": "StudentPersona_01",
+        "schedule_rigidity": 0.632913952800257,
+        "phase_variability": 0.52,
+        "university_load": 0.6236915869451473,
+        "employment_load": 0.29045642804675137,
+        "study_intensity": 0.6079748598758692,
+        "sport_frequency": 0.5980611308232949,
+        "sport_fixedness": 0.5276284825850128,
+        "evening_flexibility": 0.6184465652824861,
+        "day_fragmentation": 0.41198814060498207,
+        "random_event_rate": 0.18,
+        "commute_load": 0.2,
+        "location_switch_frequency": 0.22,
+        "weekend_structure": 0.34,
+        "weekend_social_intensity": 0.6626283886892752,
+        "social_hours_week": 8.0,
+        "carework_hours_week": 7.0
+      },
+      "hourly_context_24h": [
+        {
+          "hour": 0,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.558,
+          "energy_category": "medium",
+          "temperature_c": -2.106,
+          "feels_like_c": -5.692,
+          "humidity_pct": 86.115,
+          "wind_m_s": 2.661,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 1,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.54,
+          "energy_category": "medium",
+          "temperature_c": -1.001,
+          "feels_like_c": -1.001,
+          "humidity_pct": 89.663,
+          "wind_m_s": 0.317,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 2,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.574,
+          "energy_category": "medium",
+          "temperature_c": -2.256,
+          "feels_like_c": -2.256,
+          "humidity_pct": 89.941,
+          "wind_m_s": 1.332,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 3,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.482,
+          "energy_category": "medium",
+          "temperature_c": -3.067,
+          "feels_like_c": -5.016,
+          "humidity_pct": 97.57,
+          "wind_m_s": 1.37,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 4,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.551,
+          "energy_category": "medium",
+          "temperature_c": -3.229,
+          "feels_like_c": -5.889,
+          "humidity_pct": 94.34,
+          "wind_m_s": 1.775,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 5,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.564,
+          "energy_category": "medium",
+          "temperature_c": -4.701,
+          "feels_like_c": -4.701,
+          "humidity_pct": 90.677,
+          "wind_m_s": 0.233,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 6,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.577,
+          "energy_category": "medium",
+          "temperature_c": -2.789,
+          "feels_like_c": -5.739,
+          "humidity_pct": 97.157,
+          "wind_m_s": 2.025,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 7,
+          "activity_type": "wake_up",
+          "subtype": "morning_wake_up",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.597,
+          "energy_category": "medium",
+          "temperature_c": -2.739,
+          "feels_like_c": -6.946,
+          "humidity_pct": 91.745,
+          "wind_m_s": 3.164,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 8,
+          "activity_type": "eat",
+          "subtype": "breakfast",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.577,
+          "energy_category": "medium",
+          "temperature_c": -1.173,
+          "feels_like_c": -3.41,
+          "humidity_pct": 81.542,
+          "wind_m_s": 1.703,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.064,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 9,
+          "activity_type": "downtime",
+          "subtype": "between_blocks",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.746,
+          "energy_category": "high",
+          "temperature_c": -0.386,
+          "feels_like_c": -3.888,
+          "humidity_pct": 83.941,
+          "wind_m_s": 2.917,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.361,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 10,
+          "activity_type": "downtime",
+          "subtype": "between_blocks",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.753,
+          "energy_category": "high",
+          "temperature_c": -0.352,
+          "feels_like_c": -0.352,
+          "humidity_pct": 85.43,
+          "wind_m_s": 1.13,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.473,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 11,
+          "activity_type": "downtime",
+          "subtype": "between_blocks",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.729,
+          "energy_category": "high",
+          "temperature_c": 1.386,
+          "feels_like_c": -1.195,
+          "humidity_pct": 81.033,
+          "wind_m_s": 2.317,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.625,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 12,
+          "activity_type": "eat",
+          "subtype": "lunch",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.602,
+          "energy_category": "medium",
+          "temperature_c": 2.625,
+          "feels_like_c": -0.202,
+          "humidity_pct": 82.147,
+          "wind_m_s": 2.824,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.656,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 13,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.589,
+          "energy_category": "medium",
+          "temperature_c": 3.325,
+          "feels_like_c": 3.325,
+          "humidity_pct": 69.064,
+          "wind_m_s": 1.253,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.726,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 14,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.585,
+          "energy_category": "medium",
+          "temperature_c": 1.806,
+          "feels_like_c": 0.521,
+          "humidity_pct": 71.554,
+          "wind_m_s": 1.361,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.484,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 15,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.629,
+          "energy_category": "medium",
+          "temperature_c": 2.979,
+          "feels_like_c": 2.979,
+          "humidity_pct": 73.407,
+          "wind_m_s": 0.493,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.332,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 16,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.733,
+          "energy_category": "high",
+          "temperature_c": 2.587,
+          "feels_like_c": 0.519,
+          "humidity_pct": 85.021,
+          "wind_m_s": 2.034,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.123,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 17,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.693,
+          "energy_category": "high",
+          "temperature_c": 3.337,
+          "feels_like_c": 0.474,
+          "humidity_pct": 71.624,
+          "wind_m_s": 3.043,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 18,
+          "activity_type": "eat",
+          "subtype": "dinner",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.707,
+          "energy_category": "high",
+          "temperature_c": 2.826,
+          "feels_like_c": -0.51,
+          "humidity_pct": 70.516,
+          "wind_m_s": 3.543,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 19,
+          "activity_type": "downtime",
+          "subtype": "open_time",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.641,
+          "energy_category": "medium",
+          "temperature_c": 2.431,
+          "feels_like_c": 2.431,
+          "humidity_pct": 81.436,
+          "wind_m_s": 1.222,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 20,
+          "activity_type": "downtime",
+          "subtype": "evening_wind_down",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.691,
+          "energy_category": "high",
+          "temperature_c": 1.026,
+          "feels_like_c": -1.73,
+          "humidity_pct": 76.162,
+          "wind_m_s": 2.423,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 21,
+          "activity_type": "downtime",
+          "subtype": "evening_wind_down",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.58,
+          "energy_category": "medium",
+          "temperature_c": 1.365,
+          "feels_like_c": -1.318,
+          "humidity_pct": 93.924,
+          "wind_m_s": 2.413,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 22,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.522,
+          "energy_category": "medium",
+          "temperature_c": 0.584,
+          "feels_like_c": 0.584,
+          "humidity_pct": 91.408,
+          "wind_m_s": 0.887,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 23,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.526,
+          "energy_category": "medium",
+          "temperature_c": 1.1,
+          "feels_like_c": -1.681,
+          "humidity_pct": 95.898,
+          "wind_m_s": 2.462,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "persona_id": "StudentPersona_02",
+      "seed": 152221923,
+      "day_index": 21,
+      "phase": "normal",
+      "weekday": 0,
+      "task_description": "Use the compact 24-hour schedule, energy, quantitative weather, daylight, constraints, location, and POI-accessibility context to reason about this persona's day.",
+      "input_parameters": {
+        "fitness_hours_week": 6.0,
+        "social_hours_week": 8.0,
+        "work_hours_week": 5.0,
+        "carework_hours_week": 7.0,
+        "workplace_distance_km": 3.0,
+        "indoor_activity_distance_km": 1.2,
+        "outdoor_activity_distance_km": 0.6,
+        "day_index": 21
+      },
+      "selected_schedule_parameters": {
+        "name": "StudentPersona_02",
+        "schedule_rigidity": 0.575868909729022,
+        "phase_variability": 0.52,
+        "university_load": 0.5164127726968626,
+        "employment_load": 0.2540321715948124,
+        "study_intensity": 0.6083002240219886,
+        "sport_frequency": 0.5967602911035887,
+        "sport_fixedness": 0.6394001646440706,
+        "evening_flexibility": 0.683587045426422,
+        "day_fragmentation": 0.42323339768317386,
+        "random_event_rate": 0.18,
+        "commute_load": 0.2,
+        "location_switch_frequency": 0.22,
+        "weekend_structure": 0.34,
+        "weekend_social_intensity": 0.6010134338956133,
+        "social_hours_week": 8.0,
+        "carework_hours_week": 7.0
+      },
+      "hourly_context_24h": [
+        {
+          "hour": 0,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.505,
+          "energy_category": "medium",
+          "temperature_c": 0.256,
+          "feels_like_c": -2.547,
+          "humidity_pct": 96.99,
+          "wind_m_s": 2.336,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 1,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.447,
+          "energy_category": "medium",
+          "temperature_c": -0.963,
+          "feels_like_c": -2.658,
+          "humidity_pct": 91.269,
+          "wind_m_s": 1.385,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 2,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.492,
+          "energy_category": "medium",
+          "temperature_c": -2.301,
+          "feels_like_c": -2.301,
+          "humidity_pct": 87.186,
+          "wind_m_s": 0.67,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 3,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.468,
+          "energy_category": "medium",
+          "temperature_c": -2.5,
+          "feels_like_c": -2.5,
+          "humidity_pct": 96.076,
+          "wind_m_s": 0.771,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 4,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.493,
+          "energy_category": "medium",
+          "temperature_c": -2.197,
+          "feels_like_c": -2.197,
+          "humidity_pct": 96.764,
+          "wind_m_s": 0.98,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 5,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.528,
+          "energy_category": "medium",
+          "temperature_c": -3.075,
+          "feels_like_c": -3.075,
+          "humidity_pct": 88.306,
+          "wind_m_s": 0.827,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 6,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.476,
+          "energy_category": "medium",
+          "temperature_c": -2.64,
+          "feels_like_c": -6.496,
+          "humidity_pct": 90.866,
+          "wind_m_s": 2.823,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 7,
+          "activity_type": "wake_up",
+          "subtype": "morning_wake_up",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.525,
+          "energy_category": "medium",
+          "temperature_c": -2.097,
+          "feels_like_c": -5.871,
+          "humidity_pct": 87.349,
+          "wind_m_s": 2.848,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 8,
+          "activity_type": "eat",
+          "subtype": "breakfast",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.513,
+          "energy_category": "medium",
+          "temperature_c": -2.01,
+          "feels_like_c": -2.01,
+          "humidity_pct": 82.666,
+          "wind_m_s": 1.127,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.048,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 9,
+          "activity_type": "work",
+          "subtype": "university",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.671,
+          "energy_category": "high",
+          "temperature_c": -0.575,
+          "feels_like_c": -4.064,
+          "humidity_pct": 81.716,
+          "wind_m_s": 2.863,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.217,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 10,
+          "activity_type": "work",
+          "subtype": "university",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.7,
+          "energy_category": "high",
+          "temperature_c": 0.227,
+          "feels_like_c": -2.177,
+          "humidity_pct": 78.687,
+          "wind_m_s": 1.988,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.453,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 11,
+          "activity_type": "work",
+          "subtype": "university",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.676,
+          "energy_category": "high",
+          "temperature_c": 2.025,
+          "feels_like_c": 0.699,
+          "humidity_pct": 74.033,
+          "wind_m_s": 1.404,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.501,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 12,
+          "activity_type": "eat",
+          "subtype": "lunch",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.634,
+          "energy_category": "medium",
+          "temperature_c": 2.236,
+          "feels_like_c": -1.063,
+          "humidity_pct": 79.851,
+          "wind_m_s": 3.318,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.517,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 13,
+          "activity_type": "work",
+          "subtype": "university",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.533,
+          "energy_category": "medium",
+          "temperature_c": 2.735,
+          "feels_like_c": 0.413,
+          "humidity_pct": 68.192,
+          "wind_m_s": 2.298,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.527,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 14,
+          "activity_type": "work",
+          "subtype": "university",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.526,
+          "energy_category": "medium",
+          "temperature_c": 3.035,
+          "feels_like_c": 1.277,
+          "humidity_pct": 71.167,
+          "wind_m_s": 1.829,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.465,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 15,
+          "activity_type": "downtime",
+          "subtype": "between_blocks",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.572,
+          "energy_category": "medium",
+          "temperature_c": 3.657,
+          "feels_like_c": 2.525,
+          "humidity_pct": 73.616,
+          "wind_m_s": 1.423,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.343,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 16,
+          "activity_type": "downtime",
+          "subtype": "between_blocks",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.66,
+          "energy_category": "high",
+          "temperature_c": 2.048,
+          "feels_like_c": 0.376,
+          "humidity_pct": 81.422,
+          "wind_m_s": 1.645,
+          "precipitation_mm": 2.409,
+          "is_wet": true,
+          "sun_frac": 0.06,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 17,
+          "activity_type": "downtime",
+          "subtype": "between_blocks",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.611,
+          "energy_category": "medium",
+          "temperature_c": 1.134,
+          "feels_like_c": -1.178,
+          "humidity_pct": 82.163,
+          "wind_m_s": 2.037,
+          "precipitation_mm": 1.405,
+          "is_wet": true,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 18,
+          "activity_type": "eat",
+          "subtype": "dinner",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.657,
+          "energy_category": "medium",
+          "temperature_c": 0.175,
+          "feels_like_c": -3.078,
+          "humidity_pct": 87.283,
+          "wind_m_s": 2.768,
+          "precipitation_mm": 0.593,
+          "is_wet": true,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 19,
+          "activity_type": "carework",
+          "subtype": "carework",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.6,
+          "energy_category": "medium",
+          "temperature_c": -0.668,
+          "feels_like_c": -3.569,
+          "humidity_pct": 90.105,
+          "wind_m_s": 2.278,
+          "precipitation_mm": 0.29,
+          "is_wet": true,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 20,
+          "activity_type": "carework",
+          "subtype": "carework",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.551,
+          "energy_category": "medium",
+          "temperature_c": -0.966,
+          "feels_like_c": -3.032,
+          "humidity_pct": 88.513,
+          "wind_m_s": 1.61,
+          "precipitation_mm": 0.324,
+          "is_wet": true,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 21,
+          "activity_type": "downtime",
+          "subtype": "evening_wind_down",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.527,
+          "energy_category": "medium",
+          "temperature_c": -2.021,
+          "feels_like_c": -5.496,
+          "humidity_pct": 88.881,
+          "wind_m_s": 2.573,
+          "precipitation_mm": 0.039,
+          "is_wet": true,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 22,
+          "activity_type": "downtime",
+          "subtype": "evening_wind_down",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.46,
+          "energy_category": "medium",
+          "temperature_c": -1.383,
+          "feels_like_c": -1.383,
+          "humidity_pct": 94.812,
+          "wind_m_s": 1.262,
+          "precipitation_mm": 0.55,
+          "is_wet": true,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 23,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.434,
+          "energy_category": "medium",
+          "temperature_c": -1.668,
+          "feels_like_c": -3.773,
+          "humidity_pct": 99.229,
+          "wind_m_s": 1.57,
+          "precipitation_mm": 0.133,
+          "is_wet": true,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "persona_id": "StudentPersona_03",
+      "seed": 1585830067,
+      "day_index": 21,
+      "phase": "holiday",
+      "weekday": 0,
+      "task_description": "Use the compact 24-hour schedule, energy, quantitative weather, daylight, constraints, location, and POI-accessibility context to reason about this persona's day.",
+      "input_parameters": {
+        "fitness_hours_week": 6.0,
+        "social_hours_week": 8.0,
+        "work_hours_week": 5.0,
+        "carework_hours_week": 7.0,
+        "workplace_distance_km": 3.0,
+        "indoor_activity_distance_km": 1.2,
+        "outdoor_activity_distance_km": 0.6,
+        "day_index": 21
+      },
+      "selected_schedule_parameters": {
+        "name": "StudentPersona_03",
+        "schedule_rigidity": 0.5769545911452925,
+        "phase_variability": 0.52,
+        "university_load": 0.5973342663876138,
+        "employment_load": 0.19734747182815301,
+        "study_intensity": 0.5929557133147775,
+        "sport_frequency": 0.5668562167926076,
+        "sport_fixedness": 0.537206026095612,
+        "evening_flexibility": 0.6749031320763541,
+        "day_fragmentation": 0.4244255509456241,
+        "random_event_rate": 0.18,
+        "commute_load": 0.2,
+        "location_switch_frequency": 0.22,
+        "weekend_structure": 0.34,
+        "weekend_social_intensity": 0.6110567306392813,
+        "social_hours_week": 8.0,
+        "carework_hours_week": 7.0
+      },
+      "hourly_context_24h": [
+        {
+          "hour": 0,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.523,
+          "energy_category": "medium",
+          "temperature_c": -0.263,
+          "feels_like_c": -4.605,
+          "humidity_pct": 91.158,
+          "wind_m_s": 3.998,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 1,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.506,
+          "energy_category": "medium",
+          "temperature_c": 0.058,
+          "feels_like_c": -1.655,
+          "humidity_pct": 86.403,
+          "wind_m_s": 1.479,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 2,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.567,
+          "energy_category": "medium",
+          "temperature_c": -0.257,
+          "feels_like_c": -2.74,
+          "humidity_pct": 94.143,
+          "wind_m_s": 1.988,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 3,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.548,
+          "energy_category": "medium",
+          "temperature_c": -1.568,
+          "feels_like_c": -1.568,
+          "humidity_pct": 93.248,
+          "wind_m_s": 0.704,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 4,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.486,
+          "energy_category": "medium",
+          "temperature_c": -1.178,
+          "feels_like_c": -4.464,
+          "humidity_pct": 94.313,
+          "wind_m_s": 2.543,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 5,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.526,
+          "energy_category": "medium",
+          "temperature_c": -1.294,
+          "feels_like_c": -4.949,
+          "humidity_pct": 94.884,
+          "wind_m_s": 2.888,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 6,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.522,
+          "energy_category": "medium",
+          "temperature_c": -0.765,
+          "feels_like_c": -3.057,
+          "humidity_pct": 94.897,
+          "wind_m_s": 1.784,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 7,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.586,
+          "energy_category": "medium",
+          "temperature_c": -0.343,
+          "feels_like_c": -0.343,
+          "humidity_pct": 90.127,
+          "wind_m_s": 1.175,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 8,
+          "activity_type": "wake_up",
+          "subtype": "morning_wake_up",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.528,
+          "energy_category": "medium",
+          "temperature_c": 0.388,
+          "feels_like_c": -1.512,
+          "humidity_pct": 82.547,
+          "wind_m_s": 1.632,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.127,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 9,
+          "activity_type": "eat",
+          "subtype": "breakfast",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.686,
+          "energy_category": "high",
+          "temperature_c": 0.967,
+          "feels_like_c": -0.475,
+          "humidity_pct": 77.76,
+          "wind_m_s": 1.388,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.229,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 10,
+          "activity_type": "downtime",
+          "subtype": "between_blocks",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.712,
+          "energy_category": "high",
+          "temperature_c": 1.552,
+          "feels_like_c": -2.17,
+          "humidity_pct": 84.076,
+          "wind_m_s": 3.697,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.314,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 11,
+          "activity_type": "downtime",
+          "subtype": "between_blocks",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.695,
+          "energy_category": "high",
+          "temperature_c": 2.629,
+          "feels_like_c": 2.629,
+          "humidity_pct": 78.79,
+          "wind_m_s": 0.418,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.384,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 12,
+          "activity_type": "eat",
+          "subtype": "lunch",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.67,
+          "energy_category": "high",
+          "temperature_c": 2.719,
+          "feels_like_c": 0.524,
+          "humidity_pct": 78.769,
+          "wind_m_s": 2.173,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.35,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 13,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.639,
+          "energy_category": "medium",
+          "temperature_c": 3.641,
+          "feels_like_c": 1.24,
+          "humidity_pct": 71.114,
+          "wind_m_s": 2.556,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.339,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 14,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.598,
+          "energy_category": "medium",
+          "temperature_c": 3.637,
+          "feels_like_c": 2.055,
+          "humidity_pct": 77.517,
+          "wind_m_s": 1.761,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.384,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 15,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.682,
+          "energy_category": "high",
+          "temperature_c": 3.844,
+          "feels_like_c": 1.536,
+          "humidity_pct": 80.331,
+          "wind_m_s": 2.494,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.301,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 16,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.646,
+          "energy_category": "medium",
+          "temperature_c": 6.528,
+          "feels_like_c": 4.883,
+          "humidity_pct": 72.316,
+          "wind_m_s": 2.292,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.132,
+          "is_daylight": true,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 17,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.71,
+          "energy_category": "high",
+          "temperature_c": 4.578,
+          "feels_like_c": 3.587,
+          "humidity_pct": 69.43,
+          "wind_m_s": 1.412,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 18,
+          "activity_type": "eat",
+          "subtype": "dinner",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.721,
+          "energy_category": "high",
+          "temperature_c": 4.377,
+          "feels_like_c": 1.683,
+          "humidity_pct": 75.966,
+          "wind_m_s": 3.1,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 19,
+          "activity_type": "downtime",
+          "subtype": "open_time",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.618,
+          "energy_category": "medium",
+          "temperature_c": 3.176,
+          "feels_like_c": 3.176,
+          "humidity_pct": 75.72,
+          "wind_m_s": 1.003,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 20,
+          "activity_type": "downtime",
+          "subtype": "open_time",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.678,
+          "energy_category": "high",
+          "temperature_c": 1.951,
+          "feels_like_c": 1.951,
+          "humidity_pct": 83.557,
+          "wind_m_s": 1.006,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 21,
+          "activity_type": "downtime",
+          "subtype": "evening_wind_down",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.508,
+          "energy_category": "medium",
+          "temperature_c": 0.621,
+          "feels_like_c": 0.621,
+          "humidity_pct": 81.624,
+          "wind_m_s": 0.394,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 22,
+          "activity_type": "downtime",
+          "subtype": "evening_wind_down",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.532,
+          "energy_category": "medium",
+          "temperature_c": -1.582,
+          "feels_like_c": -1.582,
+          "humidity_pct": 85.454,
+          "wind_m_s": 1.256,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 23,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.533,
+          "energy_category": "medium",
+          "temperature_c": -2.052,
+          "feels_like_c": -5.345,
+          "humidity_pct": 86.769,
+          "wind_m_s": 2.404,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": true,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "persona_id": "StudentPersona_04",
+      "seed": 1880087324,
+      "day_index": 21,
+      "phase": "holiday",
+      "weekday": 0,
+      "task_description": "Use the compact 24-hour schedule, energy, quantitative weather, daylight, constraints, location, and POI-accessibility context to reason about this persona's day.",
+      "input_parameters": {
+        "fitness_hours_week": 6.0,
+        "social_hours_week": 8.0,
+        "work_hours_week": 5.0,
+        "carework_hours_week": 7.0,
+        "workplace_distance_km": 3.0,
+        "indoor_activity_distance_km": 1.2,
+        "outdoor_activity_distance_km": 0.6,
+        "day_index": 21
+      },
+      "selected_schedule_parameters": {
+        "name": "StudentPersona_04",
+        "schedule_rigidity": 0.6425845958593116,
+        "phase_variability": 0.52,
+        "university_load": 0.5272162555477451,
+        "employment_load": 0.3079620549157281,
+        "study_intensity": 0.5317921206837921,
+        "sport_frequency": 0.5933580264825525,
+        "sport_fixedness": 0.5369846173318704,
+        "evening_flexibility": 0.6399164850462455,
+        "day_fragmentation": 0.4068435066155338,
+        "random_event_rate": 0.18,
+        "commute_load": 0.2,
+        "location_switch_frequency": 0.22,
+        "weekend_structure": 0.34,
+        "weekend_social_intensity": 0.6779894109276912,
+        "social_hours_week": 8.0,
+        "carework_hours_week": 7.0
+      },
+      "hourly_context_24h": [
+        {
+          "hour": 0,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.54,
+          "energy_category": "medium",
+          "temperature_c": -0.888,
+          "feels_like_c": -4.795,
+          "humidity_pct": 91.808,
+          "wind_m_s": 3.258,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 1,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.5,
+          "energy_category": "medium",
+          "temperature_c": -0.258,
+          "feels_like_c": -3.355,
+          "humidity_pct": 93.035,
+          "wind_m_s": 2.526,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 2,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.533,
+          "energy_category": "medium",
+          "temperature_c": -1.638,
+          "feels_like_c": -4.13,
+          "humidity_pct": 96.187,
+          "wind_m_s": 1.829,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 3,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.522,
+          "energy_category": "medium",
+          "temperature_c": -3.896,
+          "feels_like_c": -8.75,
+          "humidity_pct": 88.546,
+          "wind_m_s": 3.612,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 4,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.535,
+          "energy_category": "medium",
+          "temperature_c": -4.44,
+          "feels_like_c": -4.44,
+          "humidity_pct": 90.75,
+          "wind_m_s": 0.389,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 5,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.563,
+          "energy_category": "medium",
+          "temperature_c": -3.344,
+          "feels_like_c": -6.502,
+          "humidity_pct": 95.385,
+          "wind_m_s": 2.111,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 6,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.585,
+          "energy_category": "medium",
+          "temperature_c": -2.492,
+          "feels_like_c": -2.492,
+          "humidity_pct": 90.578,
+          "wind_m_s": 0.941,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 7,
+          "activity_type": "wake_up",
+          "subtype": "morning_wake_up",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.599,
+          "energy_category": "medium",
+          "temperature_c": -3.261,
+          "feels_like_c": -6.734,
+          "humidity_pct": 88.25,
+          "wind_m_s": 2.372,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 8,
+          "activity_type": "eat",
+          "subtype": "breakfast",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.551,
+          "energy_category": "medium",
+          "temperature_c": -1.497,
+          "feels_like_c": -4.83,
+          "humidity_pct": 89.396,
+          "wind_m_s": 2.532,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.142,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 9,
+          "activity_type": "downtime",
+          "subtype": "between_blocks",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.773,
+          "energy_category": "high",
+          "temperature_c": -0.618,
+          "feels_like_c": -0.618,
+          "humidity_pct": 79.846,
+          "wind_m_s": 0.929,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.279,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 10,
+          "activity_type": "downtime",
+          "subtype": "between_blocks",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.69,
+          "energy_category": "high",
+          "temperature_c": 0.696,
+          "feels_like_c": -1.368,
+          "humidity_pct": 95.641,
+          "wind_m_s": 1.783,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.342,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 11,
+          "activity_type": "downtime",
+          "subtype": "between_blocks",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.775,
+          "energy_category": "high",
+          "temperature_c": 0.832,
+          "feels_like_c": 0.832,
+          "humidity_pct": 79.264,
+          "wind_m_s": 1.273,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.603,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 12,
+          "activity_type": "eat",
+          "subtype": "lunch",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.614,
+          "energy_category": "medium",
+          "temperature_c": 0.288,
+          "feels_like_c": -2.26,
+          "humidity_pct": 79.518,
+          "wind_m_s": 2.116,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.669,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 13,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.574,
+          "energy_category": "medium",
+          "temperature_c": 2.128,
+          "feels_like_c": 0.159,
+          "humidity_pct": 71.457,
+          "wind_m_s": 1.884,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.628,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 14,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.569,
+          "energy_category": "medium",
+          "temperature_c": 2.52,
+          "feels_like_c": -2.418,
+          "humidity_pct": 72.256,
+          "wind_m_s": 6.377,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.506,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 15,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.697,
+          "energy_category": "high",
+          "temperature_c": 3.861,
+          "feels_like_c": 2.713,
+          "humidity_pct": 73.209,
+          "wind_m_s": 1.453,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.388,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 16,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.73,
+          "energy_category": "high",
+          "temperature_c": 5.386,
+          "feels_like_c": 5.386,
+          "humidity_pct": 74.871,
+          "wind_m_s": 1.253,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.118,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 17,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.731,
+          "energy_category": "high",
+          "temperature_c": 4.072,
+          "feels_like_c": 4.072,
+          "humidity_pct": 74.566,
+          "wind_m_s": 0.957,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 18,
+          "activity_type": "eat",
+          "subtype": "dinner",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.687,
+          "energy_category": "high",
+          "temperature_c": 2.814,
+          "feels_like_c": 2.814,
+          "humidity_pct": 74.995,
+          "wind_m_s": 0.834,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 19,
+          "activity_type": "downtime",
+          "subtype": "open_time",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.637,
+          "energy_category": "medium",
+          "temperature_c": 2.287,
+          "feels_like_c": 0.019,
+          "humidity_pct": 77.331,
+          "wind_m_s": 2.171,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 20,
+          "activity_type": "downtime",
+          "subtype": "open_time",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.638,
+          "energy_category": "medium",
+          "temperature_c": 2.833,
+          "feels_like_c": 2.833,
+          "humidity_pct": 84.678,
+          "wind_m_s": 0.516,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 21,
+          "activity_type": "downtime",
+          "subtype": "evening_wind_down",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.563,
+          "energy_category": "medium",
+          "temperature_c": 1.026,
+          "feels_like_c": -1.76,
+          "humidity_pct": 81.326,
+          "wind_m_s": 2.452,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 22,
+          "activity_type": "downtime",
+          "subtype": "evening_wind_down",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.518,
+          "energy_category": "medium",
+          "temperature_c": 0.341,
+          "feels_like_c": -1.571,
+          "humidity_pct": 90.128,
+          "wind_m_s": 1.636,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 23,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.56,
+          "energy_category": "medium",
+          "temperature_c": -0.698,
+          "feels_like_c": -0.698,
+          "humidity_pct": 84.041,
+          "wind_m_s": 1.146,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "persona_id": "StudentPersona_05",
+      "seed": 463240904,
+      "day_index": 21,
+      "phase": "holiday",
+      "weekday": 0,
+      "task_description": "Use the compact 24-hour schedule, energy, quantitative weather, daylight, constraints, location, and POI-accessibility context to reason about this persona's day.",
+      "input_parameters": {
+        "fitness_hours_week": 6.0,
+        "social_hours_week": 8.0,
+        "work_hours_week": 5.0,
+        "carework_hours_week": 7.0,
+        "workplace_distance_km": 3.0,
+        "indoor_activity_distance_km": 1.2,
+        "outdoor_activity_distance_km": 0.6,
+        "day_index": 21
+      },
+      "selected_schedule_parameters": {
+        "name": "StudentPersona_05",
+        "schedule_rigidity": 0.6555668581174229,
+        "phase_variability": 0.52,
+        "university_load": 0.6037933178372883,
+        "employment_load": 0.30240080269959546,
+        "study_intensity": 0.583072881611271,
+        "sport_frequency": 0.5864313753034466,
+        "sport_fixedness": 0.5716124631357652,
+        "evening_flexibility": 0.6881602012026974,
+        "day_fragmentation": 0.4629121950753772,
+        "random_event_rate": 0.18,
+        "commute_load": 0.2,
+        "location_switch_frequency": 0.22,
+        "weekend_structure": 0.34,
+        "weekend_social_intensity": 0.708798542309753,
+        "social_hours_week": 8.0,
+        "carework_hours_week": 7.0
+      },
+      "hourly_context_24h": [
+        {
+          "hour": 0,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.551,
+          "energy_category": "medium",
+          "temperature_c": -3.785,
+          "feels_like_c": -3.785,
+          "humidity_pct": 100.0,
+          "wind_m_s": 0.768,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 1,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.56,
+          "energy_category": "medium",
+          "temperature_c": -2.846,
+          "feels_like_c": -5.498,
+          "humidity_pct": 100.0,
+          "wind_m_s": 1.808,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 2,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.483,
+          "energy_category": "medium",
+          "temperature_c": -3.384,
+          "feels_like_c": -6.556,
+          "humidity_pct": 86.454,
+          "wind_m_s": 2.117,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 3,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.498,
+          "energy_category": "medium",
+          "temperature_c": -3.531,
+          "feels_like_c": -7.473,
+          "humidity_pct": 96.411,
+          "wind_m_s": 2.74,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 4,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.553,
+          "energy_category": "medium",
+          "temperature_c": -2.625,
+          "feels_like_c": -5.806,
+          "humidity_pct": 98.681,
+          "wind_m_s": 2.224,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 5,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.545,
+          "energy_category": "medium",
+          "temperature_c": -2.805,
+          "feels_like_c": -5.299,
+          "humidity_pct": 100.0,
+          "wind_m_s": 1.71,
+          "precipitation_mm": 2.312,
+          "is_wet": true,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 6,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.558,
+          "energy_category": "medium",
+          "temperature_c": -3.496,
+          "feels_like_c": -6.543,
+          "humidity_pct": 99.692,
+          "wind_m_s": 2.01,
+          "precipitation_mm": 0.519,
+          "is_wet": true,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 7,
+          "activity_type": "wake_up",
+          "subtype": "morning_wake_up",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.619,
+          "energy_category": "medium",
+          "temperature_c": -2.018,
+          "feels_like_c": -4.193,
+          "humidity_pct": 100.0,
+          "wind_m_s": 1.582,
+          "precipitation_mm": 1.354,
+          "is_wet": true,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 8,
+          "activity_type": "eat",
+          "subtype": "breakfast",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.596,
+          "energy_category": "medium",
+          "temperature_c": 0.775,
+          "feels_like_c": 0.775,
+          "humidity_pct": 93.803,
+          "wind_m_s": 0.712,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.11,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 9,
+          "activity_type": "downtime",
+          "subtype": "between_blocks",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.727,
+          "energy_category": "high",
+          "temperature_c": -0.161,
+          "feels_like_c": -3.805,
+          "humidity_pct": 86.286,
+          "wind_m_s": 3.128,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.252,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 10,
+          "activity_type": "downtime",
+          "subtype": "between_blocks",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.741,
+          "energy_category": "high",
+          "temperature_c": 0.436,
+          "feels_like_c": -1.695,
+          "humidity_pct": 79.028,
+          "wind_m_s": 1.802,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.257,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 11,
+          "activity_type": "downtime",
+          "subtype": "between_blocks",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.715,
+          "energy_category": "high",
+          "temperature_c": -0.674,
+          "feels_like_c": -2.508,
+          "humidity_pct": 83.018,
+          "wind_m_s": 1.49,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.406,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 12,
+          "activity_type": "eat",
+          "subtype": "lunch",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.671,
+          "energy_category": "high",
+          "temperature_c": -0.018,
+          "feels_like_c": -2.592,
+          "humidity_pct": 80.278,
+          "wind_m_s": 2.094,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.454,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 13,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.632,
+          "energy_category": "medium",
+          "temperature_c": 2.238,
+          "feels_like_c": 2.238,
+          "humidity_pct": 76.364,
+          "wind_m_s": 0.866,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.469,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 14,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.567,
+          "energy_category": "medium",
+          "temperature_c": 2.366,
+          "feels_like_c": 2.366,
+          "humidity_pct": 78.976,
+          "wind_m_s": 1.287,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.403,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 15,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.624,
+          "energy_category": "medium",
+          "temperature_c": 2.522,
+          "feels_like_c": 1.008,
+          "humidity_pct": 76.602,
+          "wind_m_s": 1.58,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.234,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 16,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.675,
+          "energy_category": "high",
+          "temperature_c": 3.191,
+          "feels_like_c": 0.996,
+          "humidity_pct": 79.565,
+          "wind_m_s": 2.251,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.116,
+          "is_daylight": true,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 17,
+          "activity_type": "work",
+          "subtype": "paid_work",
+          "current_location": "workplace",
+          "active_constraints": [],
+          "energy_level": 0.728,
+          "energy_category": "high",
+          "temperature_c": 3.233,
+          "feels_like_c": 3.233,
+          "humidity_pct": 79.028,
+          "wind_m_s": 0.333,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 2.1,
+              "travel_times_min": {
+                "walk": 26.25,
+                "bike": 8.4,
+                "car": 4.2
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 1.8,
+              "travel_times_min": {
+                "walk": 22.5,
+                "bike": 7.2,
+                "car": 3.6
+              }
+            }
+          }
+        },
+        {
+          "hour": 18,
+          "activity_type": "eat",
+          "subtype": "dinner",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.707,
+          "energy_category": "high",
+          "temperature_c": 3.747,
+          "feels_like_c": 1.639,
+          "humidity_pct": 76.286,
+          "wind_m_s": 2.262,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 19,
+          "activity_type": "downtime",
+          "subtype": "open_time",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.631,
+          "energy_category": "medium",
+          "temperature_c": 2.38,
+          "feels_like_c": -1.3,
+          "humidity_pct": 76.27,
+          "wind_m_s": 3.908,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 20,
+          "activity_type": "downtime",
+          "subtype": "evening_wind_down",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.657,
+          "energy_category": "medium",
+          "temperature_c": 3.447,
+          "feels_like_c": 1.278,
+          "humidity_pct": 80.464,
+          "wind_m_s": 2.27,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 21,
+          "activity_type": "downtime",
+          "subtype": "evening_wind_down",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.511,
+          "energy_category": "medium",
+          "temperature_c": 3.386,
+          "feels_like_c": -1.664,
+          "humidity_pct": 81.709,
+          "wind_m_s": 7.272,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 22,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.554,
+          "energy_category": "medium",
+          "temperature_c": 1.479,
+          "feels_like_c": 1.479,
+          "humidity_pct": 87.704,
+          "wind_m_s": 0.938,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        },
+        {
+          "hour": 23,
+          "activity_type": "sleep",
+          "subtype": "night_sleep",
+          "current_location": "home",
+          "active_constraints": [],
+          "energy_level": 0.541,
+          "energy_category": "medium",
+          "temperature_c": -0.494,
+          "feels_like_c": -3.129,
+          "humidity_pct": 92.182,
+          "wind_m_s": 2.078,
+          "precipitation_mm": 0.0,
+          "is_wet": false,
+          "sun_frac": 0.0,
+          "is_daylight": false,
+          "snow_cover": false,
+          "poi_accessibility": {
+            "indoor_activity": {
+              "distance_km": 1.2,
+              "travel_times_min": {
+                "walk": 15.0,
+                "bike": 4.8,
+                "car": 2.4
+              }
+            },
+            "outdoor_activity": {
+              "distance_km": 0.6,
+              "travel_times_min": {
+                "walk": 7.5,
+                "bike": 2.4,
+                "car": 1.2
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

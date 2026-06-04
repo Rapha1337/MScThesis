@@ -1,0 +1,12 @@
+**Entscheidung**  
+Der Agent wird an diesem Tag wahrscheinlich leichte bis moderate körperliche Aktivität ausführen.
+
+**Begründung**  
+Zwischen 9 Uhr und 12 Uhr hat er mehrere Stunden ungeplante Downtime zu Hause, ein hohes Energie‑Level und Tageslicht. Das Wetter ist kalt, aber trocken, und sowohl Indoor‑ als auch Outdoor‑Aktivitätsorte sind in wenigen Minuten zu Fuß oder mit dem Fahrrad erreichbar, sodass die Zugangshürde gering ist. Trotz fehlender etablierter PA‑Gewohnheit erhöhen die Kombination aus freier Zeit, hoher Energie und einfacher Erreichbarkeit die Wahrscheinlichkeit spontaner Bewegung (z. B. ein kurzer Spaziergang oder leichte Indoor‑Übung). Auch der Abend‑Downtime‑Block (19–21 Uhr) bietet noch Gelegenheit, wenn auch bei geringerem Energie‑Level.
+
+**Wichtigste Kontextfaktoren**  
+- Hohe Energie (0.74–0.73) während der morgendlichen Downtime  
+- Freie Zeit (Between‑Blocks) von 9–12 Uhr  
+- Tageslicht und trockenes Wetter, moderate Kälte  
+- Kurze Erreichbarkeit von Indoor‑ (15 min zu Fuß) und Outdoor‑Aktivitäten (7.5 min zu Fuß, 2.4 min mit dem Rad)  
+- Keine aktiven Einschränkungen.

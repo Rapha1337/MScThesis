@@ -1,0 +1,13 @@
+**Entscheidung**  
+Der Agent wird an diesem Tag wahrscheinlich leichte bis moderate körperliche Aktivität (PA) durchführen.
+
+**Begründung**  
+Es gibt mehrere zusammenfallende günstige Bedingungen: zwei ausgedehnte Downtime‑Phasen (10‑12 Uhr und 19‑22 Uhr) mit mittlerer bis hoher Energie, keinerlei aktive Einschränkungen und kurze Zugangszeiten zu sowohl Indoor‑ als auch Outdoor‑Aktivitätsorten (≤ 5 min mit dem Fahrrad). Trotz kaltem, verschneitem Wetter ist Tageslicht bis etwa 16 Uhr vorhanden, und die Holiday‑Phase lässt mehr Freizeit‑ und Erholungsbedarf zu. Diese Kombination erhöht die Wahrscheinlichkeit, dass der sonst inaktive Agent spontan eine kurze Bewegungseinheit (z. B. ein kurzer Spaziergang, leichtes Stretching oder ein kurzer Indoor‑Workout) nutzt.
+
+**Wichtigste Kontextfaktoren**  
+- Freie Downtime‑Zeiten (10‑12 Uhr, 19‑22 Uhr)  
+- Energie‑Level ≥ medium, teilweise high  
+- Keine aktiven Constraints  
+- Kurze Erreichbarkeit von Aktivitäts‑POIs (≈ 5 min mit dem Fahrrad)  
+- Holiday‑Phase (geringerer Zeitdruck)  
+- Tageslicht bis 16 Uhr, indoor‑Optionen bei kaltem Wetter.

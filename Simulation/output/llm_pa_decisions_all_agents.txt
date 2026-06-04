@@ -1,0 +1,78 @@
+================================================================================
+Agent: StudentPersona_01
+================================================================================
+**Entscheidung**  
+Der Agent würde an diesem Tag wahrscheinlich leichte bis moderate körperliche Aktivität ausführen.
+
+**Begründung**  
+Zwischen 9 – 11 Uhr hat er mehrere Stunden ungeplante Downtime zu Hause, das Energielevel ist hoch und es ist Tageslicht vorhanden. Die Wetterbedingungen sind kalt, aber trocken, und sowohl ein nahegelegenes Outdoor‑ als auch ein Indoor‑Angebot sind in wenigen Minuten zu Fuß oder mit dem Fahrrad erreichbar. Diese Kombination aus freier Zeit, ausreichender Energie und geringer Zugangshürde macht ein spontanes Spazierengehen oder eine kurze Indoor‑Bewegung plausibel, obwohl der Agent aus einer inaktiven Gruppe stammt.
+
+**Wichtigste Kontextfaktoren**  
+- Hohe Energie (0.74‑0.75) während der Downtime  
+- Freie Zeitblöcke (9‑11 Uhr, 19‑21 Uhr)  
+- Gute Erreichbarkeit von Outdoor‑ (0.6 km, 7.5 min zu Fuß) und Indoor‑Optionen (1.2 km, 15 min zu Fuß)  
+- Tageslicht und trockenes Wetter (keine Niederschläge, keine Nässe)  
+
+
+================================================================================
+Agent: StudentPersona_02
+================================================================================
+**Entscheidung**  
+Der Agent wird an diesem Tag wahrscheinlich leichte körperliche Aktivität ausführen.
+
+**Begründung**  
+Nach dem Uni‑Block hat er um 15 Uhr ein freies Zeitfenster zu Hause. Energie ist mittel bis hoch, es ist Tageslicht, das Wetter ist trocken und relativ mild (≈ 3 °C, kein Niederschlag) und die Outdoor‑Möglichkeit ist nur 0,6 km entfernt (zu Fuß 7 min, mit dem Rad 2 min). Diese Kombination aus freier Zeit, ausreichender Energie, gutem Wetter und kurzer Erreichbarkeit schafft mehrere günstige Bedingungen, die bei einer sonst inaktiven Person ausreichen können, um spontan eine kurze leichte Bewegung (z. B. Spaziergang oder kurze Fahrradtour) zu unternehmen.
+
+**Wichtigste Kontextfaktoren**  
+- Downtime 15 h (freie Zeit)  
+- Energie‑Kategorie medium/high  
+- Wetter: trocken, 3 °C, Tageslicht, keine Niederschläge  
+- Kurze Zugangszeit zu Outdoor‑POI (≤ 7 min zu Fuß, ≤ 2 min mit dem Rad)  
+- Keine etablierten PA‑Gewohnheiten, aber mehrere günstige Faktoren gleichzeitig.
+
+
+================================================================================
+Agent: StudentPersona_03
+================================================================================
+**Entscheidung**  
+Der Agent wird an diesem Tag voraussichtlich keine körperliche Aktivität (PA) durchführen.
+
+**Begründung**  
+Der Tag ist stark durch bezahlte Arbeit (13 – 17 Uhr) strukturiert, sodass nur kurze Zeitfenster nach dem Abendessen (19 – 22 Uhr) für spontane Aktivitäten verbleiben. Das Wetter ist kalt, es liegt Schnee und die gefühlte Temperatur liegt meist unter dem Gefrierpunkt – Bedingungen, die Outdoor‑PA unattraktiv machen. Obwohl das Energielevel hoch ist, stammt der Agent aus einer inaktiven Zielgruppe und hat keinen geplanten PA‑Slot oder einen leicht erreichbaren Indoor‑Sportort, der in die freien Zeiten passt. Die Anreise zum Arbeitsplatz ist relativ kurz (wenige Minuten mit Auto/Fahrrad), sodass ein aktiver Pendeln unwahrscheinlich ist.
+
+**Wichtigste Kontextfaktoren**  
+- Langer Arbeitsblock (13‑17 Uhr) → wenig freie Zeit  
+- Kalt, Schnee, gefühlte Temperaturen ≤ 0 °C → ungünstige Outdoor‑Bedingungen  
+- Keine geplanten PA‑Möglichkeiten, Indoor‑Aktivitätsort liegt 1,2 km entfernt (15 min zu Fuß)  
+- Baseline‑Inaktivität des Agents trotz hohem Energielevel.
+
+
+================================================================================
+Agent: StudentPersona_04
+================================================================================
+**Entscheidung**  
+Der Agent wird an diesem Tag wahrscheinlich leichte bis moderate körperliche Aktivität ausführen.
+
+**Begründung**  
+Zwischen 9 Uhr und 11 Uhr gibt es ein längeres Downtime‑Fenster zu Hause, das bei hoher Energie (0,77 – 0,78) und Tageslicht stattfindet. Das nahegelegene Outdoor‑POI ist nur 0,6 km entfernt (7 min zu Fuß, 2,4 min mit dem Rad) und das Wetter ist trocken, ohne Niederschlag. Diese Kombination aus freier Zeit, hoher Energie, kurzer Erreichbarkeit und akzeptablen Umweltbedingungen begünstigt spontan einen kurzen Spaziergang oder eine kurze Fahrradtour. Auch nach dem Arbeitstag (18 – 22 Uhr) besteht noch mittlere Energie und ein Indoor‑POI ist in kurzer Zeit erreichbar, sodass ein leichtes Indoor‑Bewegungsangebot möglich wäre.
+
+**Wichtigste Kontextfaktoren**  
+- Downtime/Offene Zeit (9‑11 Uhr) mit hoher Energie  
+- Gute Erreichbarkeit des Outdoor‑Aktivitätsortes (0,6 km, < 10 min zu Fuß)  
+- Trockenes Wetter, Tageslicht vorhanden, keine starken Einschränkungen.
+
+
+================================================================================
+Agent: StudentPersona_05
+================================================================================
+**Entscheidung**  
+Der Agent wird an diesem Tag wahrscheinlich leichte körperliche Aktivität ausführen.
+
+**Begründung**  
+Zwischen 9 Uhr und 11 Uhr hat er drei Stunden ungeplante Downtime zu Hause, ein hohes Energie‑Level und Tageslicht. Das Wetter ist kalt, aber trocken, und sowohl Indoor‑ als auch Outdoor‑Aktivitäten sind mit wenigen Minuten zu Fuß oder mit dem Fahrrad erreichbar. Diese Kombination aus freier Zeit, hoher Energie und niedrigen Zugangshürden macht ein spontanes, leichtes PA (z. B. ein kurzer Spaziergang oder leichte Indoor‑Bewegung) plausibel, obwohl er sonst zu den inaktiven Personen gehört.
+
+**Wichtigste Kontextfaktoren**  
+- Freie Downtime‑Blöcke (9‑11 Uhr)  
+- Hohe Energie (0,72‑0,74, Kategorie „high“)  
+- Tageslicht und trockenes Wetter  
+- Sehr kurze Zugangszeiten zu Indoor‑ (15 min zu Fuß) und Outdoor‑(7,5 min zu Fuß) Aktivitäten.

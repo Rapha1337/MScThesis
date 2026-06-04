@@ -1,0 +1,11 @@
+**Entscheidung**  
+Der Agent wird an diesem Tag wahrscheinlich leichte körperliche Aktivität ausführen.
+
+**Begründung**  
+Zwischen 9 Uhr und 11 Uhr hat er drei Stunden ungeplante Downtime zu Hause, ein hohes Energie‑Level und Tageslicht. Das Wetter ist kalt, aber trocken, und sowohl Indoor‑ als auch Outdoor‑Aktivitäten sind mit wenigen Minuten zu Fuß oder mit dem Fahrrad erreichbar. Diese Kombination aus freier Zeit, hoher Energie und niedrigen Zugangshürden macht ein spontanes, leichtes PA (z. B. ein kurzer Spaziergang oder leichte Indoor‑Bewegung) plausibel, obwohl er sonst zu den inaktiven Personen gehört.
+
+**Wichtigste Kontextfaktoren**  
+- Freie Downtime‑Blöcke (9‑11 Uhr)  
+- Hohe Energie (0,72‑0,74, Kategorie „high“)  
+- Tageslicht und trockenes Wetter  
+- Sehr kurze Zugangszeiten zu Indoor‑ (15 min zu Fuß) und Outdoor‑(7,5 min zu Fuß) Aktivitäten.
