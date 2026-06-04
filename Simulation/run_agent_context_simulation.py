@@ -12,7 +12,7 @@ if str(SIMULATION_DIR) not in sys.path:
 
 from agent_context_export import export_day_contexts_to_json, generate_day_contexts_for_personas
 
-DEFAULT_OUTPUT_PATH = SIMULATION_DIR / "output" / "agent_day_contexts.json"
+DEFAULT_OUTPUT_PATH = SIMULATION_DIR / "output" / "llm_day_contexts.json"
 
 LLM_HOURLY_FIELDS: tuple[str, ...] = (
     "hour",
@@ -37,7 +37,7 @@ LLM_POI_TARGETS: tuple[str, ...] = ("indoor_activity", "outdoor_activity")
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate persona day contexts for simulation runs as JSON.")
+    parser = argparse.ArgumentParser(description="Generate LLM-ready persona day contexts as JSON.")
     parser.add_argument("--n-personas", type=int, required=True)
     parser.add_argument("--base-seed", type=int, required=True)
     parser.add_argument("--day-index", type=int, required=True)
@@ -75,28 +75,25 @@ def _compact_llm_poi_accessibility(hourly_entry: Mapping[str, Any]) -> dict[str,
         if not isinstance(target_payload, Mapping):
             poi_accessibility[target] = {"distance_km": None, "travel_times_min": {}}
             continue
+
         travel_times = target_payload.get("travel_times_min")
         poi_accessibility[target] = {
             "distance_km": target_payload.get("distance_km"),
             "travel_times_min": dict(travel_times) if isinstance(travel_times, Mapping) else {},
         }
+
     return poi_accessibility
 
 
-def _llm_hourly_context_entry(hourly_entry: Mapping[str, Any], environment_entry: Mapping[str, Any]) -> dict[str, Any]:
+def _llm_hourly_context_entry(hourly_entry: Mapping[str, Any]) -> dict[str, Any]:
+    """Create one compact hourly LLM context entry.
+
+    Intentionally excludes derived/debug labels such as:
+    - weather_condition
+    - absolute_hour
+    """
     entry = {field: hourly_entry.get(field) for field in LLM_HOURLY_FIELDS}
     entry["poi_accessibility"] = _compact_llm_poi_accessibility(hourly_entry)
-
-    if "weather_condition" in environment_entry:
-        entry["weather_condition"] = environment_entry["weather_condition"]
-    elif "weather_condition" in hourly_entry:
-        entry["weather_condition"] = hourly_entry["weather_condition"]
-
-    if "absolute_hour" in environment_entry:
-        entry["absolute_hour"] = environment_entry["absolute_hour"]
-    elif "absolute_hour" in hourly_entry:
-        entry["absolute_hour"] = hourly_entry["absolute_hour"]
-
     return entry
 
 
@@ -104,15 +101,11 @@ def _build_llm_context(persona_payload: Mapping[str, Any], day_index: int) -> di
     day_context = persona_payload["day_context"]
     agent_context = persona_payload.get("agent_context", {})
     hourly_context = list(day_context.get("hourly_context_24h", []))
-    hourly_environment = list(day_context.get("hourly_environment_24h", []))
 
     if len(hourly_context) != 24:
         raise ValueError("day_context.hourly_context_24h must contain exactly 24 entries.")
 
-    llm_hourly_context: list[dict[str, Any]] = []
-    for index, hourly_entry in enumerate(hourly_context):
-        environment_entry = hourly_environment[index] if index < len(hourly_environment) else {}
-        llm_hourly_context.append(_llm_hourly_context_entry(hourly_entry, environment_entry))
+    llm_hourly_context = [_llm_hourly_context_entry(hourly_entry) for hourly_entry in hourly_context]
 
     return {
         "persona_id": persona_payload["persona_id"],
@@ -121,8 +114,8 @@ def _build_llm_context(persona_payload: Mapping[str, Any], day_index: int) -> di
         "phase": day_context.get("phase"),
         "weekday": day_context.get("weekday"),
         "task_description": (
-            "Use the compact 24-hour schedule, energy, weather, daylight, constraints, "
-            "location, and POI-accessibility context to reason about this persona's day."
+            "Use the compact 24-hour schedule, energy, quantitative weather, daylight, "
+            "constraints, location, and POI-accessibility context to reason about this persona's day."
         ),
         "input_parameters": persona_payload.get("input_parameters", {}),
         "selected_schedule_parameters": agent_context.get("schedule_parameters", {}),
@@ -134,13 +127,14 @@ def build_llm_ready_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Convert the diagnostic day-context payload into compact LLM-ready JSON."""
     metadata = dict(payload["simulation_metadata"])
     day_index = int(metadata["day_index"])
+
     return {
         "simulation_metadata": metadata,
         "llm_contexts": [_build_llm_context(persona, day_index) for persona in payload.get("personas", [])],
     }
 
 
-def _print_summary(payload: dict, output_path: Path, export_succeeded: bool) -> None:
+def _print_summary(payload: dict[str, Any], output_path: Path, export_succeeded: bool) -> None:
     metadata = payload["simulation_metadata"]
     persona_ids = [str(context["persona_id"]) for context in payload["llm_contexts"]]
 
@@ -149,23 +143,28 @@ def _print_summary(payload: dict, output_path: Path, export_succeeded: bool) -> 
     print(f"base_seed: {metadata['base_seed']}")
     print(f"day_index: {metadata['day_index']}")
     print(f"persona IDs: {', '.join(persona_ids)}")
+
     for context in payload["llm_contexts"]:
         hourly_count = len(context.get("hourly_context_24h", []))
         print(f"{context['persona_id']} phase: {context.get('phase')}")
         print(f"{context['persona_id']} hourly_context_24h entries: {hourly_count}")
+
     print(f"JSON export success: {str(export_succeeded).lower()}")
 
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
+
     diagnostic_payload = generate_day_contexts_for_personas(
         n_personas=args.n_personas,
         base_seed=args.base_seed,
         day_index=args.day_index,
         input_parameters=_input_parameters_from_args(args),
     )
+
     payload = build_llm_ready_payload(diagnostic_payload)
     output_path = export_day_contexts_to_json(payload, args.output_path)
+
     json.dumps(payload)
     _print_summary(payload=payload, output_path=output_path, export_succeeded=output_path.exists())
 
