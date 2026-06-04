@@ -38,6 +38,8 @@ HEURISTIC_SOURCE = "home_distance_mean_heuristic"
 UNKNOWN_SOURCE = "unknown_current_location"
 
 HOME_ACTIVITY_TYPES = {"sleep", "eat", "downtime", "wake_up", "household", "carework"}
+NEUTRAL_EAT_SUBTYPES = {"lunch", "snack"}
+NEUTRAL_DOWNTIME_SUBTYPES = {"between_blocks", "open_time"}
 WORK_ACTIVITY_TYPE = "work"
 PHYSICAL_ACTIVITY_TYPE = "physical_activity"
 OUTDOOR_ACTIVITY_HINTS = {
@@ -106,6 +108,52 @@ def calculate_travel_times_min(
         mode: round(distance / speed_kmh * 60.0, 6)
         for mode, speed_kmh in speeds.items()
     }
+
+
+def _is_neutral_context_dependent_block(hourly_entry: Any) -> bool:
+    activity_type = _coerce_activity_value(_entry_get(hourly_entry, "activity_type"))
+    subtype = _coerce_activity_value(_entry_get(hourly_entry, "subtype"))
+
+    if activity_type == "eat" and subtype in NEUTRAL_EAT_SUBTYPES:
+        return True
+    if activity_type == "downtime" and subtype in NEUTRAL_DOWNTIME_SUBTYPES:
+        return True
+    return False
+
+
+def _is_work_like_block(hourly_entry: Any, *, study_location: str | None = None) -> bool:
+    return (
+        _coerce_activity_value(_entry_get(hourly_entry, "activity_type")) == WORK_ACTIVITY_TYPE
+        and infer_current_location(hourly_entry, study_location=study_location) not in {"home", "unknown"}
+    )
+
+
+def _infer_contextual_neutral_location(
+    hourly_schedule: Sequence[Any],
+    index: int,
+    *,
+    study_location: str | None = None,
+) -> str | None:
+    if index <= 0 or index >= len(hourly_schedule) - 1:
+        return None
+
+    entry = hourly_schedule[index]
+    if not _is_neutral_context_dependent_block(entry):
+        return None
+
+    previous_entry = hourly_schedule[index - 1]
+    next_entry = hourly_schedule[index + 1]
+    if not (
+        _is_work_like_block(previous_entry, study_location=study_location)
+        and _is_work_like_block(next_entry, study_location=study_location)
+    ):
+        return None
+
+    previous_location = infer_current_location(previous_entry, study_location=study_location)
+    next_location = infer_current_location(next_entry, study_location=study_location)
+    if previous_location == next_location and previous_location not in {"home", "unknown"}:
+        return previous_location
+    return None
 
 
 def infer_current_location(
@@ -331,10 +379,15 @@ class AccessibilityModel:
         """Serialize hourly location-aware accessibility for schedule entries."""
         hourly_context: list[dict[str, object]] = []
         previous_location: str | None = None
+        inferred_locations = [
+            _infer_contextual_neutral_location(hourly_schedule, index, study_location=study_location)
+            or infer_current_location(entry, study_location=study_location)
+            for index, entry in enumerate(hourly_schedule)
+        ]
 
         for index, entry in enumerate(hourly_schedule):
             hour = _entry_get(entry, "hour", None)
-            current_location = infer_current_location(entry, study_location=study_location)
+            current_location = inferred_locations[index]
 
             if index == 0:
                 location_changed = False

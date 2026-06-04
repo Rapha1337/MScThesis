@@ -270,3 +270,70 @@ def test_simulation_runner_day_context_builds_hourly_accessibility_from_generate
     assert transition["previous_location"] != transition["current_location"]
     assert transition["travel_from_previous_location"] is not None
     assert set(transition["travel_from_previous_location"]["travel_times_min"]) == {"walk", "bike", "car"}
+
+
+def _full_day_schedule_with(overrides: dict[int, dict[str, object]]) -> list[dict[str, object]]:
+    schedule = [
+        {"hour": hour, "activity_type": "sleep", "subtype": "night_sleep"}
+        for hour in range(24)
+    ]
+    for hour, entry in overrides.items():
+        schedule[hour] = {"hour": hour, **entry}
+    return schedule
+
+
+def test_lunch_between_two_work_blocks_stays_at_workplace() -> None:
+    model = _demo_model()
+    schedule = _full_day_schedule_with({
+        11: {"activity_type": "work", "subtype": "university"},
+        12: {"activity_type": "eat", "subtype": "lunch"},
+        13: {"activity_type": "work", "subtype": "university"},
+    })
+
+    hourly = model.build_hourly_accessibility(schedule)
+
+    assert hourly[12]["current_location"] == "workplace"
+    assert hourly[12]["accessibility"]["targets"]["workplace"]["distance_km"] == 0.0
+    assert hourly[12]["accessibility"]["targets"]["indoor_activity"]["distance_km"] == pytest.approx(2.1)
+
+
+def test_downtime_between_two_work_blocks_stays_at_workplace() -> None:
+    model = _demo_model()
+    schedule = _full_day_schedule_with({
+        10: {"activity_type": "work", "subtype": "paid_work"},
+        11: {"activity_type": "downtime", "subtype": "between_blocks"},
+        12: {"activity_type": "work", "subtype": "paid_work"},
+    })
+
+    hourly = model.build_hourly_accessibility(schedule)
+
+    assert hourly[11]["current_location"] == "workplace"
+
+
+def test_breakfast_and_dinner_remain_home() -> None:
+    model = _demo_model()
+    schedule = _full_day_schedule_with({
+        7: {"activity_type": "eat", "subtype": "breakfast"},
+        8: {"activity_type": "work", "subtype": "paid_work"},
+        17: {"activity_type": "work", "subtype": "paid_work"},
+        18: {"activity_type": "eat", "subtype": "dinner"},
+    })
+
+    hourly = model.build_hourly_accessibility(schedule)
+
+    assert hourly[7]["current_location"] == "home"
+    assert hourly[18]["current_location"] == "home"
+
+
+def test_neutral_block_keeps_fallback_when_surrounding_locations_differ() -> None:
+    model = _demo_model()
+    schedule = _full_day_schedule_with({
+        11: {"activity_type": "work", "subtype": "paid_work"},
+        12: {"activity_type": "eat", "subtype": "lunch"},
+        13: {"activity_type": "physical_activity", "subtype": "gym"},
+    })
+
+    hourly = model.build_hourly_accessibility(schedule)
+
+    assert hourly[12]["current_location"] == "home"
+    assert hourly[12]["accessibility"]["targets"]["workplace"]["distance_km"] == 3.0

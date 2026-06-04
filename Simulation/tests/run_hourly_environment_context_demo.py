@@ -182,13 +182,15 @@ def _parse_args() -> object:
         default=0,
         help="Optional index suffix for the demo persona name; useful when comparing deterministic variants.",
     )
+    parser.add_argument(
+        "--show-phase-examples",
+        action="store_true",
+        help="Print one generated-year example day for normal, high_stress, and holiday phases.",
+    )
     return parser.parse_args()
 
 
-def run_demo(day_index: int = 0, seed: int = 37, persona_index: int = 0) -> None:
-    if day_index < 0:
-        raise ValueError("day_index must be >= 0")
-
+def build_demo_runner(seed: int = 37, persona_index: int = 0) -> SimulationRunner:
     persona = StudentHoursWrapper.from_zve_student_generic(
         name=f"hourly_environment_demo_student_{persona_index}"
     )
@@ -207,9 +209,32 @@ def run_demo(day_index: int = 0, seed: int = 37, persona_index: int = 0) -> None
         accessibility_model=accessibility_model,
     )
     runner.reset_world()
-    runner._sim_hour = day_index * 24
+    return runner
 
-    context = runner.get_day_context()
+
+def find_phase_example_day_indices(
+    runner: SimulationRunner,
+    phases: tuple[str, ...] = ("normal", "high_stress", "holiday"),
+) -> dict[str, int]:
+    if runner.year_structure is None:
+        return {}
+
+    examples: dict[str, int] = {}
+    for week in runner.year_structure.weeks:
+        phase = str(week.phase)
+        if phase in phases and phase not in examples:
+            examples[phase] = week.week_index * 7
+    return examples
+
+
+def _get_day_context_for_runner(runner: SimulationRunner, day_index: int) -> dict[str, object]:
+    if day_index < 0:
+        raise ValueError("day_index must be >= 0")
+    runner._sim_hour = day_index * 24
+    return runner.get_day_context()
+
+
+def _print_day_context(runner: SimulationRunner, day_index: int, context: dict[str, object]) -> None:
     hourly_context = context["hourly_context_24h"]
     week_index = (day_index // 7) % runner.n_weeks
     weekday = day_index % 7
@@ -232,11 +257,11 @@ def run_demo(day_index: int = 0, seed: int = 37, persona_index: int = 0) -> None
         f"active_constraints={_constraint_summary(active_constraints)}"
     )
     print(
-        "| hour | activity/subtype | location | energy | constraints | temp | feels | "
+        "| hour | activity/subtype | location | energy_level | energy_category | constraints | temp | feels | "
         "humidity | wind | precip/wet | sun/daylight | indoor POI | outdoor POI |"
     )
     print(
-        "|---:|---|---|---:|---|---:|---:|---:|---:|---|---|---|---|"
+        "|---:|---|---|---:|---|---|---:|---:|---:|---:|---|---|---|---|"
     )
     for entry in hourly_context:
         precip_wet = f"{entry['precipitation_mm']}mm/{entry['is_wet']}"
@@ -247,6 +272,7 @@ def run_demo(day_index: int = 0, seed: int = 37, persona_index: int = 0) -> None
             f"{entry['activity_type']}/{entry['subtype']} | "
             f"{entry['current_location']} | "
             f"{entry['energy_level']} | "
+            f"{entry.get('energy_category')} | "
             f"{_constraint_summary(entry.get('active_constraints'))} | "
             f"{entry['temperature_c']} | "
             f"{entry['feels_like_c']} | "
@@ -259,6 +285,30 @@ def run_demo(day_index: int = 0, seed: int = 37, persona_index: int = 0) -> None
         )
 
 
+def run_demo(day_index: int = 0, seed: int = 37, persona_index: int = 0) -> None:
+    runner = build_demo_runner(seed=seed, persona_index=persona_index)
+    context = _get_day_context_for_runner(runner, day_index)
+    _print_day_context(runner, day_index, context)
+
+
+def run_phase_examples(seed: int = 37, persona_index: int = 0) -> None:
+    runner = build_demo_runner(seed=seed, persona_index=persona_index)
+    examples = find_phase_example_day_indices(runner)
+    missing = [phase for phase in ("normal", "high_stress", "holiday") if phase not in examples]
+    if missing:
+        print(f"No example day found for phase(s): {', '.join(missing)}")
+    for phase in ("normal", "high_stress", "holiday"):
+        if phase not in examples:
+            continue
+        day_index = examples[phase]
+        print(f"\n=== Phase example: {phase} ===")
+        context = _get_day_context_for_runner(runner, day_index)
+        _print_day_context(runner, day_index, context)
+
+
 if __name__ == "__main__":
     args = _parse_args()
-    run_demo(day_index=args.day_index, seed=args.seed, persona_index=args.persona_index)
+    if args.show_phase_examples:
+        run_phase_examples(seed=args.seed, persona_index=args.persona_index)
+    else:
+        run_demo(day_index=args.day_index, seed=args.seed, persona_index=args.persona_index)
