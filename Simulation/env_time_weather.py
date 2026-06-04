@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import copy
+
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
@@ -260,6 +262,178 @@ class TimeWeatherEnv(gym.Env):
         # Interner Zustand räumliche Umgebung
         self.map = bern_map if bern_map is not None else BernMap(dist_km=8.0)
         self.mobility = MobilityModel(self.map)
+
+    def _season_for_month(self, month: int) -> str:
+        if month in {12, 1, 2}:
+            return "winter"
+        if month in {3, 4, 5}:
+            return "spring"
+        if month in {6, 7, 8}:
+            return "summer"
+        return "autumn"
+
+    def _weather_condition(
+        self,
+        *,
+        temperature_c: float,
+        precipitation_mm: float,
+        is_wet: bool,
+        sun_frac: float,
+        is_daylight: bool,
+        snow_cover: bool,
+    ) -> str:
+        if snow_cover and (is_wet or precipitation_mm > 0.0) and temperature_c <= 1.5:
+            return "snow"
+        if precipitation_mm >= 5.0:
+            return "heavy_rain"
+        if is_wet or precipitation_mm > 0.0:
+            return "rain"
+        if not is_daylight:
+            return "clear_night"
+        if sun_frac >= 0.5:
+            return "sunny"
+        if sun_frac >= 0.15:
+            return "partly_cloudy"
+        return "overcast"
+
+    def _serialize_environment_state(
+        self,
+        *,
+        absolute_hour: int,
+        month: int,
+        hour: int,
+        temperature_c: float,
+        precipitation_mm: float,
+        wet_flag: int,
+        sun_frac: float,
+        humidity_pct: float,
+        wind_m_s: float,
+        snow_cover_flag: int,
+        feels_like_c: float,
+    ) -> dict[str, object]:
+        is_wet = bool(wet_flag)
+        is_daylight = bool(sun_frac > 0.0)
+        snow_cover = bool(snow_cover_flag)
+        return {
+            "hour": int(hour),
+            "absolute_hour": int(absolute_hour),
+            "month": int(month),
+            "season": self._season_for_month(int(month)),
+            "temperature_c": round(float(temperature_c), 3),
+            "feels_like_c": round(float(feels_like_c), 3),
+            "precipitation_mm": round(float(precipitation_mm), 3),
+            "is_wet": is_wet,
+            "weather_condition": self._weather_condition(
+                temperature_c=float(temperature_c),
+                precipitation_mm=float(precipitation_mm),
+                is_wet=is_wet,
+                sun_frac=float(sun_frac),
+                is_daylight=is_daylight,
+                snow_cover=snow_cover,
+            ),
+            "sun_frac": round(float(sun_frac), 3),
+            "is_daylight": is_daylight,
+            "humidity_pct": round(float(humidity_pct), 3),
+            "wind_m_s": round(float(wind_m_s), 3),
+            "snow_cover": snow_cover,
+        }
+
+    def get_environment_state(self) -> dict[str, object]:
+        """Return the current weather/time state without old mobility fields."""
+        month, hour = self._month_hour(min(self._t, self.horizon_hours - 1))
+        return self._serialize_environment_state(
+            absolute_hour=int(self._t),
+            month=month,
+            hour=hour,
+            temperature_c=self._temp,
+            precipitation_mm=self._precip,
+            wet_flag=self._wet_prev,
+            sun_frac=self._sun_frac,
+            humidity_pct=self._humidity,
+            wind_m_s=self._wind,
+            snow_cover_flag=self._snow_cover_flag,
+            feels_like_c=self._feels_like,
+        )
+
+    def build_hourly_environment_24h(self, start_t: int | None = None) -> list[dict[str, object]]:
+        """Build a 24-hour weather/time context without mutating live env state.
+
+        The context intentionally excludes the legacy BernMap/MobilityModel fields;
+        accessibility is provided separately by AccessibilityModel.
+        """
+        if self._rng is None:
+            raise RuntimeError("TimeWeatherEnv must be reset before building hourly environment context.")
+
+        saved_state = {
+            "_t": self._t,
+            "_eps_prev": self._eps_prev,
+            "_wet_prev": self._wet_prev,
+            "_temp": self._temp,
+            "_precip": self._precip,
+            "_sun_frac": self._sun_frac,
+            "_humidity": self._humidity,
+            "_wind": self._wind,
+            "_snow_cover_flag": self._snow_cover_flag,
+            "_feels_like": self._feels_like,
+            "_sun_day_factor": self._sun_day_factor,
+        }
+        rng_state = copy.deepcopy(self._rng.bit_generator.state)
+
+        day_start = (self._t // 24) * 24 if start_t is None else int(start_t)
+        prev_wet = int(self._wet_prev)
+        prev_eps = float(self._eps_prev)
+        snow_prev = int(self._snow_cover_flag)
+        hourly: list[dict[str, object]] = []
+
+        try:
+            for offset in range(24):
+                absolute_hour = day_start + offset
+                month, hour = self._month_hour(absolute_hour)
+
+                if offset > 0 and hour == 0:
+                    self._sun_day_factor = float(
+                        np.clip(self._rng.normal(1.0, 0.35), 0.2, 1.6)
+                    )
+
+                (
+                    temperature_c,
+                    precipitation_mm,
+                    prev_wet,
+                    prev_eps,
+                    sun_frac,
+                    wind_m_s,
+                    humidity_pct,
+                    snow_prev,
+                    feels_like_c,
+                ) = self._simulate_hour(
+                    month=month,
+                    hour=hour,
+                    wet_prev=prev_wet,
+                    eps_prev=prev_eps,
+                    snow_prev=snow_prev,
+                )
+
+                hourly.append(
+                    self._serialize_environment_state(
+                        absolute_hour=absolute_hour,
+                        month=month,
+                        hour=hour,
+                        temperature_c=temperature_c,
+                        precipitation_mm=precipitation_mm,
+                        wet_flag=prev_wet,
+                        sun_frac=sun_frac,
+                        humidity_pct=humidity_pct,
+                        wind_m_s=wind_m_s,
+                        snow_cover_flag=snow_prev,
+                        feels_like_c=feels_like_c,
+                    )
+                )
+        finally:
+            for name, value in saved_state.items():
+                setattr(self, name, value)
+            self._rng.bit_generator.state = rng_state
+
+        return hourly
 
     def reset(self, seed: int | None = None, options: dict | None = None):
         """
