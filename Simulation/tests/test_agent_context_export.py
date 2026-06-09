@@ -15,6 +15,7 @@ from agent_context_export import (
     generate_day_contexts_for_personas,
 )
 from persona_wrappers import StudentHoursWrapper
+from psychological_state import DEFAULT_PSYCHOLOGICAL_STATE
 
 INPUT_PARAMETERS = {
     "fitness_hours_week": 6,
@@ -34,6 +35,15 @@ def _payload(day_index: int = 21) -> dict:
         day_index=day_index,
         input_parameters=INPUT_PARAMETERS,
     )
+
+
+def _assert_psychological_state(psychological_state: dict) -> None:
+    expected_constructs = set(DEFAULT_PSYCHOLOGICAL_STATE["values_normalized"])
+    assert set(psychological_state) == {"source", "n", "values_normalized", "raw_scale_means"}
+    assert psychological_state["source"] == "T1_students_mean_from_simulated_AIcoPA_dataset"
+    assert psychological_state["n"] == 64
+    assert set(psychological_state["values_normalized"]) == expected_constructs
+    assert set(psychological_state["raw_scale_means"]) == expected_constructs
 
 
 def test_wrapper_input_config_accepts_all_required_parameters() -> None:
@@ -80,6 +90,7 @@ def test_build_agent_contexts_preserves_inputs_and_reports_wiring() -> None:
     assert context["accessibility_parameters"]["indoor_activity_distance_km"] == 1.2
     assert context["accessibility_parameters"]["outdoor_activity_distance_km"] == 0.6
     assert context["accessibility_parameters"]["accessibility_model"]["categories"]["workplace"]["distance_km"] == 3.0
+    _assert_psychological_state(context["psychological_state"])
     assert context["generated_persona_summary"]["accessibility_inputs"] == {
         "workplace_distance_km": 3.0,
         "indoor_activity_distance_km": 1.2,
@@ -131,6 +142,7 @@ def test_generate_day_contexts_for_personas_returns_json_serializable_payload() 
     for persona in payload["personas"]:
         assert "agent_context" in persona
         assert "day_context" in persona
+        _assert_psychological_state(persona["agent_context"]["psychological_state"])
         assert "agent_state" not in persona
         assert "agent_state" not in persona["agent_context"]
         assert "hourly_context_24h" in persona["day_context"]
