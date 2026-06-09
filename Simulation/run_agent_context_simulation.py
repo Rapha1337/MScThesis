@@ -11,6 +11,7 @@ if str(SIMULATION_DIR) not in sys.path:
     sys.path.append(str(SIMULATION_DIR))
 
 from agent_context_export import export_day_contexts_to_json, generate_day_contexts_for_personas
+from psychological_state import build_default_psychological_state
 
 DEFAULT_OUTPUT_PATH = SIMULATION_DIR / "output" / "llm_day_contexts.json"
 
@@ -119,6 +120,7 @@ def _build_llm_context(persona_payload: Mapping[str, Any], day_index: int) -> di
         ),
         "input_parameters": persona_payload.get("input_parameters", {}),
         "selected_schedule_parameters": agent_context.get("schedule_parameters", {}),
+        "psychological_state": agent_context.get("psychological_state") or build_default_psychological_state(),
         "hourly_context_24h": llm_hourly_context,
     }
 

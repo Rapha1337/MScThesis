@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from accessibility_model import build_accessibility_model
 from persona_wrappers import StudentHoursWrapper, StudentWrapper
+from psychological_state import build_default_psychological_state
 from schedule_model_student import YearPhase
 from simulation_runner import SimulationRunner
 
@@ -281,6 +282,7 @@ def build_agent_contexts(
                 {
                     "persona_id": persona_id,
                     "seed": seed,
+                    "psychological_state": build_default_psychological_state(),
                     "input_parameters": {
                         **persona_parameters.input_parameters(),
                         "day_index": normalized_inputs["day_index"],
