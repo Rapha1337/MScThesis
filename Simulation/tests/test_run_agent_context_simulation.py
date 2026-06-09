@@ -8,6 +8,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
+from psychological_state import DEFAULT_PSYCHOLOGICAL_STATE
 from run_agent_context_simulation import main
 
 
@@ -36,6 +37,15 @@ DIAGNOSTIC_ARRAYS = {
     "hourly_environment_24h",
     "hourly_accessibility_24h",
 }
+
+
+def _assert_psychological_state(psychological_state: dict) -> None:
+    expected_constructs = set(DEFAULT_PSYCHOLOGICAL_STATE["values_normalized"])
+    assert set(psychological_state) == {"source", "n", "values_normalized", "raw_scale_means"}
+    assert psychological_state["source"] == "T1_students_mean_from_simulated_AIcoPA_dataset"
+    assert psychological_state["n"] == 64
+    assert set(psychological_state["values_normalized"]) == expected_constructs
+    assert set(psychological_state["raw_scale_means"]) == expected_constructs
 
 
 def _run_cli(tmp_path: Path) -> tuple[Path, dict]:
@@ -99,8 +109,11 @@ def test_exported_llm_contexts_include_compact_hourly_demo_fields(tmp_path: Path
             "task_description",
             "input_parameters",
             "selected_schedule_parameters",
+            "psychological_state",
             "hourly_context_24h",
         } == set(context)
+        _assert_psychological_state(context["psychological_state"])
+        assert "action_plan" not in context
         assert len(context["hourly_context_24h"]) == 24
         for hourly_entry in context["hourly_context_24h"]:
             assert EXPECTED_HOURLY_FIELDS.issubset(hourly_entry)

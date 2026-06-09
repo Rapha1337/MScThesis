@@ -8,6 +8,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
+from psychological_state import DEFAULT_PSYCHOLOGICAL_STATE
 from run_agent_context_simulation import LLM_HOURLY_FIELDS
 from run_heterogeneous_llm_contexts import main
 
@@ -20,6 +21,15 @@ EXPECTED_SCENARIOS = [
 ]
 
 EXPECTED_HOURLY_FIELDS = set(LLM_HOURLY_FIELDS) | {"poi_accessibility"}
+
+
+def _assert_psychological_state(psychological_state: dict) -> None:
+    expected_constructs = set(DEFAULT_PSYCHOLOGICAL_STATE["values_normalized"])
+    assert set(psychological_state) == {"source", "n", "values_normalized", "raw_scale_means"}
+    assert psychological_state["source"] == "T1_students_mean_from_simulated_AIcoPA_dataset"
+    assert psychological_state["n"] == 64
+    assert set(psychological_state["values_normalized"]) == expected_constructs
+    assert set(psychological_state["raw_scale_means"]) == expected_constructs
 
 
 def test_heterogeneous_llm_context_export_smoke(tmp_path: Path, capsys) -> None:
@@ -36,6 +46,9 @@ def test_heterogeneous_llm_context_export_smoke(tmp_path: Path, capsys) -> None:
     assert "Runner command: python Simulation/run_heterogeneous_llm_contexts.py" in captured.out
 
     for context in payload["llm_contexts"]:
+        _assert_psychological_state(context["psychological_state"])
+        assert context["scenario"] in EXPECTED_SCENARIOS
+        assert "action_plan" not in context
         assert len(context["hourly_context_24h"]) == 24
         for hourly_entry in context["hourly_context_24h"]:
             assert set(hourly_entry) == EXPECTED_HOURLY_FIELDS
