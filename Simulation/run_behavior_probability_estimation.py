@@ -137,11 +137,6 @@ def extract_psychological_values_normalized(agent_context: Mapping[str, Any]) ->
 def build_behavior_probability_user_prompt(agent_context: Mapping[str, Any]) -> str:
     psychological_values = extract_psychological_values_normalized(agent_context)
     llm1_input: dict[str, Any] = {
-        "traceability": {
-            "persona_id": agent_context.get("persona_id"),
-            "scenario": agent_context.get("scenario"),
-            "seed": agent_context.get("seed"),
-        },
         "psychological_construct_values_normalized": psychological_values,
     }
     input_json = json.dumps(llm1_input, ensure_ascii=False, separators=(",", ":"))
@@ -151,7 +146,7 @@ INPUT:
 {input_json}
 
 IMPORTANT:
-Use traceability fields only to identify this record. Base the probability estimate only on psychological_construct_values_normalized.
+Base the probability estimate only on psychological_construct_values_normalized. Do not infer anything from identifiers, filenames, scenarios, or context.
 Return exactly one valid JSON object in the required schema.
 """.strip()
 

@@ -48,6 +48,41 @@
         "social_hours_week": 6.0,
         "carework_hours_week": 2.0
       },
+      "psychological_state": {
+        "source": "T1_students_from_simulated_AIcoPA_dataset",
+        "reference_group": "T1_Studierend",
+        "n": 64,
+        "sampling_method": "multivariate_normal",
+        "seed": 320812101,
+        "values_normalized": {
+          "automaticity": 0.224,
+          "pa_specific_self_control": 0.803,
+          "action_planning": 0.674,
+          "intention": 0.797,
+          "perceived_behavioral_control": 1.0,
+          "attitude_toward_the_behavior": 0.912,
+          "subjective_norm": 0.769,
+          "interest_enjoyment": 0.843,
+          "perceived_competence": 0.789,
+          "perceived_choice": 0.736,
+          "pressure_tension": 0.332,
+          "motivational_competence": 0.798
+        },
+        "raw_scale_means": {
+          "automaticity": 2.34,
+          "pa_specific_self_control": 4.21,
+          "action_planning": 4.37,
+          "intention": 5.78,
+          "perceived_behavioral_control": 7.0,
+          "attitude_toward_the_behavior": 6.47,
+          "subjective_norm": 5.61,
+          "interest_enjoyment": 3.37,
+          "perceived_competence": 3.16,
+          "perceived_choice": 2.94,
+          "pressure_tension": 1.33,
+          "motivational_competence": 4.19
+        }
+      },
       "hourly_context_24h": [
         {
           "hour": 0,
@@ -952,6 +987,41 @@
         "social_hours_week": 6.0,
         "carework_hours_week": 2.0
       },
+      "psychological_state": {
+        "source": "T1_students_from_simulated_AIcoPA_dataset",
+        "reference_group": "T1_Studierend",
+        "n": 64,
+        "sampling_method": "multivariate_normal",
+        "seed": 789930164,
+        "values_normalized": {
+          "automaticity": 0.414,
+          "pa_specific_self_control": 0.333,
+          "action_planning": 0.908,
+          "intention": 0.733,
+          "perceived_behavioral_control": 0.574,
+          "attitude_toward_the_behavior": 0.862,
+          "subjective_norm": 0.432,
+          "interest_enjoyment": 0.711,
+          "perceived_competence": 0.873,
+          "perceived_choice": 0.792,
+          "pressure_tension": 0.219,
+          "motivational_competence": 0.664
+        },
+        "raw_scale_means": {
+          "automaticity": 3.48,
+          "pa_specific_self_control": 2.33,
+          "action_planning": 5.54,
+          "intention": 5.4,
+          "perceived_behavioral_control": 4.44,
+          "attitude_toward_the_behavior": 6.17,
+          "subjective_norm": 3.59,
+          "interest_enjoyment": 2.84,
+          "perceived_competence": 3.49,
+          "perceived_choice": 3.17,
+          "pressure_tension": 0.88,
+          "motivational_competence": 3.66
+        }
+      },
       "hourly_context_24h": [
         {
           "hour": 0,
@@ -1855,6 +1925,41 @@
         "weekend_social_intensity": 0.5336994532547069,
         "social_hours_week": 6.0,
         "carework_hours_week": 2.0
+      },
+      "psychological_state": {
+        "source": "T1_students_from_simulated_AIcoPA_dataset",
+        "reference_group": "T1_Studierend",
+        "n": 64,
+        "sampling_method": "multivariate_normal",
+        "seed": 1771345164,
+        "values_normalized": {
+          "automaticity": 0.412,
+          "pa_specific_self_control": 0.715,
+          "action_planning": 0.479,
+          "intention": 0.407,
+          "perceived_behavioral_control": 0.791,
+          "attitude_toward_the_behavior": 0.589,
+          "subjective_norm": 0.568,
+          "interest_enjoyment": 0.995,
+          "perceived_competence": 0.623,
+          "perceived_choice": 0.803,
+          "pressure_tension": 0.578,
+          "motivational_competence": 0.723
+        },
+        "raw_scale_means": {
+          "automaticity": 3.47,
+          "pa_specific_self_control": 3.86,
+          "action_planning": 3.4,
+          "intention": 3.44,
+          "perceived_behavioral_control": 5.75,
+          "attitude_toward_the_behavior": 4.53,
+          "subjective_norm": 4.41,
+          "interest_enjoyment": 3.98,
+          "perceived_competence": 2.49,
+          "perceived_choice": 3.21,
+          "pressure_tension": 2.31,
+          "motivational_competence": 3.89
+        }
       },
       "hourly_context_24h": [
         {
@@ -2786,6 +2891,41 @@
         "social_hours_week": 6.0,
         "carework_hours_week": 2.0
       },
+      "psychological_state": {
+        "source": "T1_students_from_simulated_AIcoPA_dataset",
+        "reference_group": "T1_Studierend",
+        "n": 64,
+        "sampling_method": "multivariate_normal",
+        "seed": 1408641052,
+        "values_normalized": {
+          "automaticity": 0.404,
+          "pa_specific_self_control": 0.522,
+          "action_planning": 0.486,
+          "intention": 0.8,
+          "perceived_behavioral_control": 0.888,
+          "attitude_toward_the_behavior": 0.798,
+          "subjective_norm": 0.693,
+          "interest_enjoyment": 0.976,
+          "perceived_competence": 0.704,
+          "perceived_choice": 0.758,
+          "pressure_tension": 0.286,
+          "motivational_competence": 0.84
+        },
+        "raw_scale_means": {
+          "automaticity": 3.42,
+          "pa_specific_self_control": 3.09,
+          "action_planning": 3.43,
+          "intention": 5.8,
+          "perceived_behavioral_control": 6.33,
+          "attitude_toward_the_behavior": 5.79,
+          "subjective_norm": 5.16,
+          "interest_enjoyment": 3.9,
+          "perceived_competence": 2.82,
+          "perceived_choice": 3.03,
+          "pressure_tension": 1.14,
+          "motivational_competence": 4.36
+        }
+      },
       "hourly_context_24h": [
         {
           "hour": 0,
@@ -3689,6 +3829,41 @@
         "weekend_social_intensity": 0.6208097353218981,
         "social_hours_week": 6.0,
         "carework_hours_week": 2.0
+      },
+      "psychological_state": {
+        "source": "T1_students_from_simulated_AIcoPA_dataset",
+        "reference_group": "T1_Studierend",
+        "n": 64,
+        "sampling_method": "multivariate_normal",
+        "seed": 836539920,
+        "values_normalized": {
+          "automaticity": 0.424,
+          "pa_specific_self_control": 0.551,
+          "action_planning": 0.06,
+          "intention": 0.453,
+          "perceived_behavioral_control": 0.473,
+          "attitude_toward_the_behavior": 0.515,
+          "subjective_norm": 0.479,
+          "interest_enjoyment": 1.0,
+          "perceived_competence": 0.817,
+          "perceived_choice": 0.498,
+          "pressure_tension": 0.624,
+          "motivational_competence": 0.968
+        },
+        "raw_scale_means": {
+          "automaticity": 3.54,
+          "pa_specific_self_control": 3.2,
+          "action_planning": 1.3,
+          "intention": 3.72,
+          "perceived_behavioral_control": 3.84,
+          "attitude_toward_the_behavior": 4.09,
+          "subjective_norm": 3.87,
+          "interest_enjoyment": 4.0,
+          "perceived_competence": 3.27,
+          "perceived_choice": 1.99,
+          "pressure_tension": 2.5,
+          "motivational_competence": 4.87
+        }
       },
       "hourly_context_24h": [
         {
