@@ -1,0 +1,10 @@
+{
+  "probabilities": {
+    "do_planned_activity": 0.55,
+    "adapt_activity": 0.25,
+    "postpone_activity": 0.04,
+    "skip_activity": 0.03,
+    "extra_activity": 0.1,
+    "app_ignored": 0.03
+  }
+}

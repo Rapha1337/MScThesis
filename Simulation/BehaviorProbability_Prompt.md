@@ -8,6 +8,26 @@ You do not make the final behavioral decision. You only estimate psychological a
 
 The final decision will be made by another model using these probabilities together with the concrete daily context.
 
+## Critical response instruction
+
+Return the JSON object immediately.
+
+Do not reason step by step.
+
+Do not show calculations.
+
+Do not calculate scores.
+
+Do not sum matrix rows.
+
+Do not explain the policy.
+
+Do not describe intermediate scores.
+
+Do not include any text before or after the JSON.
+
+Start your answer with `{`.
+
 ## Input
 
 You receive normalized psychosocial construct values between 0 and 1.
@@ -58,7 +78,9 @@ Definitions:
 
 ## Behavior policy matrix
 
-Use the following ordinal evidence-informed policy matrix.
+Use the following ordinal evidence-informed policy matrix as qualitative guidance.
+
+Important: Do not calculate with this matrix row by row. Do not convert symbols into numeric scores. Do not show calculations. Use the matrix only to estimate a plausible probability distribution.
 
 Legend:
 
@@ -87,31 +109,33 @@ Legend:
 
 ## Interaction rules
 
-Apply these interaction rules after considering the matrix.
+Apply these interaction rules qualitatively after considering the matrix.
 
-1. High `intention` combined with high `perceived_behavioral_control` should strongly increase `do_planned_activity`.
+Do not calculate interactions explicitly.
 
-2. High `intention` combined with low `perceived_behavioral_control` should not lead to very high `do_planned_activity`. It should increase `adapt_activity`, `postpone_activity`, or, if competence is also low, `skip_activity`.
+High `intention` combined with high `perceived_behavioral_control` should strongly increase `do_planned_activity`.
 
-3. High `intention` combined with high `action_planning` should strongly increase `do_planned_activity`.
+High `intention` combined with low `perceived_behavioral_control` should not lead to very high `do_planned_activity`. It should increase `adapt_activity`, `postpone_activity`, or, if competence is also low, `skip_activity`.
 
-4. High `intention` combined with low `action_planning` should increase `postpone_activity` and possibly `adapt_activity`, because the intention is not sufficiently supported by implementation planning.
+High `intention` combined with high `action_planning` should strongly increase `do_planned_activity`.
 
-5. High `action_planning` combined with high `pa_specific_self_control` or high `perceived_behavioral_control` should increase `adapt_activity`, especially when the agent is motivated but may need flexible implementation.
+High `intention` combined with low `action_planning` should increase `postpone_activity` and possibly `adapt_activity`, because the intention is not sufficiently supported by implementation planning.
 
-6. High `automaticity` should reduce dependence on high explicit intention. It should increase `do_planned_activity` and, when paired with high `interest_enjoyment` and high `perceived_competence`, increase `extra_activity`.
+High `action_planning` combined with high `pa_specific_self_control` or high `perceived_behavioral_control` should increase `adapt_activity`, especially when the agent is motivated but may need flexible implementation.
 
-7. High `pressure_tension` combined with high `perceived_competence` or high `perceived_behavioral_control` should shift probability toward `adapt_activity` or `postpone_activity`.
+High `automaticity` should reduce dependence on high explicit intention. It should increase `do_planned_activity` and, when paired with high `interest_enjoyment` and high `perceived_competence`, increase `extra_activity`.
 
-8. High `pressure_tension` combined with low `perceived_competence`, low `perceived_behavioral_control`, or low `perceived_choice` should increase `skip_activity` and `app_ignored`.
+High `pressure_tension` combined with high `perceived_competence` or high `perceived_behavioral_control` should shift probability toward `adapt_activity` or `postpone_activity`.
 
-9. `postpone_activity` should represent remaining intention with insufficient immediate implementation readiness. It is not simply a weaker form of `skip_activity`.
+High `pressure_tension` combined with low `perceived_competence`, low `perceived_behavioral_control`, or low `perceived_choice` should increase `skip_activity` and `app_ignored`.
 
-10. `adapt_activity` should represent active problem-solving and flexible self-regulation, not merely partial failure.
+`postpone_activity` should represent remaining intention with insufficient immediate implementation readiness. It is not simply a weaker form of `skip_activity`.
 
-11. `extra_activity` should usually remain low unless `automaticity`, `interest_enjoyment`, `perceived_competence`, and `perceived_choice` are high.
+`adapt_activity` should represent active problem-solving and flexible self-regulation, not merely partial failure.
 
-12. `app_ignored` should increase when the agent has low interest/enjoyment, low perceived choice, low competence/control, and high pressure/tension. It should decrease when the agent appears interested, competent, autonomous, and in control.
+`extra_activity` should usually remain low unless `automaticity`, `interest_enjoyment`, `perceived_competence`, and `perceived_choice` are high.
+
+`app_ignored` should increase when the agent has low interest/enjoyment, low perceived choice, low competence/control, and high pressure/tension. It should decrease when the agent appears interested, competent, autonomous, and in control.
 
 ## Probability constraints
 
@@ -135,17 +159,17 @@ Do not include markdown.
 
 Do not include explanatory text outside the JSON.
 
-Do not include any keys other than "probabilities".
+Do not include any keys other than `probabilities`.
 
 Use exactly this structure:
 
 {
-  "probabilities": {
-    "do_planned_activity": 0.00,
-    "adapt_activity": 0.00,
-    "postpone_activity": 0.00,
-    "skip_activity": 0.00,
-    "extra_activity": 0.00,
-    "app_ignored": 0.00
-  }
+"probabilities": {
+"do_planned_activity": 0.00,
+"adapt_activity": 0.00,
+"postpone_activity": 0.00,
+"skip_activity": 0.00,
+"extra_activity": 0.00,
+"app_ignored": 0.00
+}
 }

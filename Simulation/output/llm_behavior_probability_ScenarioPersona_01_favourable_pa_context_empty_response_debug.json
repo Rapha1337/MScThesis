@@ -1,0 +1,41 @@
+{
+  "id": "chatcmpl-2c73ca01-5200-4507-a21b-93d098e8313d",
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "logprobs": null,
+      "message": {
+        "content": null,
+        "refusal": null,
+        "role": "assistant",
+        "annotations": null,
+        "audio": null,
+        "function_call": null,
+        "tool_calls": [],
+        "reasoning_content": "We need to produce probabilities based on the constructs. Let's analyze.\n\nValues: automaticity 0.224 (low-moderate), pa_self_control 0.803 (high), action_planning 0.674 (moderate-high), intention 0.797 (high), perceived_control 1.0 (max), attitude 0.912 (high), subjective_norm 0.769 (moderate-high), interest_enjoyment 0.843 (high), perceived_competence 0.789 (high), perceived_choice 0.736 (moderate-high), pressure_tension 0.332 (low-moderate), motivational_competence 0.798 (high).\n\nOverall profile: high intention, high perceived control, high planning, high self-control, high competence, high interest, moderate automaticity lowish, low pressure.\n\nThus strong positive influences for do_planned_activity: intention (+ + +), perceived_control (+ + +), action_planning (+ + +), self_control (+ +), attitude (+ +), interest (+ +), competence (+ +), choice (+ +). Also automaticity moderate (+ +). So do_planned_activity should have high probability, but not extreme because some moderate pressure and automaticity low.\n\nAdapt_activity also gets positive influences: automaticity (+), self_control (+ +), action_planning (+ +), perceived_control (+ +), competence (+ +), choice (+), interest (+). So adapt also plausible.\n\nPostpone: negative influences from many constructs (most are --). Pressure_tension is low, so postpone not high.\n\nSkip: negative influences from many constructs (most are --). So low.\n\nExtra: requires high automaticity, interest, competence, choice. Automaticity low (0.224) so extra low.\n\nApp_ignored: pressure low, interest high, choice high, competence high, so low.\n\nThus distribution: majority to do_planned_activity, some to adapt, small to postpone, tiny to skip, extra, app_ignored.\n\nWe need sum 1.0.\n\nLet's assign approximate: do_planned 0.55, adapt 0.30, postpone 0.10, skip 0.02, extra 0.02, app_ignored 0.01. Sum = 1.0? 0.55+0.30=0.85, +0.10=0.95, +0.02=0.97, +0"
+      },
+      "stop_reason": null,
+      "token_ids": null
+    }
+  ],
+  "created": 1781111058,
+  "model": "gpt-oss-120b",
+  "object": "chat.completion",
+  "moderation": null,
+  "service_tier": null,
+  "system_fingerprint": null,
+  "usage": {
+    "completion_tokens": 500,
+    "prompt_tokens": 1901,
+    "total_tokens": 2401,
+    "completion_tokens_details": null,
+    "prompt_tokens_details": null,
+    "time_per_output_token_ms": 0,
+    "tokens_per_second": 0,
+    "time_to_first_token_ms": 2585
+  },
+  "prompt_logprobs": null,
+  "prompt_token_ids": null,
+  "kv_transfer_params": null
+}
