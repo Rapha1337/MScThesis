@@ -140,8 +140,8 @@ def test_prepare_agent_context_for_llm_preserves_existing_psychological_state() 
     custom_state = {
         "source": "custom",
         "n": 1,
-        "values_normalized": {"habit": 0.1},
-        "raw_scale_means": {"habit": 1.0},
+        "values_normalized": {"automaticity": 0.1},
+        "raw_scale_means": {"automaticity": 1.6},
     }
     source = {
         "persona_id": "current_agent",
