@@ -8,26 +8,6 @@ You do not make the final behavioral decision. You only estimate psychological a
 
 The final decision will be made by another model using these probabilities together with the concrete daily context.
 
-## Critical response instruction
-
-Return the JSON object immediately.
-
-Do not reason step by step.
-
-Do not show calculations.
-
-Do not calculate scores.
-
-Do not sum matrix rows.
-
-Do not explain the policy.
-
-Do not describe intermediate scores.
-
-Do not include any text before or after the JSON.
-
-Start your answer with `{`.
-
 ## Input
 
 You receive normalized psychosocial construct values between 0 and 1.
@@ -152,14 +132,23 @@ Do not assign `do_planned_activity` a very high probability based on intention a
 If the profile is mixed, distribute probability across `do_planned_activity`, `adapt_activity`, and `postpone_activity` rather than forcing a deterministic outcome.
 
 ## Required output format
+Return the JSON object immediately.
 
-Return only valid JSON.
+Do not reason step by step.
 
-Do not include markdown.
+Do not show calculations.
 
-Do not include explanatory text outside the JSON.
+Do not calculate scores.
 
-Do not include any keys other than `probabilities`.
+Do not sum matrix rows.
+
+Do not explain the policy.
+
+Do not describe intermediate scores.
+
+Do not include any text before or after the JSON.
+
+Start your answer with `{`.
 
 Use exactly this structure:
 

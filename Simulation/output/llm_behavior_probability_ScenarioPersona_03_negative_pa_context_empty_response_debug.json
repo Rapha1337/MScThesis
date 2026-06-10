@@ -1,0 +1,41 @@
+{
+  "id": "chatcmpl-40be8e4a-792e-939c-a187-890a3da33464",
+  "choices": [
+    {
+      "finish_reason": "length",
+      "index": 0,
+      "logprobs": null,
+      "message": {
+        "content": null,
+        "refusal": null,
+        "role": "assistant",
+        "annotations": null,
+        "audio": null,
+        "function_call": null,
+        "tool_calls": [],
+        "reasoning_content": "We need to produce probabilities based on the given values and policy. Let's interpret.\n\nConstruct values (0-1):\nautomaticity 0.412 (moderate low-mid)\npa_specific_self_control 0.715 (moderate-high)\naction_planning 0.479 (mid)\nintention 0.407 (mid low)\nperceived_behavioral_control 0.791 (high)\nattitude 0.589 (mid-high)\nsubjective_norm 0.568 (mid)\ninterest_enjoyment 0.995 (very high)\nperceived_competence 0.623 (mid-high)\nperceived_choice 0.803 (high)\npressure_tension 0.578 (moderate)\nmotivational_competence 0.723 (mid-high)\n\nWe need to estimate probabilities for six tendencies.\n\nWe must consider matrix influences and interaction rules.\n\nFirst, evaluate each construct's influence per matrix:\n\ndo_planned_activity: positive influences from many constructs: automaticity ++ (moderate), pa_self_control ++, action_planning +++, intention +++, perceived_control +++, attitude ++, subjective_norm +, interest ++, perceived_competence ++, perceived_choice ++, pressure_tension -- (negative moderate), motivational_competence +.\n\nGiven values: high perceived_control (0.791) strong positive, high interest (0.995) strong positive, high perceived_choice (0.803) strong positive, high pa_self_control (0.715) moderate positive, motivational_competence 0.723 moderate positive, attitude 0.589 moderate, subjective_norm 0.568 moderate, automaticity 0.412 moderate positive but not high, action_planning 0.479 moderate positive, intention 0.407 moderate positive (but not high). Pressure_tension 0.578 moderate negative (since pressure_tension has -- for do_planned_activity). So overall many positives, some negative.\n\nInteraction: high intention (0.407) is not high, but combined with high perceived_control (0.791) should increase do_planned_activity strongly. However intention is moderate, not high, but still some effect. Also high action_planning? 0.479 moderate, not high. So maybe moderate increase.\n\nAutomaticity moderate (0.412) reduces dependence on intention, but not high enough to strongly boost extra_activity.\n\nInterest_enjoyment very high (0.995) strongly positive for do_planned and extra_activity.\n\nPerceived_competence moderate-high (0.623) positive.\n\nPressure_tension moderate (0.578) negative for do_planned, positive for postpone (+) and skip (++). Also positive for app_ignored ++. So pressure_tension pushes away from do_planned.\n\nThus we have mixed influences: many positives for do_planned, but pressure_tension negative moderate, intention moderate low.\n\nNow adapt_activity influences: automaticity +, pa_self_control ++, action_planning ++, intention +, perceived_control ++, attitude +, subjective_norm 0/+ (neutral), interest +, perceived_competence ++, perceived_choice +, pressure_tension - (negative), motivational_competence ++.\n\nValues: many positives moderate-high. Pressure_tension negative moderate (0.578) reduces adapt. But overall adapt likely moderate-high.\n\nPostpone_activity influences: automaticity -- (negative), pa_self_control --, action_planning --, intention --, perceived_control --, attitude - (weak negative), subjective_norm 0 (neutral), interest - (negative), perceived_competence - (negative), perceived_choice - (negative), pressure_tension + (positive), motivational_competence - (negative). So most constructs push away from postpone, except pressure_tension pushes toward postpone. Since pressure_tension moderate, but many others moderate-high negative, postpone likely low.\n\nSkip_activity influences: automaticity --, pa_self_control --, action_planning --, intention --- (strong negative), perceived_control --, attitude --, subjective_norm - , interest --, perceived_competence --, perceived_choice --, pressure_tension ++ (positive), motivational_competence - . So many negatives, but pressure_tension positive moderate. Overall skip likely low to moderate, but not high.\n\nExtra_activity influences: automaticity ++, pa_self_control +, action_planning +, intention +, perceived_control +, attitude +, subjective_norm 0/+, interest ++, perceived_competence +, perceived_choice +, pressure_tension --, motivational_competence +. Many positives, especially interest high, automaticity moderate, perceived_choice high, competence moderate, etc. Pressure_tension negative moderate reduces extra. But overall extra maybe moderate low-medium.\n\nApp_ignored influences: automaticity --, pa_self_control -, action_planning -, intention --, perceived_control --, attitude -, subjective_norm -, interest --, competence --, choice --, pressure_tension ++, motivational_competence -. So many negatives, only pressure_tension positive. Since pressure_tension moderate, but many others strong negative, app_ignored likely low.\n\nNow we need to allocate probabilities sum to 1.\n\nGiven many positives for do_planned and adapt, moderate for extra, low for postpone, skip, app_ignored.\n\nProbably distribution: do_planned ~0.35, adapt ~0.30, extra ~0.15, postpone ~0.07, skip ~0.08, app_ignored ~0.05. Need sum 1.0.\n\nCheck constraints: avoid extreme probabilities; do_planned not too high because intention moderate, pressure moderate negative. adapt also moderate-high. extra low-medium. skip low. app_ignored low.\n\nMaybe adjust: do_planned 0.33, adapt 0.32, extra 0.14, postpone 0.08, skip 0.07, app_ignored 0.06 = sum 1.0.\n\nCheck skip vs app_ignored: skip maybe slightly higher than app_ignored? Pressure moderate positive for both skip and app_ignored, but many negatives for app_ignored. So skip maybe 0.07, app_ignored 0.05. Let's set skip 0.07, app_ignored 0.05.\n\nNow sum: do 0.34, adapt 0.30, extra 0.14, postpone 0.08, skip 0.07, app_ignored 0.07? Wait need sum 1. Let's compute: 0.34+0.30=0.64, +0.14=0.78, +0.08=0.86, +0.07=0.93, need 0.07 for app_ignored to reach 1.0. But app_ignored maybe 0.07 is okay. However skip and app_ignored both 0.07 maybe okay.\n\nBut we said app_ignored low; 0.07 maybe okay given moderate pressure. Could be 0.05. Let's adjust: do 0.35, adapt 0.30, extra 0.13, postpone 0.07, skip 0.07, app_ignored 0.08? That would sum 1.0? 0.35+0.30=0.65, +0.13="
+      },
+      "stop_reason": null,
+      "token_ids": null
+    }
+  ],
+  "created": 1781111728,
+  "model": "gpt-oss-120b",
+  "object": "chat.completion",
+  "moderation": null,
+  "service_tier": null,
+  "system_fingerprint": null,
+  "usage": {
+    "completion_tokens": 1500,
+    "prompt_tokens": 1875,
+    "total_tokens": 3375,
+    "completion_tokens_details": null,
+    "prompt_tokens_details": null,
+    "time_to_first_token_ms": 7450,
+    "time_per_output_token_ms": 0,
+    "tokens_per_second": 0
+  },
+  "prompt_logprobs": null,
+  "prompt_token_ids": null,
+  "kv_transfer_params": null
+}
