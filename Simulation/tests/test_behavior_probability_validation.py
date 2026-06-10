@@ -152,3 +152,98 @@ def test_parse_and_validate_behavior_probabilities_accepts_valid_json() -> None:
     payload = _valid_payload()
 
     assert parse_and_validate_behavior_probabilities(json.dumps(payload)) == payload
+
+
+class _FakeMessage:
+    def __init__(self, **fields):
+        self._fields = fields
+        for key, value in fields.items():
+            setattr(self, key, value)
+
+    def model_dump(self) -> dict:
+        return dict(self._fields)
+
+
+class _FakeChoice:
+    def __init__(self, message: _FakeMessage, finish_reason: str = "stop"):
+        self.message = message
+        self.finish_reason = finish_reason
+
+    def model_dump(self) -> dict:
+        return {
+            "finish_reason": self.finish_reason,
+            "message": self.message.model_dump(),
+        }
+
+
+class _FakeResponse:
+    usage = {"completion_tokens": 1, "prompt_tokens": 1, "total_tokens": 2}
+
+    def __init__(self, message: _FakeMessage, finish_reason: str = "stop"):
+        self.choices = [_FakeChoice(message, finish_reason=finish_reason)]
+
+    def model_dump(self) -> dict:
+        return {
+            "choices": [choice.model_dump() for choice in self.choices],
+            "usage": self.usage,
+        }
+
+
+def test_extract_llm_message_content_uses_normal_content(tmp_path) -> None:
+    from run_behavior_probability_estimation import extract_llm_message_content
+
+    payload = _valid_payload()
+    response = _FakeResponse(_FakeMessage(content=json.dumps(payload)))
+
+    extracted = extract_llm_message_content(response, persona_id="normal", output_dir=tmp_path)
+
+    assert extracted == json.dumps(payload)
+    assert not (tmp_path / "llm_behavior_probability_normal_empty_response_debug.json").exists()
+
+
+def test_extract_llm_message_content_recovers_valid_parsed_schema(tmp_path) -> None:
+    from run_behavior_probability_estimation import parse_and_validate_behavior_probabilities
+    from run_behavior_probability_estimation import extract_llm_message_content
+
+    response = _FakeResponse(_FakeMessage(content="", parsed=_valid_payload()))
+
+    extracted = extract_llm_message_content(response, persona_id="parsed", output_dir=tmp_path)
+
+    assert parse_and_validate_behavior_probabilities(extracted) == _valid_payload()
+    assert (tmp_path / "llm_behavior_probability_parsed_empty_response_debug.json").exists()
+
+
+def test_extract_llm_message_content_empty_raises_helpful_error_and_saves_debug(tmp_path) -> None:
+    from run_behavior_probability_estimation import extract_llm_message_content
+
+    response = _FakeResponse(_FakeMessage(content=None, refusal=None), finish_reason="stop")
+
+    with pytest.raises(RuntimeError, match="finish_reason='stop'.*Debug response saved"):
+        extract_llm_message_content(response, persona_id="empty/persona", output_dir=tmp_path)
+
+    debug_path = tmp_path / "llm_behavior_probability_empty_persona_empty_response_debug.json"
+    assert debug_path.exists()
+    debug_payload = json.loads(debug_path.read_text(encoding="utf-8"))
+    assert debug_payload["choices"][0]["finish_reason"] == "stop"
+    assert debug_payload["choices"][0]["message"]["content"] is None
+
+
+def test_extract_llm_message_content_length_finish_reason_suggests_max_tokens(tmp_path) -> None:
+    from run_behavior_probability_estimation import extract_llm_message_content
+
+    response = _FakeResponse(_FakeMessage(content=""), finish_reason="length")
+
+    with pytest.raises(RuntimeError, match="Increase --max-tokens or shorten the prompt"):
+        extract_llm_message_content(response, persona_id="too_long", output_dir=tmp_path)
+
+
+def test_extract_llm_message_content_does_not_use_reasoning_as_output(tmp_path) -> None:
+    from run_behavior_probability_estimation import extract_llm_message_content
+
+    response = _FakeResponse(
+        _FakeMessage(content="", reasoning_content=json.dumps(_valid_payload())),
+        finish_reason="stop",
+    )
+
+    with pytest.raises(RuntimeError, match="keine sichtbare JSON-Antwort"):
+        extract_llm_message_content(response, persona_id="reasoning", output_dir=tmp_path)
