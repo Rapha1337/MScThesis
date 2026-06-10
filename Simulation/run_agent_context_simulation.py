@@ -11,9 +11,16 @@ if str(SIMULATION_DIR) not in sys.path:
     sys.path.append(str(SIMULATION_DIR))
 
 from agent_context_export import export_day_contexts_to_json, generate_day_contexts_for_personas
-from psychological_state import build_default_psychological_state
+from psychological_state import build_psychological_state
 
 DEFAULT_OUTPUT_PATH = SIMULATION_DIR / "output" / "llm_day_contexts.json"
+PSYCHOLOGICAL_SEED_OFFSET = 10_000_019
+
+
+def _psychological_seed_from_persona_seed(persona_seed: int) -> int:
+    """Derive a stable seed namespace for psychological fallback sampling."""
+    return int(persona_seed) + PSYCHOLOGICAL_SEED_OFFSET
+
 
 LLM_HOURLY_FIELDS: tuple[str, ...] = (
     "hour",
@@ -120,7 +127,10 @@ def _build_llm_context(persona_payload: Mapping[str, Any], day_index: int) -> di
         ),
         "input_parameters": persona_payload.get("input_parameters", {}),
         "selected_schedule_parameters": agent_context.get("schedule_parameters", {}),
-        "psychological_state": agent_context.get("psychological_state") or build_default_psychological_state(),
+        "psychological_state": agent_context.get("psychological_state")
+        or build_psychological_state(
+            seed=_psychological_seed_from_persona_seed(int(persona_payload["seed"]))
+        ),
         "hourly_context_24h": llm_hourly_context,
     }
 

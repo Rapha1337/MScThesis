@@ -80,7 +80,7 @@ Kontextregeln:
 - Körperliche Aktivität ist daher nicht als stark etablierte Alltagsgewohnheit anzunehmen.
 - Inaktive Personen können trotzdem an einzelnen Tagen leichte oder moderate körperliche Aktivität ausführen, wenn mehrere günstige Kontextfaktoren zusammenkommen.
 - Berücksichtige Tagesstruktur, freie Zeitfenster, Energie, Einschränkungen, Wetter, Tageslicht, Nässe, Schnee, Wind und Erreichbarkeit von Indoor-/Outdoor-PA-Möglichkeiten.
-- psychological_state kann die Entscheidung informieren: höhere Intention, perceived behavioral control, Planung, intrinsische Motivation, Kompetenz, Wahlfreiheit oder Habit können PA wahrscheinlicher machen, aber niemals mechanisch oder allein entscheidend.
+- psychological_state kann die Entscheidung informieren: höhere Intention, perceived behavioral control, Planung, intrinsische Motivation, Kompetenz, Wahlfreiheit oder automaticity können PA wahrscheinlicher machen, aber niemals mechanisch oder allein entscheidend.
 - energy_level beschreibt verfügbare körperliche oder mentale Ressource, nicht Motivation.
 - phase darf nicht als direkte Motivation interpretiert werden. Holiday oder high_stress nur über Tagesstruktur, freie Zeit und Belastung verstehen.
 - Berücksichtige bei poi_accessibility walk, bike und car als mögliche Zugangsoptionen. Auto zählt nicht als PA. Bike oder Gehen zählen nur dann als transportbezogene PA, wenn aktive Fortbewegung im Kontext plausibel ist.
