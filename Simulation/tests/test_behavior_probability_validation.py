@@ -41,6 +41,59 @@ def _valid_payload() -> dict:
     }
 
 
+def _extract_prompt_input_json(prompt: str) -> dict:
+    input_marker = "INPUT:\n"
+    important_marker = "\n\nIMPORTANT:"
+    assert input_marker in prompt
+    assert important_marker in prompt
+    input_json = prompt.split(input_marker, 1)[1].split(important_marker, 1)[0]
+    return json.loads(input_json)
+
+
+def test_behavior_probability_user_prompt_only_sends_psychological_construct_values() -> None:
+    from psychological_state import DEFAULT_PSYCHOLOGICAL_STATE
+    from run_behavior_probability_estimation import build_behavior_probability_user_prompt
+
+    agent_context = {
+        "persona_id": "persona_should_not_be_sent",
+        "scenario": "favourable_pa_context",
+        "seed": 12345,
+        "daily_context": {"label": "negative_pa_context"},
+        "hourly_context_24h": [{"label": "busy_day_context"}],
+        "accessibility": "high",
+        "weather": "sunny",
+        "schedule": {"busy": False},
+        "activity_suggestion": "walk",
+        "psychological_state": DEFAULT_PSYCHOLOGICAL_STATE,
+    }
+
+    prompt = build_behavior_probability_user_prompt(agent_context)
+    prompt_payload = _extract_prompt_input_json(prompt)
+    expected_constructs = set(DEFAULT_PSYCHOLOGICAL_STATE["values_normalized"])
+
+    assert prompt_payload == {
+        "psychological_construct_values_normalized": DEFAULT_PSYCHOLOGICAL_STATE[
+            "values_normalized"
+        ]
+    }
+    assert set(prompt_payload["psychological_construct_values_normalized"]) == expected_constructs
+    assert "psychological_construct_values_normalized" in prompt
+    assert "Base the probability estimate only on psychological_construct_values_normalized" in prompt
+    assert "persona_id" not in prompt
+    assert "persona_should_not_be_sent" not in prompt
+    assert '"scenario"' not in prompt
+    assert "seed" not in prompt
+    assert "favourable_pa_context" not in prompt
+    assert "negative_pa_context" not in prompt
+    assert "busy_day_context" not in prompt
+    assert "daily_context" not in prompt
+    assert "hourly_context_24h" not in prompt
+    assert "accessibility" not in prompt
+    assert "weather" not in prompt
+    assert "schedule" not in prompt
+    assert "activity_suggestion" not in prompt
+
+
 def test_valid_payload_accepted() -> None:
     from run_behavior_probability_estimation import validate_behavior_probability_payload
 
