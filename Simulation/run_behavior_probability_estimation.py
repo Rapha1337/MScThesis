@@ -220,6 +220,215 @@ def parse_and_validate_behavior_probabilities(raw: str) -> dict[str, dict[str, f
     return validate_behavior_probability_payload(parse_behavior_probability_json(raw))
 
 
+def _safe_jsonable(value: Any) -> Any:
+    """Return a JSON-serialisable representation without failing on SDK objects."""
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, Mapping):
+        return {str(key): _safe_jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_safe_jsonable(item) for item in value]
+    model_dump = getattr(value, "model_dump", None)
+    if callable(model_dump):
+        try:
+            return _safe_jsonable(model_dump())
+        except Exception as exc:  # pragma: no cover - defensive SDK fallback
+            return {
+                "serialization_error": f"{type(exc).__name__}: {exc}",
+                "repr": repr(value),
+            }
+    return repr(value)
+
+
+def _public_message_fields(message: Any) -> dict[str, Any]:
+    """Collect available public message fields and model_dump keys for diagnostics."""
+    fields: dict[str, Any] = {}
+    model_dump = getattr(message, "model_dump", None)
+    if callable(model_dump):
+        try:
+            dumped = model_dump()
+            if isinstance(dumped, Mapping):
+                fields.update({str(key): _safe_jsonable(value) for key, value in dumped.items()})
+        except Exception as exc:  # pragma: no cover - defensive SDK fallback
+            fields["model_dump_error"] = f"{type(exc).__name__}: {exc}"
+
+    for field_name in dir(message):
+        if field_name.startswith("_"):
+            continue
+        try:
+            value = getattr(message, field_name)
+        except Exception as exc:  # pragma: no cover - defensive SDK fallback
+            fields[field_name] = f"<unreadable {type(exc).__name__}: {exc}>"
+            continue
+        if callable(value):
+            continue
+        fields[field_name] = _safe_jsonable(value)
+    return fields
+
+
+def save_empty_response_debug(
+    persona_id: str,
+    response: Any,
+    *,
+    output_dir: Path = OUTPUT_DIR,
+) -> Path:
+    """Persist the complete response object for empty-message debugging."""
+    output_path = (
+        output_dir
+        / f"llm_behavior_probability_{_safe_persona_id(persona_id)}_empty_response_debug.json"
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    model_dump = getattr(response, "model_dump", None)
+    if callable(model_dump):
+        try:
+            response_payload = _safe_jsonable(model_dump())
+        except Exception as exc:  # pragma: no cover - defensive SDK fallback
+            response_payload = {
+                "model_dump_error": f"{type(exc).__name__}: {exc}",
+                "repr": repr(response),
+            }
+    else:
+        response_payload = {
+            "repr": repr(response),
+            "string": str(response),
+        }
+
+    output_path.write_text(
+        json.dumps(response_payload, ensure_ascii=False, indent=2, default=repr) + "\n",
+        encoding="utf-8",
+    )
+    return output_path
+
+
+def _get_first_choice(response: Any) -> Any:
+    choices = getattr(response, "choices", None)
+    if not choices:
+        raise RuntimeError("LLM response did not contain any choices.")
+    return choices[0]
+
+
+def _extract_clean_schema_json_from_value(value: Any) -> str | None:
+    """Return a JSON string only when value is exactly the strict LLM1 schema."""
+    if value is None:
+        return None
+    candidate_payload: Any
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            candidate_payload = parse_behavior_probability_json(stripped)
+        except ValueError:
+            return None
+    elif isinstance(value, Mapping):
+        candidate_payload = value
+    else:
+        model_dump = getattr(value, "model_dump", None)
+        if not callable(model_dump):
+            return None
+        try:
+            dumped = model_dump()
+        except Exception:
+            return None
+        if not isinstance(dumped, Mapping):
+            return None
+        candidate_payload = dumped
+
+    try:
+        validated = validate_behavior_probability_payload(candidate_payload)
+    except ValueError:
+        return None
+    return json.dumps(validated, ensure_ascii=False, separators=(",", ":"))
+
+
+def _message_field_value(message: Any, message_fields: Mapping[str, Any], field_name: str) -> Any:
+    if hasattr(message, field_name):
+        return getattr(message, field_name)
+    return message_fields.get(field_name)
+
+
+def extract_llm_message_content(
+    response: Any,
+    *,
+    persona_id: str = "unknown_persona",
+    output_dir: Path = OUTPUT_DIR,
+) -> str:
+    """Extract visible JSON content from a chat completion response.
+
+    The normal OpenAI-compatible path is choices[0].message.content.  If that is
+    empty, inspect SDK-visible nonstandard fields and accept them only when they
+    contain a clean JSON object matching the strict LLM1 probability schema.
+    """
+    choice = _get_first_choice(response)
+    finish_reason = getattr(choice, "finish_reason", None)
+    message = getattr(choice, "message", None)
+    if message is None:
+        debug_path = save_empty_response_debug(str(persona_id), response, output_dir=output_dir)
+        raise RuntimeError(
+            f"LLM response for {persona_id} did not contain choices[0].message. "
+            f"finish_reason={finish_reason!r}. Debug response saved to: {debug_path}"
+        )
+
+    message_fields = _public_message_fields(message)
+    content = _message_field_value(message, message_fields, "content")
+    if isinstance(content, str) and content.strip():
+        return content
+
+    debug_path = save_empty_response_debug(str(persona_id), response, output_dir=output_dir)
+    print(f"LLM1 empty content for {persona_id}; finish_reason={finish_reason!r}", flush=True)
+    print(
+        "LLM1 available message fields: " + ", ".join(sorted(message_fields)),
+        flush=True,
+    )
+    for diagnostic_field in (
+        "reasoning_content",
+        "reasoning",
+        "parsed",
+        "refusal",
+        "tool_calls",
+    ):
+        if diagnostic_field in message_fields or hasattr(message, diagnostic_field):
+            value = _message_field_value(message, message_fields, diagnostic_field)
+            print(
+                f"LLM1 message.{diagnostic_field} present: {type(value).__name__}",
+                flush=True,
+            )
+
+    # Reasoning fields may contain hidden chain-of-thought; inspect them above for
+    # diagnostics but never use them as scientific output.
+    excluded_fields = {"content", "reasoning", "reasoning_content"}
+    preferred_visible_fields = ("parsed", "refusal", "tool_calls")
+    candidate_field_names = list(preferred_visible_fields) + [
+        field_name for field_name in sorted(message_fields) if field_name not in excluded_fields
+    ]
+
+    seen_fields: set[str] = set()
+    for field_name in candidate_field_names:
+        if field_name in seen_fields:
+            continue
+        seen_fields.add(field_name)
+        value = _message_field_value(message, message_fields, field_name)
+        extracted = _extract_clean_schema_json_from_value(value)
+        if extracted is not None:
+            print(
+                f"LLM1 recovered valid probability JSON from message.{field_name} for {persona_id}.",
+                flush=True,
+            )
+            return extracted
+
+    if finish_reason == "length":
+        raise RuntimeError(
+            f"LLM response for {persona_id} ended with finish_reason='length' but "
+            "message.content was empty. Increase --max-tokens or shorten the prompt. "
+            f"Debug response saved to: {debug_path}"
+        )
+
+    raise RuntimeError(
+        f"LLM hat für {persona_id} keine sichtbare JSON-Antwort zurückgegeben. "
+        f"finish_reason={finish_reason!r}. Debug response saved to: {debug_path}"
+    )
+
 def run_behavior_probability_estimation(
     agent_context: Mapping[str, Any],
     *,
@@ -251,10 +460,22 @@ def run_behavior_probability_estimation(
 
     print(f"LLM1-Wahrscheinlichkeitsschätzung für {persona_id} abgeschlossen.", flush=True)
     print(response.usage, flush=True)
+    print(f"LLM1 response choices for {persona_id}: {_safe_jsonable(response.choices)}", flush=True)
+    first_choice = _get_first_choice(response)
+    print(
+        f"LLM1 finish_reason for {persona_id}: {getattr(first_choice, 'finish_reason', None)!r}",
+        flush=True,
+    )
+    print(
+        f"LLM1 message for {persona_id}: {_safe_jsonable(getattr(first_choice, 'message', None))}",
+        flush=True,
+    )
 
-    content = response.choices[0].message.content
-    if content is None:
-        raise RuntimeError(f"LLM hat für {persona_id} keine Antwort zurückgegeben.")
+    content = extract_llm_message_content(
+        response,
+        persona_id=str(persona_id),
+        output_dir=output_dir,
+    )
 
     try:
         return parse_and_validate_behavior_probabilities(content)
