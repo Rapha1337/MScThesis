@@ -15,7 +15,7 @@ from agent_context_export import (
     generate_day_contexts_for_personas,
 )
 from persona_wrappers import StudentHoursWrapper
-from psychological_state import DEFAULT_PSYCHOLOGICAL_STATE
+from psychological_state import BACKEND_CONSTRUCT_RANGES, build_psychological_state
 
 INPUT_PARAMETERS = {
     "fitness_hours_week": 6,
@@ -38,12 +38,50 @@ def _payload(day_index: int = 21) -> dict:
 
 
 def _assert_psychological_state(psychological_state: dict) -> None:
-    expected_constructs = set(DEFAULT_PSYCHOLOGICAL_STATE["values_normalized"])
-    assert set(psychological_state) == {"source", "n", "values_normalized", "raw_scale_means"}
-    assert psychological_state["source"] == "T1_students_mean_from_simulated_AIcoPA_dataset"
+    expected_constructs = set(BACKEND_CONSTRUCT_RANGES)
+    legacy_constructs = {
+        "habit",
+        "attitude",
+        "injunctive_norm",
+        "descriptive_norm",
+        "extrinsic_motivation",
+        "volitional_self_control",
+    }
+
+    assert set(psychological_state) == {
+        "source",
+        "reference_group",
+        "n",
+        "sampling_method",
+        "seed",
+        "values_normalized",
+        "raw_scale_means",
+    }
+    assert psychological_state["source"] == "T1_students_from_simulated_AIcoPA_dataset"
+    assert psychological_state["reference_group"] == "T1_Studierend"
     assert psychological_state["n"] == 64
+    assert psychological_state["sampling_method"] == "multivariate_normal"
     assert set(psychological_state["values_normalized"]) == expected_constructs
     assert set(psychological_state["raw_scale_means"]) == expected_constructs
+    assert legacy_constructs.isdisjoint(psychological_state["values_normalized"])
+    assert legacy_constructs.isdisjoint(psychological_state["raw_scale_means"])
+
+    for construct_name, normalized_value in psychological_state["values_normalized"].items():
+        min_value, max_value = BACKEND_CONSTRUCT_RANGES[construct_name]
+        assert 0.0 <= normalized_value <= 1.0
+        raw_value = psychological_state["raw_scale_means"][construct_name]
+        assert min_value <= raw_value <= max_value
+        assert raw_value == round(min_value + normalized_value * (max_value - min_value), 2)
+
+
+def test_build_psychological_state_is_seed_reproducible_and_backend_compatible() -> None:
+    state_a = build_psychological_state(seed=123)
+    state_b = build_psychological_state(seed=123)
+    state_c = build_psychological_state(seed=124)
+
+    assert state_a == state_b
+    assert state_a != state_c
+    _assert_psychological_state(state_a)
 
 
 def test_wrapper_input_config_accepts_all_required_parameters() -> None:
@@ -139,15 +177,19 @@ def test_generate_day_contexts_for_personas_returns_json_serializable_payload() 
     json.dumps(payload)
     assert payload["simulation_metadata"] == {"base_seed": 37, "day_index": 21, "n_personas": 2}
     assert len(payload["personas"]) == 2
+    psychological_states = []
     for persona in payload["personas"]:
         assert "agent_context" in persona
         assert "day_context" in persona
-        _assert_psychological_state(persona["agent_context"]["psychological_state"])
+        psychological_state = persona["agent_context"]["psychological_state"]
+        _assert_psychological_state(psychological_state)
+        psychological_states.append(psychological_state["values_normalized"])
         assert "agent_state" not in persona
         assert "agent_state" not in persona["agent_context"]
         assert "hourly_context_24h" in persona["day_context"]
         assert len(persona["day_context"]["hourly_context_24h"]) == 24
         assert "phase" in persona["day_context"]
+    assert psychological_states[0] != psychological_states[1]
 
 
 def test_exported_json_file_can_be_read_back(tmp_path: Path) -> None:
