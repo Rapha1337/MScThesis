@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 from accessibility_model import build_accessibility_model
 from persona_wrappers import StudentHoursWrapper, StudentWrapper
-from psychological_state import build_default_psychological_state
+from psychological_state import build_psychological_state
 from schedule_model_student import YearPhase
 from simulation_runner import SimulationRunner
 
@@ -166,6 +166,14 @@ ACCESSIBILITY_PARAMETER_NAMES: tuple[str, ...] = (
     "outdoor_activity_distance_km",
 )
 
+PSYCHOLOGICAL_SEED_OFFSET = 10_000_019
+
+
+def _psychological_seed_from_persona_seed(persona_seed: int) -> int:
+    """Derive a stable seed namespace for psychological start-state sampling."""
+    return int(persona_seed) + PSYCHOLOGICAL_SEED_OFFSET
+
+
 DEFAULT_INPUT_PARAMETERS: dict[str, float | int] = {
     "day_index": 0,
     "fitness_hours_week": 5.5,
@@ -282,7 +290,9 @@ def build_agent_contexts(
                 {
                     "persona_id": persona_id,
                     "seed": seed,
-                    "psychological_state": build_default_psychological_state(),
+                    "psychological_state": build_psychological_state(
+                        seed=_psychological_seed_from_persona_seed(seed)
+                    ),
                     "input_parameters": {
                         **persona_parameters.input_parameters(),
                         "day_index": normalized_inputs["day_index"],

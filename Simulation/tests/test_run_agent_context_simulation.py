@@ -8,7 +8,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from psychological_state import DEFAULT_PSYCHOLOGICAL_STATE
+from psychological_state import BACKEND_CONSTRUCT_RANGES
 from run_agent_context_simulation import main
 
 
@@ -40,12 +40,40 @@ DIAGNOSTIC_ARRAYS = {
 
 
 def _assert_psychological_state(psychological_state: dict) -> None:
-    expected_constructs = set(DEFAULT_PSYCHOLOGICAL_STATE["values_normalized"])
-    assert set(psychological_state) == {"source", "n", "values_normalized", "raw_scale_means"}
-    assert psychological_state["source"] == "T1_students_mean_from_simulated_AIcoPA_dataset"
+    expected_constructs = set(BACKEND_CONSTRUCT_RANGES)
+    legacy_constructs = {
+        "habit",
+        "attitude",
+        "injunctive_norm",
+        "descriptive_norm",
+        "extrinsic_motivation",
+        "volitional_self_control",
+    }
+
+    assert set(psychological_state) == {
+        "source",
+        "reference_group",
+        "n",
+        "sampling_method",
+        "seed",
+        "values_normalized",
+        "raw_scale_means",
+    }
+    assert psychological_state["source"] == "T1_students_from_simulated_AIcoPA_dataset"
+    assert psychological_state["reference_group"] == "T1_Studierend"
     assert psychological_state["n"] == 64
+    assert psychological_state["sampling_method"] == "multivariate_normal"
     assert set(psychological_state["values_normalized"]) == expected_constructs
     assert set(psychological_state["raw_scale_means"]) == expected_constructs
+    assert legacy_constructs.isdisjoint(psychological_state["values_normalized"])
+    assert legacy_constructs.isdisjoint(psychological_state["raw_scale_means"])
+
+    for construct_name, normalized_value in psychological_state["values_normalized"].items():
+        min_value, max_value = BACKEND_CONSTRUCT_RANGES[construct_name]
+        assert 0.0 <= normalized_value <= 1.0
+        raw_value = psychological_state["raw_scale_means"][construct_name]
+        assert min_value <= raw_value <= max_value
+        assert raw_value == round(min_value + normalized_value * (max_value - min_value), 2)
 
 
 def _run_cli(tmp_path: Path) -> tuple[Path, dict]:
@@ -99,6 +127,7 @@ def test_run_agent_context_simulation_smoke(tmp_path: Path, capsys) -> None:
 def test_exported_llm_contexts_include_compact_hourly_demo_fields(tmp_path: Path) -> None:
     _, payload = _run_cli(tmp_path)
 
+    psychological_states = []
     for context in payload["llm_contexts"]:
         assert {
             "persona_id",
@@ -113,6 +142,7 @@ def test_exported_llm_contexts_include_compact_hourly_demo_fields(tmp_path: Path
             "hourly_context_24h",
         } == set(context)
         _assert_psychological_state(context["psychological_state"])
+        psychological_states.append(context["psychological_state"]["values_normalized"])
         assert "action_plan" not in context
         assert len(context["hourly_context_24h"]) == 24
         for hourly_entry in context["hourly_context_24h"]:
@@ -129,6 +159,7 @@ def test_exported_llm_contexts_include_compact_hourly_demo_fields(tmp_path: Path
             assert "travel_times_min" in poi_accessibility["indoor_activity"]
             assert "distance_km" in poi_accessibility["outdoor_activity"]
             assert "travel_times_min" in poi_accessibility["outdoor_activity"]
+    assert psychological_states[0] != psychological_states[1]
 
 
 def test_exported_llm_contexts_do_not_include_diagnostic_arrays(tmp_path: Path) -> None:
