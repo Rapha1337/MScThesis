@@ -162,9 +162,14 @@ def test_build_pa_decision_input_has_expected_structure_and_planned_activity() -
     assert result["day_index"] == 21
     assert result["behavior_policy"] == BEHAVIOR_POLICY
     assert result["planned_activity"] == planned_activity
+    assert result["daily_context"]["persona_id"] == "ScenarioPersona_01_favourable_pa_context"
+    assert result["daily_context"]["seed"] == 123
+    assert result["daily_context"]["day_index"] == 21
     assert result["daily_context"]["phase"] == "holiday"
     assert result["daily_context"]["weekday"] == 2
-    assert result["daily_context"]["task_description"] == "Use compact context."
+    assert "task_description" not in result["daily_context"]
+    assert "input_parameters" not in result["daily_context"]
+    assert "selected_schedule_parameters" not in result["daily_context"]
 
 
 def test_build_pa_decision_input_excludes_raw_psychological_state() -> None:
@@ -389,12 +394,13 @@ def test_simple_construct_update_increases_after_successful_pa(decision_label: s
     from run_llm_pa_decision import update_psychological_constructs_simple
 
     updated = update_psychological_constructs_simple(
-        {"automaticity": 0.50, "motivation": 0.20}, decision_label
+        {"automaticity": 0.50, "motivation": 0.20, "pressure_tension": 0.30}, decision_label
     )
 
     assert updated == {
         "automaticity": pytest.approx(0.52),
         "motivation": pytest.approx(0.22),
+        "pressure_tension": pytest.approx(0.28),
     }
 
 
@@ -403,23 +409,28 @@ def test_simple_construct_update_decreases_after_unsuccessful_pa(decision_label:
     from run_llm_pa_decision import update_psychological_constructs_simple
 
     updated = update_psychological_constructs_simple(
-        {"automaticity": 0.50, "motivation": 0.20}, decision_label
+        {"automaticity": 0.50, "motivation": 0.20, "pressure_tension": 0.30}, decision_label
     )
 
     assert updated == {
         "automaticity": pytest.approx(0.48),
         "motivation": pytest.approx(0.18),
+        "pressure_tension": pytest.approx(0.32),
     }
 
 
 def test_simple_construct_update_clamps_values_to_unit_interval() -> None:
     from run_llm_pa_decision import update_psychological_constructs_simple
 
-    increased = update_psychological_constructs_simple({"high": 0.99}, "done_as_planned")
-    decreased = update_psychological_constructs_simple({"low": 0.01}, "not_done")
+    increased = update_psychological_constructs_simple(
+        {"high": 0.99, "pressure_tension": 0.01}, "done_as_planned"
+    )
+    decreased = update_psychological_constructs_simple(
+        {"low": 0.01, "pressure_tension": 0.99}, "not_done"
+    )
 
-    assert increased == {"high": 1.0}
-    assert decreased == {"low": 0.0}
+    assert increased == {"high": 1.0, "pressure_tension": 0.0}
+    assert decreased == {"low": 0.0, "pressure_tension": 1.0}
 
 
 @pytest.mark.parametrize("decision_label", ["done_as_planned", "not_done"])
