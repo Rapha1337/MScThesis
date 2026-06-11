@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import csv
 import json
 import os
 from pathlib import Path
@@ -32,6 +33,7 @@ DEFAULT_PA_DECISION_PROMPT_PATH = SIMULATION_DIR / "PADecision_Prompt.md"
 DEFAULT_PA_DECISION_FEWSHOT_PATH = SIMULATION_DIR / "PADecision_FewShot.md"
 OUTPUT_DIR = SIMULATION_DIR / "output"
 COMBINED_OUTPUT_PATH = OUTPUT_DIR / "llm_pa_decision_pipeline_all_agents.json"
+DAILY_DECISION_LOG_PATH = OUTPUT_DIR / "llm_pa_decision_daily_log.csv"
 MODEL_NAME = "gpt-oss-120b"
 TEMPERATURE = 0
 LLM1_MAX_TOKENS = 2000
@@ -45,6 +47,11 @@ PA_DECISION_CODEBOOK: dict[int, str] = {
     4: "extra_movement",
     5: "app_ignored",
 }
+
+SUCCESSFUL_PA_DECISION_LABELS = frozenset(
+    {"done_as_planned", "adapted", "extra_movement"}
+)
+UNSUCCESSFUL_PA_DECISION_LABELS = frozenset({"not_done", "postponed", "app_ignored"})
 
 # Keep this alias for callers that imported the old constant name, but use the
 # new PA-decision labels everywhere.
@@ -76,6 +83,21 @@ RAW_PSYCHOLOGICAL_KEYS = frozenset(
         "values_normalized",
         "raw_scale_means",
     }
+)
+
+DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
+    "persona_id",
+    "day_index",
+    "decision_code",
+    "decision_label",
+    "activity_done",
+    "planned_activity_for_day",
+    "planned_activity_next_day",
+    "behavior_policy",
+    "previous_psychological_constructs",
+    "updated_psychological_constructs",
+    "diary_entry",
+    "rationale_short",
 )
 
 _client: Any | None = None
@@ -145,6 +167,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
     parser.add_argument("--combined-output-path", type=Path, default=COMBINED_OUTPUT_PATH)
+    parser.add_argument(
+        "--daily-log-path",
+        type=Path,
+        default=None,
+        help=(
+            "Optional CSV path for the closed-loop daily PA decision log. "
+            "Defaults to <output-dir>/llm_pa_decision_daily_log.csv."
+        ),
+    )
     parser.add_argument("--model", default=MODEL_NAME)
     parser.add_argument("--temperature", type=float, default=TEMPERATURE)
     parser.add_argument("--llm1-max-tokens", type=int, default=LLM1_MAX_TOKENS)
@@ -483,6 +514,152 @@ def save_agent_pa_decision(
     return output_path
 
 
+def _json_log_value(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def extract_psychological_construct_values(agent_context: Mapping[str, Any]) -> dict[str, float]:
+    """Return normalized psychological construct values from an agent context."""
+    psychological_state = agent_context.get("psychological_state")
+    if not isinstance(psychological_state, Mapping):
+        return {}
+
+    values_normalized = psychological_state.get("values_normalized")
+    if not isinstance(values_normalized, Mapping):
+        return {}
+
+    constructs: dict[str, float] = {}
+    for key, value in values_normalized.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        constructs[str(key)] = float(value)
+    return constructs
+
+
+def update_psychological_constructs_simple(
+    previous_constructs: dict[str, float],
+    decision_label: str,
+    delta_done: float = 0.02,
+    delta_not_done: float = -0.02,
+) -> dict[str, float]:
+    """Apply a small deterministic placeholder update to psychological constructs."""
+    if decision_label in SUCCESSFUL_PA_DECISION_LABELS:
+        delta = delta_done
+    elif decision_label in UNSUCCESSFUL_PA_DECISION_LABELS:
+        delta = delta_not_done
+    else:
+        delta = 0.0
+
+    return {
+        key: min(1.0, max(0.0, float(value) + delta))
+        for key, value in previous_constructs.items()
+    }
+
+
+def generate_planned_activity_next_day(decision_label: str) -> dict[str, Any]:
+    """Generate a deterministic LLM3-placeholder planned activity for tomorrow."""
+    if decision_label in SUCCESSFUL_PA_DECISION_LABELS:
+        return {
+            "activity_type": "indoor_activity",
+            "duration_min": 20,
+            "intensity": "moderate",
+            "preferred_time_window": [17, 20],
+            "description": "20 Minuten intensive Oberkörpereinheit im Gym",
+        }
+
+    return {
+        "activity_type": "outdoor_activity",
+        "duration_min": 15,
+        "intensity": "light",
+        "preferred_time_window": [14, 17],
+        "description": "15 Minuten Spaziergang am Nachmittag",
+    }
+
+
+def write_daily_decision_log_row(
+    *,
+    log_path: Path,
+    persona_id: str,
+    day_index: int,
+    pa_decision: Mapping[str, Any],
+    activity_done: bool,
+    planned_activity_for_day: Any | None,
+    planned_activity_next_day: Mapping[str, Any],
+    behavior_policy: Mapping[str, Any],
+    previous_psychological_constructs: Mapping[str, Any],
+    updated_psychological_constructs: Mapping[str, Any],
+) -> Path:
+    """Append one closed-loop PA-decision row to the daily CSV log."""
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    should_write_header = not log_path.exists() or log_path.stat().st_size == 0
+
+    row = {
+        "persona_id": persona_id,
+        "day_index": int(day_index),
+        "decision_code": int(pa_decision["decision_code"]),
+        "decision_label": str(pa_decision["decision_label"]),
+        "activity_done": bool(activity_done),
+        "planned_activity_for_day": _json_log_value(planned_activity_for_day),
+        "planned_activity_next_day": _json_log_value(dict(planned_activity_next_day)),
+        "behavior_policy": _json_log_value(dict(behavior_policy)),
+        "previous_psychological_constructs": _json_log_value(
+            dict(previous_psychological_constructs)
+        ),
+        "updated_psychological_constructs": _json_log_value(dict(updated_psychological_constructs)),
+        "diary_entry": str(pa_decision["diary_entry"]),
+        "rationale_short": str(pa_decision["rationale_short"]),
+    }
+
+    with log_path.open("a", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=DAILY_DECISION_LOG_COLUMNS)
+        if should_write_header:
+            writer.writeheader()
+        writer.writerow(row)
+
+    return log_path
+
+
+def build_closed_loop_update(
+    *,
+    agent_context: Mapping[str, Any],
+    pa_decision: Mapping[str, Any],
+    behavior_policy: Mapping[str, Any],
+    planned_activity_for_day: Any | None,
+    log_path: Path,
+) -> dict[str, Any]:
+    """Run the simple post-LLM2 closed-loop placeholder and persist its CSV row."""
+    persona_id = str(pa_decision["persona_id"])
+    day_index = int(pa_decision["day_index"])
+    decision_label = str(pa_decision["decision_label"])
+    activity_done = decision_label in SUCCESSFUL_PA_DECISION_LABELS
+    previous_constructs = extract_psychological_construct_values(agent_context)
+    updated_constructs = update_psychological_constructs_simple(
+        previous_constructs,
+        decision_label,
+    )
+    planned_activity_next_day = generate_planned_activity_next_day(decision_label)
+
+    write_daily_decision_log_row(
+        log_path=log_path,
+        persona_id=persona_id,
+        day_index=day_index,
+        pa_decision=pa_decision,
+        activity_done=activity_done,
+        planned_activity_for_day=planned_activity_for_day,
+        planned_activity_next_day=planned_activity_next_day,
+        behavior_policy=behavior_policy,
+        previous_psychological_constructs=previous_constructs,
+        updated_psychological_constructs=updated_constructs,
+    )
+
+    return {
+        "activity_done": activity_done,
+        "previous_psychological_constructs": previous_constructs,
+        "updated_psychological_constructs": updated_constructs,
+        "planned_activity_next_day": planned_activity_next_day,
+    }
+
+
 def run_pipeline_for_context(
     agent_context: Mapping[str, Any],
     *,
@@ -494,6 +671,7 @@ def run_pipeline_for_context(
     llm1_max_tokens: int = LLM1_MAX_TOKENS,
     llm2_max_tokens: int = LLM2_MAX_TOKENS,
     output_dir: Path = OUTPUT_DIR,
+    daily_log_path: Path | None = None,
     behavior_runner: Callable[..., Mapping[str, Any]] = run_behavior_probability_estimation,
     pa_decision_runner: Callable[..., Mapping[str, Any]] = run_pa_decision_llm,
 ) -> dict[str, Any]:
@@ -547,14 +725,25 @@ def run_pipeline_for_context(
         output_dir=output_dir,
     )
 
+    actual_daily_log_path = daily_log_path or output_dir / DAILY_DECISION_LOG_PATH.name
+    closed_loop_update = build_closed_loop_update(
+        agent_context=agent_context,
+        pa_decision=pa_decision,
+        behavior_policy=behavior_policy,
+        planned_activity_for_day=planned_activity,
+        log_path=actual_daily_log_path,
+    )
+
     record: dict[str, Any] = {
         "persona_id": persona_id,
         "day_index": day_index,
         "behavior_policy": behavior_policy,
         "pa_decision": pa_decision,
+        "closed_loop_update": closed_loop_update,
         "output_files": {
             "behavior_policy": str(behavior_output_path),
             "pa_decision": str(pa_decision_output_path),
+            "daily_decision_log": str(actual_daily_log_path),
         },
     }
     if "scenario" in agent_context:
@@ -609,6 +798,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             llm1_max_tokens=args.llm1_max_tokens,
             llm2_max_tokens=args.llm2_max_tokens,
             output_dir=args.output_dir,
+            daily_log_path=args.daily_log_path or args.output_dir / DAILY_DECISION_LOG_PATH.name,
         )
         records.append(record)
 
@@ -624,6 +814,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             "pa_decision_prompt_file": str(args.pa_decision_prompt_path),
             "pa_decision_fewshot_file": str(args.pa_decision_fewshot_path),
             "planned_activity_file": str(args.planned_activity_path) if args.planned_activity_path else None,
+            "daily_log_file": str(args.daily_log_path or args.output_dir / DAILY_DECISION_LOG_PATH.name),
             "model": args.model,
             "temperature": args.temperature,
             "llm1_max_tokens": args.llm1_max_tokens,
