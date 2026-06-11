@@ -77,6 +77,27 @@ LLM_HOURLY_FIELDS: tuple[str, ...] = (
 )
 LLM_POI_TARGETS: tuple[str, ...] = ("indoor_activity", "outdoor_activity")
 
+PERSONA_INPUT_CLI_TO_INTERNAL: dict[str, str] = {
+    "physical_activity_hours_per_week": "fitness_hours_week",
+    "social_hours_per_week": "social_hours_week",
+    "care_work_hours_per_week": "carework_hours_week",
+    "work_hours_per_week": "work_hours_week",
+}
+PERSONA_INPUT_INTERNAL_TO_METADATA: dict[str, str] = {
+    internal_key: cli_key for cli_key, internal_key in PERSONA_INPUT_CLI_TO_INTERNAL.items()
+}
+POI_DISTANCE_CLI_TO_INTERNAL: dict[str, str] = {
+    "workplace_distance_km": "workplace_distance_km",
+    "indoor_activity_distance_km": "indoor_activity_distance_km",
+    "outdoor_activity_distance_km": "outdoor_activity_distance_km",
+}
+POI_DISTANCE_INTERNAL_TO_METADATA: dict[str, str] = {
+    "workplace_distance_km": "workplace",
+    "indoor_activity_distance_km": "indoor_activity",
+    "outdoor_activity_distance_km": "outdoor_activity",
+}
+CLI_OVERRIDE_DESTINATIONS: tuple[str, ...] = tuple(PERSONA_INPUT_CLI_TO_INTERNAL) + tuple(POI_DISTANCE_CLI_TO_INTERNAL)
+
 DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "persona_id",
     "day_index",
@@ -119,6 +140,7 @@ class FullSimulationConfig:
     llm2_max_tokens: int
     dry_run: bool
     include_full_hourly_context: bool
+    cli_overrides: dict[str, list[float | None]] | None = None
     daily_log_path: Path | None = None
 
 
@@ -128,6 +150,7 @@ class PersonaRuntimeState:
     seed: int
     psychological_seed: int
     input_parameters: dict[str, Any]
+    poi_distances_km: dict[str, Any]
     selected_schedule_parameters: dict[str, Any]
     runner: SimulationRunner
     psychological_state: dict[str, Any]
@@ -149,8 +172,102 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--llm2-max-tokens", type=int, default=LLM2_MAX_TOKENS)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--include-full-hourly-context", action="store_true")
+    parser.add_argument("--physical-activity-hours-per-week", default=None)
+    parser.add_argument("--social-hours-per-week", default=None)
+    parser.add_argument("--care-work-hours-per-week", default=None)
+    parser.add_argument("--work-hours-per-week", default=None)
+    parser.add_argument("--workplace-distance-km", default=None)
+    parser.add_argument("--indoor-activity-distance-km", default=None)
+    parser.add_argument("--outdoor-activity-distance-km", default=None)
     parser.add_argument("--daily-log-path", type=Path, default=None)
     return parser.parse_args(argv)
+
+
+def parse_numeric_override_list(value: str | None, n_personas: int) -> list[float | None]:
+    """Parse one CLI override as all-persona, per-persona, or missing values.
+
+    A single numeric value is broadcast to every persona. A comma-separated list
+    is mapped by position and may be shorter than ``n_personas``; missing
+    positions are returned as ``None`` so defaults can be kept.
+    """
+    if n_personas < 1:
+        raise ValueError("n_personas must be >= 1")
+    if value is None:
+        return [None] * n_personas
+
+    raw_value = str(value).strip()
+    if not raw_value:
+        raise ValueError("Override values must not be empty.")
+
+    raw_parts = [part.strip() for part in raw_value.split(",")]
+    if any(part == "" for part in raw_parts):
+        raise ValueError(f"Override list {value!r} contains an empty value.")
+    if len(raw_parts) > n_personas:
+        raise ValueError(
+            f"Override list {value!r} has {len(raw_parts)} values, but --n-personas is {n_personas}."
+        )
+
+    parsed: list[float] = []
+    for part in raw_parts:
+        try:
+            number = float(part)
+        except ValueError as exc:
+            raise ValueError(f"Override value {part!r} is not numeric.") from exc
+        if number < 0:
+            raise ValueError(f"Override value {part!r} must be non-negative.")
+        parsed.append(number)
+
+    if len(parsed) == 1 and "," not in raw_value:
+        return [parsed[0]] * n_personas
+    return [*parsed, *([None] * (n_personas - len(parsed)))]
+
+
+def _parse_cli_overrides(args: argparse.Namespace) -> dict[str, list[float | None]]:
+    return {
+        destination: parse_numeric_override_list(getattr(args, destination, None), int(args.n_personas))
+        for destination in CLI_OVERRIDE_DESTINATIONS
+    }
+
+
+def _metadata_input_parameters(input_parameters: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        metadata_key: input_parameters[internal_key]
+        for internal_key, metadata_key in PERSONA_INPUT_INTERNAL_TO_METADATA.items()
+    }
+
+
+def _metadata_poi_distances(input_parameters: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        metadata_key: input_parameters[internal_key]
+        for internal_key, metadata_key in POI_DISTANCE_INTERNAL_TO_METADATA.items()
+    }
+
+
+def apply_persona_cli_overrides(
+    default_input_parameters: Mapping[str, Any],
+    default_poi_distances: Mapping[str, Any],
+    args: argparse.Namespace | Mapping[str, list[float | None]] | None,
+    persona_index: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Apply parsed CLI overrides for one zero-based persona index."""
+    input_parameters = dict(default_input_parameters)
+    poi_distances = dict(default_poi_distances)
+    if args is None:
+        return input_parameters, poi_distances
+
+    parsed_overrides = (
+        args if isinstance(args, Mapping) else _parse_cli_overrides(args)
+    )
+    for cli_key, internal_key in PERSONA_INPUT_CLI_TO_INTERNAL.items():
+        values = parsed_overrides.get(cli_key, [])
+        if persona_index < len(values) and values[persona_index] is not None:
+            input_parameters[internal_key] = values[persona_index]
+    for cli_key, internal_key in POI_DISTANCE_CLI_TO_INTERNAL.items():
+        values = parsed_overrides.get(cli_key, [])
+        if persona_index < len(values) and values[persona_index] is not None:
+            poi_distances[internal_key] = values[persona_index]
+
+    return input_parameters, poi_distances
 
 
 def _parse_start_date(value: str) -> date:
@@ -177,6 +294,7 @@ def config_from_args(args: argparse.Namespace) -> FullSimulationConfig:
         llm2_max_tokens=int(args.llm2_max_tokens),
         dry_run=bool(args.dry_run),
         include_full_hourly_context=bool(args.include_full_hourly_context),
+        cli_overrides=_parse_cli_overrides(args),
         daily_log_path=Path(args.daily_log_path) if args.daily_log_path else None,
     )
 
@@ -279,6 +397,14 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
 
     rng = random.Random(config.base_seed)
     normalized_inputs = _normalize_input_parameters(DEFAULT_INPUT_PARAMETERS)
+    default_input_parameters = {
+        key: normalized_inputs[key]
+        for key in PERSONA_INPUT_INTERNAL_TO_METADATA
+    }
+    default_poi_distances = {
+        key: normalized_inputs[key]
+        for key in POI_DISTANCE_INTERNAL_TO_METADATA
+    }
     start_month = int(config.start_date.month)
     start_day_offset = min(int(config.start_date.day) - 1, 29)
     horizon_hours = max(24 * 365, 24 * (start_day_offset + config.n_days + 1))
@@ -287,9 +413,15 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
     for idx in range(config.n_personas):
         persona_seed = rng.randint(0, 2**31 - 1)
         persona_id = f"StudentPersona_{idx + 1:02d}"
-        input_parameters = dict(normalized_inputs)
-        input_parameters["day_index"] = 0
-        persona = _student_parameters_from_inputs(persona_id, input_parameters)
+        input_parameters, poi_distances = apply_persona_cli_overrides(
+            default_input_parameters,
+            default_poi_distances,
+            config.cli_overrides,
+            idx,
+        )
+        simulation_inputs = {**normalized_inputs, **input_parameters, **poi_distances}
+        simulation_inputs["day_index"] = 0
+        persona = _student_parameters_from_inputs(persona_id, simulation_inputs)
         accessibility_model = _build_accessibility_model_from_parameters(persona.accessibility_input_parameters())
         env = TimeWeatherEnv(
             month=start_month,
@@ -312,7 +444,8 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
                 persona_id=persona_id,
                 seed=persona_seed,
                 psychological_seed=psychological_seed,
-                input_parameters=_json_ready(persona.input_parameters()),
+                input_parameters=_json_ready(_metadata_input_parameters(simulation_inputs)),
+                poi_distances_km=_json_ready(_metadata_poi_distances(simulation_inputs)),
                 selected_schedule_parameters=_json_ready(_schedule_parameters_payload(persona, persona_seed)),
                 runner=runner,
                 psychological_state=build_psychological_state(psychological_seed),
@@ -540,6 +673,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 "seed": int(state.seed),
                 "psychological_seed": int(state.psychological_seed),
                 "input_parameters": dict(state.input_parameters),
+                "poi_distances_km": dict(state.poi_distances_km),
                 "selected_schedule_parameters": dict(state.selected_schedule_parameters),
             }
             for state in persona_states
@@ -602,6 +736,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 "planned_activity_for_day": planned_activity_for_day,
                 "persona_metadata": {
                     "input_parameters": dict(state.input_parameters),
+                    "poi_distances_km": dict(state.poi_distances_km),
                     "selected_schedule_parameters": dict(state.selected_schedule_parameters),
                 },
                 "pa_decision": dict(pipeline_record["pa_decision"]),
