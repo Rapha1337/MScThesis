@@ -28,6 +28,8 @@ MODEL_NAME = "gpt-oss-120b"
 TEMPERATURE = 0
 MAX_TOKENS = 2000
 PROBABILITY_SUM_TOLERANCE = 1e-6
+PROBABILITY_NORMALIZATION_MIN_SUM = 0.95
+PROBABILITY_NORMALIZATION_MAX_SUM = 1.05
 
 BEHAVIOR_PROBABILITY_KEYS: tuple[str, ...] = (
     "do_planned_activity",
@@ -202,11 +204,32 @@ def validate_behavior_probability_payload(
         validated_probabilities[key] = probability
 
     probability_sum = sum(validated_probabilities.values())
+    if probability_sum <= 0.0:
+        raise ValueError("Behavior probabilities must have a positive sum.")
+
     if abs(probability_sum - 1.0) > sum_tolerance:
-        raise ValueError(
-            f"Behavior probabilities must sum to 1.0 within tolerance {sum_tolerance}; "
-            f"got {probability_sum:.12f}."
-        )
+        if not (
+            PROBABILITY_NORMALIZATION_MIN_SUM
+            <= probability_sum
+            <= PROBABILITY_NORMALIZATION_MAX_SUM
+        ):
+            raise ValueError(
+                "Behavior probabilities must sum to 1.0 within tolerance "
+                f"{sum_tolerance}, or be within the normalization range "
+                f"[{PROBABILITY_NORMALIZATION_MIN_SUM}, {PROBABILITY_NORMALIZATION_MAX_SUM}]; "
+                f"got {probability_sum:.12f}."
+            )
+
+        validated_probabilities = {
+            key: probability / probability_sum
+            for key, probability in validated_probabilities.items()
+        }
+        normalized_sum = sum(validated_probabilities.values())
+        if abs(normalized_sum - 1.0) > sum_tolerance:
+            raise ValueError(
+                "Normalized behavior probabilities must sum to 1.0 within tolerance "
+                f"{sum_tolerance}; got {normalized_sum:.12f}."
+            )
 
     return {"probabilities": validated_probabilities}
 
