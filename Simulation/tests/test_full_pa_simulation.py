@@ -129,3 +129,172 @@ def test_existing_single_day_pa_decision_input_builder_still_accepts_contexts(tm
     assert pa_input["persona_id"] == compact_context["persona_id"]
     assert pa_input["day_index"] == compact_context["day_index"]
     assert len(pa_input["daily_context"]["hourly_context_24h"]) == 24
+
+
+def test_full_pa_without_overrides_uses_default_persona_values(tmp_path: Path) -> None:
+    from agent_context_export import DEFAULT_INPUT_PARAMETERS
+
+    config, trace = _run_dry_simulation(tmp_path)
+    metadata_payload = json.loads((config.output_dir / "persona_metadata.json").read_text(encoding="utf-8"))
+
+    for persona in metadata_payload["personas"]:
+        assert persona["input_parameters"] == {
+            "physical_activity_hours_per_week": DEFAULT_INPUT_PARAMETERS["fitness_hours_week"],
+            "social_hours_per_week": DEFAULT_INPUT_PARAMETERS["social_hours_week"],
+            "care_work_hours_per_week": DEFAULT_INPUT_PARAMETERS["carework_hours_week"],
+            "work_hours_per_week": DEFAULT_INPUT_PARAMETERS["work_hours_week"],
+        }
+        assert persona["poi_distances_km"] == {
+            "workplace": DEFAULT_INPUT_PARAMETERS["workplace_distance_km"],
+            "indoor_activity": DEFAULT_INPUT_PARAMETERS["indoor_activity_distance_km"],
+            "outdoor_activity": DEFAULT_INPUT_PARAMETERS["outdoor_activity_distance_km"],
+        }
+    assert trace["records"][0]["persona_metadata"]["input_parameters"] == metadata_payload["personas"][0]["input_parameters"]
+
+
+def test_full_pa_single_value_override_applies_to_all_personas(tmp_path: Path) -> None:
+    from run_full_pa_simulation import config_from_args, parse_args, run_full_simulation
+
+    args = parse_args([
+        "--n-personas", "2",
+        "--n-days", "1",
+        "--output-dir", str(tmp_path / "single_override"),
+        "--social-hours-per-week", "8",
+        "--dry-run",
+    ])
+    config = config_from_args(args)
+    run_full_simulation(config)
+    metadata_payload = json.loads((config.output_dir / "persona_metadata.json").read_text(encoding="utf-8"))
+
+    assert [p["input_parameters"]["social_hours_per_week"] for p in metadata_payload["personas"]] == [8.0, 8.0]
+
+
+def test_full_pa_comma_separated_override_maps_by_persona(tmp_path: Path) -> None:
+    from run_full_pa_simulation import config_from_args, parse_args, run_full_simulation
+
+    args = parse_args([
+        "--n-personas", "2",
+        "--n-days", "1",
+        "--output-dir", str(tmp_path / "per_persona_override"),
+        "--social-hours-per-week", "8,3",
+        "--dry-run",
+    ])
+    config = config_from_args(args)
+    run_full_simulation(config)
+    metadata_payload = json.loads((config.output_dir / "persona_metadata.json").read_text(encoding="utf-8"))
+
+    assert [p["input_parameters"]["social_hours_per_week"] for p in metadata_payload["personas"]] == [8.0, 3.0]
+
+
+def test_full_pa_partial_comma_list_keeps_defaults_for_remaining_personas(tmp_path: Path) -> None:
+    from agent_context_export import DEFAULT_INPUT_PARAMETERS
+    from run_full_pa_simulation import config_from_args, parse_args, run_full_simulation
+
+    args = parse_args([
+        "--n-personas", "3",
+        "--n-days", "1",
+        "--output-dir", str(tmp_path / "partial_override"),
+        "--social-hours-per-week", "8,3",
+        "--dry-run",
+    ])
+    config = config_from_args(args)
+    run_full_simulation(config)
+    metadata_payload = json.loads((config.output_dir / "persona_metadata.json").read_text(encoding="utf-8"))
+
+    assert [p["input_parameters"]["social_hours_per_week"] for p in metadata_payload["personas"]] == [
+        8.0,
+        3.0,
+        DEFAULT_INPUT_PARAMETERS["social_hours_week"],
+    ]
+
+
+def test_full_pa_too_many_override_values_raise_clear_error() -> None:
+    import pytest
+    from run_full_pa_simulation import config_from_args, parse_args
+
+    args = parse_args([
+        "--n-personas", "2",
+        "--social-hours-per-week", "8,3,1",
+    ])
+    with pytest.raises(ValueError, match="has 3 values, but --n-personas is 2"):
+        config_from_args(args)
+
+
+def test_full_pa_negative_hour_and_distance_overrides_raise_clear_errors() -> None:
+    import pytest
+    from run_full_pa_simulation import config_from_args, parse_args
+
+    negative_hours = parse_args(["--work-hours-per-week", "-1"])
+    with pytest.raises(ValueError, match="must be non-negative"):
+        config_from_args(negative_hours)
+
+    negative_distance = parse_args(["--workplace-distance-km", "-0.5"])
+    with pytest.raises(ValueError, match="must be non-negative"):
+        config_from_args(negative_distance)
+
+
+def test_full_pa_overrides_appear_in_persona_metadata_and_trace(tmp_path: Path) -> None:
+    from run_full_pa_simulation import config_from_args, parse_args, run_full_simulation
+
+    args = parse_args([
+        "--n-personas", "2",
+        "--n-days", "1",
+        "--output-dir", str(tmp_path / "metadata_override"),
+        "--physical-activity-hours-per-week", "4,1",
+        "--social-hours-per-week", "8,3",
+        "--care-work-hours-per-week", "0,4",
+        "--work-hours-per-week", "25,35",
+        "--workplace-distance-km", "3.0,8.0",
+        "--indoor-activity-distance-km", "1.2,4.5",
+        "--outdoor-activity-distance-km", "0.6,1.8",
+        "--dry-run",
+    ])
+    config = config_from_args(args)
+    trace = run_full_simulation(config)
+    metadata_payload = json.loads((config.output_dir / "persona_metadata.json").read_text(encoding="utf-8"))
+
+    assert metadata_payload["personas"][0]["input_parameters"] == {
+        "physical_activity_hours_per_week": 4.0,
+        "social_hours_per_week": 8.0,
+        "care_work_hours_per_week": 0.0,
+        "work_hours_per_week": 25.0,
+    }
+    assert metadata_payload["personas"][1]["input_parameters"] == {
+        "physical_activity_hours_per_week": 1.0,
+        "social_hours_per_week": 3.0,
+        "care_work_hours_per_week": 4.0,
+        "work_hours_per_week": 35.0,
+    }
+    assert metadata_payload["personas"][1]["poi_distances_km"] == {
+        "workplace": 8.0,
+        "indoor_activity": 4.5,
+        "outdoor_activity": 1.8,
+    }
+    assert trace["records"][0]["persona_metadata"]["input_parameters"] == metadata_payload["personas"][0]["input_parameters"]
+    assert trace["records"][1]["persona_metadata"]["poi_distances_km"] == metadata_payload["personas"][1]["poi_distances_km"]
+
+
+def test_full_pa_llm2_input_still_excludes_raw_metadata_after_overrides(tmp_path: Path) -> None:
+    from run_full_pa_simulation import config_from_args, parse_args, run_full_simulation
+    from run_llm_pa_decision import build_pa_decision_input
+
+    args = parse_args([
+        "--n-personas", "1",
+        "--n-days", "1",
+        "--output-dir", str(tmp_path / "llm2_override"),
+        "--social-hours-per-week", "8",
+        "--dry-run",
+    ])
+    config = config_from_args(args)
+    trace = run_full_simulation(config)
+    compact_context = json.loads((config.output_dir / "contexts_compact.json").read_text(encoding="utf-8"))["llm_contexts"][0]
+    pa_input = build_pa_decision_input(
+        compact_context,
+        trace["records"][0]["behavior_policy"],
+        planned_activity=trace["records"][0]["planned_activity_for_day"],
+    )
+
+    serialized_pa_input = json.dumps(pa_input)
+    assert "task_description" not in serialized_pa_input
+    assert "input_parameters" not in serialized_pa_input
+    assert "selected_schedule_parameters" not in serialized_pa_input
