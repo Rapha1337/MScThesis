@@ -69,11 +69,13 @@ EXPECTED_PA_DECISION_FIELDS = frozenset(
 )
 
 DAILY_CONTEXT_FIELDS: tuple[str, ...] = (
+    "persona_id",
+    "seed",
+    "day_index",
+    "calendar_date",
     "phase",
     "weekday",
-    "task_description",
-    "input_parameters",
-    "selected_schedule_parameters",
+    "planned_activity_for_day",
     "hourly_context_24h",
 )
 
@@ -542,18 +544,23 @@ def update_psychological_constructs_simple(
     delta_done: float = 0.02,
     delta_not_done: float = -0.02,
 ) -> dict[str, float]:
-    """Apply a small deterministic placeholder update to psychological constructs."""
-    if decision_label in SUCCESSFUL_PA_DECISION_LABELS:
-        delta = delta_done
-    elif decision_label in UNSUCCESSFUL_PA_DECISION_LABELS:
-        delta = delta_not_done
-    else:
-        delta = 0.0
+    """Apply a small deterministic placeholder update to psychological constructs.
 
-    return {
-        key: min(1.0, max(0.0, float(value) + delta))
-        for key, value in previous_constructs.items()
-    }
+    Supportive constructs move up after successful PA and down after unsuccessful PA.
+    ``pressure_tension`` is inverted because higher values mean more pressure and tension.
+    """
+    if decision_label in SUCCESSFUL_PA_DECISION_LABELS:
+        supportive_delta = delta_done
+    elif decision_label in UNSUCCESSFUL_PA_DECISION_LABELS:
+        supportive_delta = delta_not_done
+    else:
+        supportive_delta = 0.0
+
+    updated: dict[str, float] = {}
+    for key, value in previous_constructs.items():
+        delta = -supportive_delta if key == "pressure_tension" else supportive_delta
+        updated[key] = min(1.0, max(0.0, float(value) + delta))
+    return updated
 
 
 def generate_planned_activity_next_day(decision_label: str) -> dict[str, Any]:
