@@ -338,9 +338,6 @@ def build_llm_ready_context_for_day(
             f"got {len(hourly_context)}."
         )
 
-    input_parameters = dict(state.input_parameters)
-    input_parameters["day_index"] = int(day_index)
-
     llm_context = {
         "persona_id": state.persona_id,
         "seed": int(state.seed),
@@ -348,12 +345,6 @@ def build_llm_ready_context_for_day(
         "calendar_date": calendar_date.isoformat(),
         "phase": diagnostic_context.get("phase"),
         "weekday": diagnostic_context.get("weekday"),
-        "task_description": (
-            "Use the compact 24-hour schedule, energy, quantitative weather, daylight, "
-            "constraints, location, and POI-accessibility context to reason about this persona's day."
-        ),
-        "input_parameters": input_parameters,
-        "selected_schedule_parameters": dict(state.selected_schedule_parameters),
         "psychological_state": dict(state.psychological_state),
         "hourly_context_24h": [_compact_hourly_entry(entry) for entry in hourly_context],
     }
@@ -513,6 +504,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
     daily_log_path = config.daily_log_path or config.output_dir / "daily_decision_log.csv"
     longitudinal_path = config.output_dir / "longitudinal_constructs.csv"
     contexts_compact_path = config.output_dir / "contexts_compact.json"
+    persona_metadata_path = config.output_dir / "persona_metadata.json"
     pipeline_daily_log_path = config.output_dir / "pipeline_closed_loop_daily_log.csv"
 
     # Avoid appending to stale run outputs for deterministic reruns in the same directory.
@@ -541,6 +533,19 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
     pa_decision_system_prompt = "DRY RUN PA DECISION PROMPT" if config.dry_run else load_pa_decision_prompt()
 
     persona_states = _build_persona_states(config)
+    persona_metadata = {
+        "personas": [
+            {
+                "persona_id": state.persona_id,
+                "seed": int(state.seed),
+                "psychological_seed": int(state.psychological_seed),
+                "input_parameters": dict(state.input_parameters),
+                "selected_schedule_parameters": dict(state.selected_schedule_parameters),
+            }
+            for state in persona_states
+        ]
+    }
+    _write_json(persona_metadata_path, persona_metadata)
     start_day_offset = min(int(config.start_date.day) - 1, 29)
     records: list[dict[str, Any]] = []
     compact_contexts: list[dict[str, Any]] = []
@@ -595,6 +600,10 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 "psychological_constructs_before_update": constructs_before,
                 "behavior_policy": dict(pipeline_record["behavior_policy"]),
                 "planned_activity_for_day": planned_activity_for_day,
+                "persona_metadata": {
+                    "input_parameters": dict(state.input_parameters),
+                    "selected_schedule_parameters": dict(state.selected_schedule_parameters),
+                },
                 "pa_decision": dict(pipeline_record["pa_decision"]),
                 "closed_loop_update": closed_loop_update,
                 "psychological_constructs_after_update": constructs_after,
@@ -623,6 +632,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
             "start_date": config.start_date.isoformat(),
             "base_seed": config.base_seed,
             "dry_run": config.dry_run,
+            "persona_metadata_file": str(persona_metadata_path),
         },
         "llm_contexts": compact_contexts,
     }
@@ -636,6 +646,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
             "start_date": config.start_date.isoformat(),
             "base_seed": config.base_seed,
             "dry_run": config.dry_run,
+            "persona_metadata_file": str(persona_metadata_path),
         },
         "records": records,
     }
@@ -655,6 +666,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 "daily_decision_log": str(config.daily_log_path or config.output_dir / "daily_decision_log.csv"),
                 "longitudinal_constructs": str(config.output_dir / "longitudinal_constructs.csv"),
                 "contexts_compact": str(config.output_dir / "contexts_compact.json"),
+                "persona_metadata": str(config.output_dir / "persona_metadata.json"),
             },
             ensure_ascii=False,
             indent=2,

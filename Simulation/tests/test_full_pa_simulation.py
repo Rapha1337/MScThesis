@@ -87,6 +87,28 @@ def test_full_pa_dry_run_outputs_valid_json_and_csv_rows(tmp_path: Path) -> None
     assert len(construct_rows) == 4 * len(trace["records"][0]["psychological_constructs_before_update"])
 
 
+
+def test_full_pa_dry_run_compact_context_excludes_llm2_metadata(tmp_path: Path) -> None:
+    config, _ = _run_dry_simulation(tmp_path)
+    compact_payload = json.loads((config.output_dir / "contexts_compact.json").read_text(encoding="utf-8"))
+
+    assert compact_payload["llm_contexts"]
+    for context in compact_payload["llm_contexts"]:
+        assert "task_description" not in context
+        assert "input_parameters" not in context
+        assert "selected_schedule_parameters" not in context
+        assert len(context["hourly_context_24h"]) == 24
+
+
+def test_full_pa_dry_run_preserves_persona_metadata_separately(tmp_path: Path) -> None:
+    config, trace = _run_dry_simulation(tmp_path)
+    metadata_payload = json.loads((config.output_dir / "persona_metadata.json").read_text(encoding="utf-8"))
+
+    assert trace["metadata"]["persona_metadata_file"] == str(config.output_dir / "persona_metadata.json")
+    assert len(metadata_payload["personas"]) == 2
+    assert "input_parameters" in metadata_payload["personas"][0]
+    assert "selected_schedule_parameters" in metadata_payload["personas"][0]
+
 def test_existing_single_day_pa_decision_input_builder_still_accepts_contexts(tmp_path: Path) -> None:
     from run_llm_pa_decision import build_pa_decision_input
 
