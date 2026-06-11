@@ -26,7 +26,7 @@ OUTPUT_DIR = SIMULATION_DIR / "output"
 COMBINED_OUTPUT_PATH = OUTPUT_DIR / "llm_behavior_probabilities_all_agents.json"
 MODEL_NAME = "gpt-oss-120b"
 TEMPERATURE = 0
-MAX_TOKENS = 800
+MAX_TOKENS = 2000
 PROBABILITY_SUM_TOLERANCE = 1e-6
 
 BEHAVIOR_PROBABILITY_KEYS: tuple[str, ...] = (
