@@ -309,9 +309,12 @@ def test_run_pipeline_for_context_with_fake_llms_writes_intermediate_and_final_o
     assert decision_path.exists()
     assert json.loads(behavior_path.read_text(encoding="utf-8"))["behavior_policy"] == BEHAVIOR_POLICY
     assert json.loads(decision_path.read_text(encoding="utf-8")) == _valid_decision()
+    daily_log_path = tmp_path / "llm_pa_decision_daily_log.csv"
+    assert daily_log_path.exists()
     assert record["output_files"] == {
         "behavior_policy": str(behavior_path),
         "pa_decision": str(decision_path),
+        "daily_decision_log": str(daily_log_path),
     }
     assert record["behavior_policy"] == BEHAVIOR_POLICY
     assert record["pa_decision"] == _valid_decision()
@@ -379,3 +382,139 @@ def test_main_writes_combined_pipeline_output_with_metadata(tmp_path: Path, monk
     assert payload["metadata"]["n_contexts"] == 1
     assert payload["records"][0]["behavior_policy"] == BEHAVIOR_POLICY
     assert payload["records"][0]["pa_decision"] == _valid_decision()
+
+
+@pytest.mark.parametrize("decision_label", ["done_as_planned", "adapted", "extra_movement"])
+def test_simple_construct_update_increases_after_successful_pa(decision_label: str) -> None:
+    from run_llm_pa_decision import update_psychological_constructs_simple
+
+    updated = update_psychological_constructs_simple(
+        {"automaticity": 0.50, "motivation": 0.20}, decision_label
+    )
+
+    assert updated == {
+        "automaticity": pytest.approx(0.52),
+        "motivation": pytest.approx(0.22),
+    }
+
+
+@pytest.mark.parametrize("decision_label", ["not_done", "postponed", "app_ignored"])
+def test_simple_construct_update_decreases_after_unsuccessful_pa(decision_label: str) -> None:
+    from run_llm_pa_decision import update_psychological_constructs_simple
+
+    updated = update_psychological_constructs_simple(
+        {"automaticity": 0.50, "motivation": 0.20}, decision_label
+    )
+
+    assert updated == {
+        "automaticity": pytest.approx(0.48),
+        "motivation": pytest.approx(0.18),
+    }
+
+
+def test_simple_construct_update_clamps_values_to_unit_interval() -> None:
+    from run_llm_pa_decision import update_psychological_constructs_simple
+
+    increased = update_psychological_constructs_simple({"high": 0.99}, "done_as_planned")
+    decreased = update_psychological_constructs_simple({"low": 0.01}, "not_done")
+
+    assert increased == {"high": 1.0}
+    assert decreased == {"low": 0.0}
+
+
+@pytest.mark.parametrize("decision_label", ["done_as_planned", "not_done"])
+def test_planned_activity_next_day_has_required_fields(decision_label: str) -> None:
+    from run_llm_pa_decision import generate_planned_activity_next_day
+
+    planned_activity = generate_planned_activity_next_day(decision_label)
+
+    assert set(planned_activity) == {
+        "activity_type",
+        "duration_min",
+        "intensity",
+        "preferred_time_window",
+        "description",
+    }
+    assert isinstance(planned_activity["activity_type"], str)
+    assert isinstance(planned_activity["duration_min"], int)
+    assert isinstance(planned_activity["intensity"], str)
+    assert isinstance(planned_activity["preferred_time_window"], list)
+    assert len(planned_activity["preferred_time_window"]) == 2
+    assert isinstance(planned_activity["description"], str)
+
+
+def test_daily_decision_csv_log_rows_include_required_columns(tmp_path: Path) -> None:
+    import csv
+    from run_llm_pa_decision import DAILY_DECISION_LOG_COLUMNS, write_daily_decision_log_row
+
+    log_path = tmp_path / "llm_pa_decision_daily_log.csv"
+    planned_activity_next_day = {
+        "activity_type": "indoor_activity",
+        "duration_min": 20,
+        "intensity": "moderate",
+        "preferred_time_window": [17, 20],
+        "description": "20 Minuten intensive Oberkörpereinheit im Gym",
+    }
+
+    write_daily_decision_log_row(
+        log_path=log_path,
+        persona_id="ScenarioPersona_01_favourable_pa_context",
+        day_index=21,
+        pa_decision=_valid_decision(),
+        activity_done=True,
+        planned_activity_for_day={"activity_type": "outdoor_activity"},
+        planned_activity_next_day=planned_activity_next_day,
+        behavior_policy=BEHAVIOR_POLICY,
+        previous_psychological_constructs={"automaticity": 0.5},
+        updated_psychological_constructs={"automaticity": 0.52},
+    )
+
+    with log_path.open("r", encoding="utf-8", newline="") as file:
+        rows = list(csv.DictReader(file))
+
+    assert len(rows) == 1
+    assert tuple(rows[0].keys()) == DAILY_DECISION_LOG_COLUMNS
+    assert rows[0]["persona_id"] == "ScenarioPersona_01_favourable_pa_context"
+    assert rows[0]["day_index"] == "21"
+    assert rows[0]["decision_label"] == "done_as_planned"
+    assert rows[0]["activity_done"] == "True"
+    assert json.loads(rows[0]["planned_activity_next_day"]) == planned_activity_next_day
+    assert json.loads(rows[0]["behavior_policy"]) == BEHAVIOR_POLICY
+    assert json.loads(rows[0]["previous_psychological_constructs"]) == {"automaticity": 0.5}
+    assert json.loads(rows[0]["updated_psychological_constructs"]) == {"automaticity": 0.52}
+
+
+def test_run_pipeline_for_context_record_contains_closed_loop_update(tmp_path: Path) -> None:
+    from run_llm_pa_decision import run_pipeline_for_context
+
+    def fake_behavior_runner(agent_context, **kwargs):
+        return {"probabilities": dict(BEHAVIOR_POLICY)}
+
+    def fake_pa_decision_runner(pa_decision_input, **kwargs):
+        return _valid_decision()
+
+    record = run_pipeline_for_context(
+        _agent_context(),
+        behavior_system_prompt="behavior prompt",
+        pa_decision_system_prompt="pa prompt",
+        output_dir=tmp_path,
+        behavior_runner=fake_behavior_runner,
+        pa_decision_runner=fake_pa_decision_runner,
+    )
+
+    assert "closed_loop_update" in record
+    assert record["closed_loop_update"]["activity_done"] is True
+    assert record["closed_loop_update"]["previous_psychological_constructs"] == {
+        "automaticity": 0.5
+    }
+    assert record["closed_loop_update"]["updated_psychological_constructs"] == {
+        "automaticity": pytest.approx(0.52)
+    }
+    assert set(record["closed_loop_update"]["planned_activity_next_day"]) == {
+        "activity_type",
+        "duration_min",
+        "intensity",
+        "preferred_time_window",
+        "description",
+    }
+    assert (tmp_path / "llm_pa_decision_daily_log.csv").exists()
