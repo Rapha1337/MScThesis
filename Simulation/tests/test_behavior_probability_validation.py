@@ -94,7 +94,7 @@ def test_behavior_probability_user_prompt_only_sends_psychological_construct_val
     assert "activity_suggestion" not in prompt
 
 
-def test_valid_payload_accepted() -> None:
+def test_exact_sum_one_payload_accepted_unchanged() -> None:
     from run_behavior_probability_estimation import validate_behavior_probability_payload
 
     payload = _valid_payload()
@@ -182,13 +182,39 @@ def test_non_finite_probability_rejected(bad_value: float) -> None:
         validate_behavior_probability_payload(payload)
 
 
-def test_probability_sum_not_equal_to_one_rejected() -> None:
+@pytest.mark.parametrize("target_sum", [0.98, 1.02])
+def test_near_valid_probability_sum_accepted_and_normalized(target_sum: float) -> None:
+    from run_behavior_probability_estimation import (
+        BEHAVIOR_PROBABILITY_KEYS,
+        validate_behavior_probability_payload,
+    )
+
+    payload = _valid_payload()
+    scale_factor = target_sum / sum(payload["probabilities"].values())
+    payload["probabilities"] = {
+        key: value * scale_factor for key, value in payload["probabilities"].items()
+    }
+
+    validated = validate_behavior_probability_payload(payload)
+
+    assert sum(validated["probabilities"].values()) == pytest.approx(1.0)
+    for key in BEHAVIOR_PROBABILITY_KEYS:
+        assert validated["probabilities"][key] == pytest.approx(
+            payload["probabilities"][key] / target_sum
+        )
+
+
+@pytest.mark.parametrize("target_sum", [0.50, 1.50])
+def test_probability_sum_outside_normalization_range_rejected(target_sum: float) -> None:
     from run_behavior_probability_estimation import validate_behavior_probability_payload
 
     payload = _valid_payload()
-    payload["probabilities"]["do_planned_activity"] = 0.24
+    scale_factor = target_sum / sum(payload["probabilities"].values())
+    payload["probabilities"] = {
+        key: value * scale_factor for key, value in payload["probabilities"].items()
+    }
 
-    with pytest.raises(ValueError, match="sum to 1.0"):
+    with pytest.raises(ValueError, match="normalization range"):
         validate_behavior_probability_payload(payload)
 
 
