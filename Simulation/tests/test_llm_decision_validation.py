@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import copy
 import importlib
 import json
 from pathlib import Path
@@ -12,7 +11,85 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
-from psychological_state import DEFAULT_PSYCHOLOGICAL_STATE
+
+BEHAVIOR_POLICY = {
+    "do_planned_activity": 0.25,
+    "adapt_activity": 0.20,
+    "postpone_activity": 0.15,
+    "skip_activity": 0.15,
+    "extra_activity": 0.10,
+    "app_ignored": 0.15,
+}
+
+
+def _hourly_context() -> list[dict]:
+    return [
+        {
+            "hour": hour,
+            "activity_type": "downtime",
+            "subtype": "open_time",
+            "current_location": "home",
+            "active_constraints": [],
+            "energy_level": 0.6,
+            "energy_category": "medium",
+            "temperature_c": 12.0,
+            "feels_like_c": 12.0,
+            "humidity_pct": 70.0,
+            "wind_m_s": 1.0,
+            "precipitation_mm": 0.0,
+            "is_wet": False,
+            "sun_frac": 0.5,
+            "is_daylight": 8 <= hour <= 18,
+            "snow_cover": False,
+            "poi_accessibility": {
+                "indoor_activity": {
+                    "distance_km": 1.2,
+                    "travel_times_min": {"walk": 15.0, "bike": 4.8, "car": 2.4},
+                },
+                "outdoor_activity": {
+                    "distance_km": 0.6,
+                    "travel_times_min": {"walk": 7.5, "bike": 2.4, "car": 1.2},
+                },
+            },
+        }
+        for hour in range(24)
+    ]
+
+
+def _agent_context() -> dict:
+    return {
+        "persona_id": "ScenarioPersona_01_favourable_pa_context",
+        "seed": 123,
+        "day_index": 21,
+        "phase": "holiday",
+        "weekday": 2,
+        "scenario": "favourable_pa_context",
+        "task_description": "Use compact context.",
+        "input_parameters": {
+            "fitness_hours_week": 4.0,
+            "values_normalized": {"must": "be removed"},
+        },
+        "selected_schedule_parameters": {
+            "sport_frequency": 0.3,
+            "raw_scale_means": {"must": "be removed"},
+        },
+        "psychological_state": {
+            "values_normalized": {"automaticity": 0.5},
+            "raw_scale_means": {"automaticity": 4.0},
+        },
+        "hourly_context_24h": _hourly_context(),
+    }
+
+
+def _valid_decision() -> dict:
+    return {
+        "persona_id": "ScenarioPersona_01_favourable_pa_context",
+        "day_index": 21,
+        "decision_code": 1,
+        "decision_label": "done_as_planned",
+        "rationale_short": "Behavior policy and daily context support doing the activity.",
+        "diary_entry": "Ich hatte heute genug Luft und habe mich wie geplant bewegt.",
+    }
 
 
 def test_run_llm_pa_decision_importable_without_api_key(monkeypatch) -> None:
@@ -20,137 +97,285 @@ def test_run_llm_pa_decision_importable_without_api_key(monkeypatch) -> None:
     module = importlib.import_module("run_llm_pa_decision")
     importlib.reload(module)
 
-    assert module.DECISION_CODEBOOK[0] == "not_completed"
+    assert module.PA_DECISION_CODEBOOK[0] == "not_done"
 
 
 def test_decision_codebook_contains_exact_codes() -> None:
-    from run_llm_pa_decision import DECISION_CODEBOOK
+    from run_llm_pa_decision import PA_DECISION_CODEBOOK
 
-    assert DECISION_CODEBOOK == {
-        0: "not_completed",
-        1: "completed_as_planned",
+    assert PA_DECISION_CODEBOOK == {
+        0: "not_done",
+        1: "done_as_planned",
         2: "postponed",
-        3: "adapted_completed",
+        3: "adapted",
         4: "extra_movement",
         5: "app_ignored",
     }
 
 
-def _valid_decision() -> dict:
-    return {
-        "decision_code": 1,
-        "decision_label": "completed_as_planned",
-        "diary_entry": "Ich habe mich heute wie geplant etwas bewegt.",
-        "rationale_short": "Es gab passende freie Zeit und keine starken Barrieren.",
-        "main_context_factors": ["freie Zeit", "mittlere Energie"],
+def test_load_pa_decision_prompt_concatenates_prompt_and_fewshot_in_order(tmp_path: Path) -> None:
+    from run_llm_pa_decision import load_pa_decision_prompt
+
+    prompt_path = tmp_path / "PADecision_Prompt.md"
+    fewshot_path = tmp_path / "PADecision_FewShot.md"
+    prompt_path.write_text("BASE PROMPT", encoding="utf-8")
+    fewshot_path.write_text("FEW SHOT", encoding="utf-8")
+
+    combined = load_pa_decision_prompt(prompt_path, fewshot_path)
+
+    assert "===== PA DECISION BASE PROMPT =====" in combined
+    assert "===== PA DECISION FEW-SHOT EXAMPLES =====" in combined
+    assert combined.index("BASE PROMPT") < combined.index("FEW SHOT")
+
+
+@pytest.mark.parametrize("empty_file", ["prompt", "fewshot"])
+def test_load_pa_decision_prompt_rejects_empty_files(tmp_path: Path, empty_file: str) -> None:
+    from run_llm_pa_decision import load_pa_decision_prompt
+
+    prompt_path = tmp_path / "PADecision_Prompt.md"
+    fewshot_path = tmp_path / "PADecision_FewShot.md"
+    prompt_path.write_text("BASE PROMPT", encoding="utf-8")
+    fewshot_path.write_text("FEW SHOT", encoding="utf-8")
+    if empty_file == "prompt":
+        prompt_path.write_text("", encoding="utf-8")
+    else:
+        fewshot_path.write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="empty"):
+        load_pa_decision_prompt(prompt_path, fewshot_path)
+
+
+def test_build_pa_decision_input_has_expected_structure_and_planned_activity() -> None:
+    from run_llm_pa_decision import build_pa_decision_input
+
+    planned_activity = {"label": "provided activity", "duration_min": 20}
+    result = build_pa_decision_input(_agent_context(), BEHAVIOR_POLICY, planned_activity)
+
+    assert set(result) == {
+        "persona_id",
+        "day_index",
+        "behavior_policy",
+        "planned_activity",
+        "daily_context",
     }
+    assert result["persona_id"] == "ScenarioPersona_01_favourable_pa_context"
+    assert result["day_index"] == 21
+    assert result["behavior_policy"] == BEHAVIOR_POLICY
+    assert result["planned_activity"] == planned_activity
+    assert result["daily_context"]["phase"] == "holiday"
+    assert result["daily_context"]["weekday"] == 2
+    assert result["daily_context"]["task_description"] == "Use compact context."
 
 
-def test_valid_decision_json_is_accepted() -> None:
-    from run_llm_pa_decision import parse_and_validate_llm_decision
+def test_build_pa_decision_input_excludes_raw_psychological_state() -> None:
+    from run_llm_pa_decision import build_pa_decision_input
+
+    result = build_pa_decision_input(_agent_context(), BEHAVIOR_POLICY)
+    serialized = json.dumps(result)
+
+    assert "psychological_state" not in serialized
+    assert "values_normalized" not in serialized
+    assert "raw_scale_means" not in serialized
+
+
+def test_build_pa_decision_input_keeps_complete_24h_hourly_context() -> None:
+    from run_llm_pa_decision import build_pa_decision_input
+
+    result = build_pa_decision_input(_agent_context(), BEHAVIOR_POLICY)
+
+    assert len(result["daily_context"]["hourly_context_24h"]) == 24
+    assert [entry["hour"] for entry in result["daily_context"]["hourly_context_24h"]] == list(range(24))
+
+
+def test_build_pa_decision_input_rejects_incomplete_hourly_context() -> None:
+    from run_llm_pa_decision import build_pa_decision_input
+
+    context = _agent_context()
+    context["hourly_context_24h"] = context["hourly_context_24h"][:23]
+
+    with pytest.raises(ValueError, match="exactly 24"):
+        build_pa_decision_input(context, BEHAVIOR_POLICY)
+
+
+def test_valid_pa_decision_output_is_accepted() -> None:
+    from run_llm_pa_decision import validate_pa_decision_output
 
     payload = _valid_decision()
 
-    assert parse_and_validate_llm_decision(json.dumps(payload)) == payload
+    assert validate_pa_decision_output(payload, payload["persona_id"], payload["day_index"]) == payload
 
 
 @pytest.mark.parametrize("bad_code", [-1, 6, "1", True])
 def test_invalid_decision_code_is_rejected(bad_code) -> None:
-    from run_llm_pa_decision import validate_llm_decision_payload
+    from run_llm_pa_decision import validate_pa_decision_output
 
     payload = _valid_decision()
     payload["decision_code"] = bad_code
 
     with pytest.raises(ValueError):
-        validate_llm_decision_payload(payload)
+        validate_pa_decision_output(payload, payload["persona_id"], payload["day_index"])
 
 
-def test_wrong_decision_label_for_code_is_rejected() -> None:
-    from run_llm_pa_decision import validate_llm_decision_payload
+@pytest.mark.parametrize(
+    "bad_label",
+    ["not_done", "not_completed", "completed_as_planned", "adapted_completed"],
+)
+def test_wrong_or_old_decision_label_for_code_is_rejected(bad_label: str) -> None:
+    from run_llm_pa_decision import validate_pa_decision_output
 
     payload = _valid_decision()
-    payload["decision_label"] = "not_completed"
+    payload["decision_label"] = bad_label
 
-    with pytest.raises(ValueError):
-        validate_llm_decision_payload(payload)
+    with pytest.raises(ValueError, match="decision_label"):
+        validate_pa_decision_output(payload, payload["persona_id"], payload["day_index"])
+
+
+def test_mismatching_persona_id_is_rejected() -> None:
+    from run_llm_pa_decision import validate_pa_decision_output
+
+    payload = _valid_decision()
+
+    with pytest.raises(ValueError, match="persona_id"):
+        validate_pa_decision_output(payload, "other_persona", payload["day_index"])
+
+
+def test_mismatching_day_index_is_rejected() -> None:
+    from run_llm_pa_decision import validate_pa_decision_output
+
+    payload = _valid_decision()
+
+    with pytest.raises(ValueError, match="day_index"):
+        validate_pa_decision_output(payload, payload["persona_id"], 22)
 
 
 def test_missing_fields_are_rejected() -> None:
-    from run_llm_pa_decision import validate_llm_decision_payload
+    from run_llm_pa_decision import validate_pa_decision_output
 
     payload = _valid_decision()
     payload.pop("diary_entry")
 
-    with pytest.raises(ValueError):
-        validate_llm_decision_payload(payload)
+    with pytest.raises(ValueError, match="Missing"):
+        validate_pa_decision_output(payload, payload["persona_id"], payload["day_index"])
 
 
 def test_extra_fields_are_rejected() -> None:
-    from run_llm_pa_decision import validate_llm_decision_payload
+    from run_llm_pa_decision import validate_pa_decision_output
 
     payload = _valid_decision()
-    payload["action_plan"] = "not allowed"
+    payload["main_context_factors"] = ["not required anymore"]
 
-    with pytest.raises(ValueError):
-        validate_llm_decision_payload(payload)
+    with pytest.raises(ValueError, match="extra"):
+        validate_pa_decision_output(payload, payload["persona_id"], payload["day_index"])
 
 
 def test_invalid_json_is_rejected() -> None:
-    from run_llm_pa_decision import parse_llm_decision_json
+    from run_llm_pa_decision import parse_pa_decision_json
 
-    with pytest.raises(ValueError):
-        parse_llm_decision_json("not json")
-
-
-@pytest.mark.parametrize("bad_factors", ["free time", ["free time", 1], ["free time", None]])
-def test_main_context_factors_must_be_list_of_strings(bad_factors) -> None:
-    from run_llm_pa_decision import validate_llm_decision_payload
-
-    payload = _valid_decision()
-    payload["main_context_factors"] = bad_factors
-
-    with pytest.raises(ValueError):
-        validate_llm_decision_payload(payload)
+    with pytest.raises(ValueError, match="not valid JSON"):
+        parse_pa_decision_json("not json")
 
 
-def test_prepare_agent_context_for_llm_removes_legacy_fields_and_adds_psychological_state() -> None:
-    from run_llm_pa_decision import prepare_agent_context_for_llm
+def test_run_pipeline_for_context_with_fake_llms_writes_intermediate_and_final_outputs(tmp_path: Path) -> None:
+    from run_llm_pa_decision import run_pipeline_for_context
 
-    source = {
-        "persona_id": "legacy_agent",
-        "input_parameters": {"fitness_hours_week": 4},
-        "selected_schedule_parameters": {"sport_frequency": 0.3},
-        "action_plan": {"legacy": True},
-        "hourly_context_24h": [],
+    captured_pa_inputs: list[dict] = []
+
+    def fake_behavior_runner(agent_context, **kwargs):
+        assert kwargs["system_prompt"] == "behavior prompt"
+        assert agent_context["psychological_state"]["values_normalized"] == {"automaticity": 0.5}
+        return {"probabilities": dict(BEHAVIOR_POLICY)}
+
+    def fake_pa_decision_runner(pa_decision_input, **kwargs):
+        assert kwargs["system_prompt"] == "pa prompt"
+        captured_pa_inputs.append(dict(pa_decision_input))
+        serialized = json.dumps(pa_decision_input)
+        assert "psychological_state" not in serialized
+        assert "values_normalized" not in serialized
+        assert "raw_scale_means" not in serialized
+        return _valid_decision()
+
+    record = run_pipeline_for_context(
+        _agent_context(),
+        behavior_system_prompt="behavior prompt",
+        pa_decision_system_prompt="pa prompt",
+        output_dir=tmp_path,
+        behavior_runner=fake_behavior_runner,
+        pa_decision_runner=fake_pa_decision_runner,
+    )
+
+    behavior_path = tmp_path / "llm_behavior_probability_ScenarioPersona_01_favourable_pa_context.json"
+    decision_path = tmp_path / "llm_pa_decision_ScenarioPersona_01_favourable_pa_context.json"
+    assert behavior_path.exists()
+    assert decision_path.exists()
+    assert json.loads(behavior_path.read_text(encoding="utf-8"))["behavior_policy"] == BEHAVIOR_POLICY
+    assert json.loads(decision_path.read_text(encoding="utf-8")) == _valid_decision()
+    assert record["output_files"] == {
+        "behavior_policy": str(behavior_path),
+        "pa_decision": str(decision_path),
     }
-    original = copy.deepcopy(source)
-
-    prepared = prepare_agent_context_for_llm(source)
-
-    assert source == original
-    assert "input_parameters" not in prepared
-    assert "selected_schedule_parameters" not in prepared
-    assert "action_plan" not in prepared
-    assert prepared["psychological_state"] == DEFAULT_PSYCHOLOGICAL_STATE
+    assert record["behavior_policy"] == BEHAVIOR_POLICY
+    assert record["pa_decision"] == _valid_decision()
+    assert len(captured_pa_inputs) == 1
+    assert captured_pa_inputs[0]["planned_activity"] is None
 
 
-def test_prepare_agent_context_for_llm_preserves_existing_psychological_state() -> None:
-    from run_llm_pa_decision import prepare_agent_context_for_llm
+def test_main_writes_combined_pipeline_output_with_metadata(tmp_path: Path, monkeypatch) -> None:
+    import run_llm_pa_decision as module
 
-    custom_state = {
-        "source": "custom",
-        "n": 1,
-        "values_normalized": {"automaticity": 0.1},
-        "raw_scale_means": {"automaticity": 1.6},
-    }
-    source = {
-        "persona_id": "current_agent",
-        "psychological_state": custom_state,
-        "input_parameters": {"fitness_hours_week": 4},
-    }
+    context_path = tmp_path / "contexts.json"
+    behavior_prompt_path = tmp_path / "BehaviorProbability_Prompt.md"
+    pa_prompt_path = tmp_path / "PADecision_Prompt.md"
+    fewshot_path = tmp_path / "PADecision_FewShot.md"
+    output_dir = tmp_path / "outputs"
+    combined_path = tmp_path / "llm_pa_decision_pipeline_all_agents.json"
 
-    prepared = prepare_agent_context_for_llm(source)
+    context_path.write_text(
+        json.dumps({"llm_contexts": [_agent_context()]}),
+        encoding="utf-8",
+    )
+    behavior_prompt_path.write_text("behavior prompt", encoding="utf-8")
+    pa_prompt_path.write_text("pa prompt", encoding="utf-8")
+    fewshot_path.write_text("fewshot prompt", encoding="utf-8")
 
-    assert prepared["psychological_state"] == custom_state
-    assert prepared["psychological_state"] is not custom_state
-    assert source["psychological_state"] == custom_state
+    def fake_run_pipeline_for_context(agent_context, **kwargs):
+        assert kwargs["behavior_system_prompt"] == "behavior prompt"
+        assert "pa prompt" in kwargs["pa_decision_system_prompt"]
+        assert "fewshot prompt" in kwargs["pa_decision_system_prompt"]
+        return {
+            "persona_id": agent_context["persona_id"],
+            "day_index": agent_context["day_index"],
+            "behavior_policy": dict(BEHAVIOR_POLICY),
+            "pa_decision": _valid_decision(),
+            "output_files": {
+                "behavior_policy": str(output_dir / "llm_behavior_probability_fake.json"),
+                "pa_decision": str(output_dir / "llm_pa_decision_fake.json"),
+            },
+        }
+
+    monkeypatch.setattr(module, "run_pipeline_for_context", fake_run_pipeline_for_context)
+
+    module.main(
+        [
+            "--context-path",
+            str(context_path),
+            "--behavior-prompt-path",
+            str(behavior_prompt_path),
+            "--pa-decision-prompt-path",
+            str(pa_prompt_path),
+            "--pa-decision-fewshot-path",
+            str(fewshot_path),
+            "--output-dir",
+            str(output_dir),
+            "--combined-output-path",
+            str(combined_path),
+        ]
+    )
+
+    payload = json.loads(combined_path.read_text(encoding="utf-8"))
+    assert payload["metadata"]["source_context_file"] == str(context_path)
+    assert payload["metadata"]["behavior_probability_prompt_file"] == str(behavior_prompt_path)
+    assert payload["metadata"]["pa_decision_prompt_file"] == str(pa_prompt_path)
+    assert payload["metadata"]["pa_decision_fewshot_file"] == str(fewshot_path)
+    assert payload["metadata"]["n_contexts"] == 1
+    assert payload["records"][0]["behavior_policy"] == BEHAVIOR_POLICY
+    assert payload["records"][0]["pa_decision"] == _valid_decision()
