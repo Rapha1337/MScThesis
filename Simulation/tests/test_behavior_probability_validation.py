@@ -302,8 +302,9 @@ def test_extract_llm_message_content_empty_raises_helpful_error_and_saves_debug(
     debug_path = tmp_path / "llm_behavior_probability_empty_persona_empty_response_debug.json"
     assert debug_path.exists()
     debug_payload = json.loads(debug_path.read_text(encoding="utf-8"))
-    assert debug_payload["choices"][0]["finish_reason"] == "stop"
-    assert debug_payload["choices"][0]["message"]["content"] is None
+    assert debug_payload["finish_reason"] == "stop"
+    assert "content" in debug_payload["message_field_names"]
+    assert debug_payload["content_present"] is False
 
 
 def test_extract_llm_message_content_length_finish_reason_suggests_max_tokens(tmp_path) -> None:

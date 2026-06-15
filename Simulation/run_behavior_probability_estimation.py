@@ -103,6 +103,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--model", default=MODEL_NAME)
     parser.add_argument("--temperature", type=float, default=TEMPERATURE)
     parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS)
+    parser.add_argument(
+        "--verbose-llm-debug",
+        action="store_true",
+        help=(
+            "Unsafe debug-only mode: print/save additional LLM diagnostics. "
+            "Reasoning content is still redacted."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -286,33 +294,76 @@ def _public_message_fields(message: Any) -> dict[str, Any]:
     return fields
 
 
+def _redact_reasoning_fields(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            str(key): (
+                "<redacted reasoning content>"
+                if str(key) in {"reasoning", "reasoning_content"}
+                else _redact_reasoning_fields(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_reasoning_fields(item) for item in value]
+    return value
+
+
+def _summarize_usage(response: Any) -> str:
+    usage = extract_token_usage(response)
+    return (
+        f"tokens prompt={usage['prompt_tokens']} "
+        f"response={usage['response_tokens']} total={usage['tokens_total']} "
+        f"source={usage['token_source']}"
+    )
+
+
+def _safe_message_field_name(field_name: str) -> str:
+    if field_name in {"reasoning", "reasoning_content"}:
+        return "hidden_reasoning_field"
+    return field_name
+
+
 def save_empty_response_debug(
     persona_id: str,
     response: Any,
     *,
     output_dir: Path = OUTPUT_DIR,
+    verbose_llm_debug: bool = False,
 ) -> Path:
-    """Persist the complete response object for empty-message debugging."""
+    """Persist empty-response diagnostics without storing reasoning content by default."""
     output_path = (
         output_dir
         / f"llm_behavior_probability_{_safe_persona_id(persona_id)}_empty_response_debug.json"
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    model_dump = getattr(response, "model_dump", None)
-    if callable(model_dump):
-        try:
-            response_payload = _safe_jsonable(model_dump())
-        except Exception as exc:  # pragma: no cover - defensive SDK fallback
-            response_payload = {
-                "model_dump_error": f"{type(exc).__name__}: {exc}",
-                "repr": repr(response),
-            }
-    else:
-        response_payload = {
-            "repr": repr(response),
-            "string": str(response),
-        }
+    choice = _get_first_choice(response)
+    message = getattr(choice, "message", None)
+    message_fields = _public_message_fields(message) if message is not None else {}
+    response_payload: dict[str, Any] = {
+        "persona_id": persona_id,
+        "finish_reason": getattr(choice, "finish_reason", None),
+        "usage": extract_token_usage(response),
+        "message_field_names": sorted({_safe_message_field_name(name) for name in message_fields}),
+        "content_present": bool(str(message_fields.get("content") or "").strip()),
+        "redaction_note": (
+            "Full LLM messages, prompts, completions, and reasoning content are not "
+            "stored unless verbose_llm_debug is enabled; reasoning content is always redacted."
+        ),
+    }
+
+    if verbose_llm_debug:
+        model_dump = getattr(response, "model_dump", None)
+        if callable(model_dump):
+            try:
+                response_payload["debug_response"] = _redact_reasoning_fields(
+                    _safe_jsonable(model_dump())
+                )
+            except Exception as exc:  # pragma: no cover - defensive SDK fallback
+                response_payload["model_dump_error"] = f"{type(exc).__name__}: {exc}"
+        else:
+            response_payload["debug_response_type"] = type(response).__name__
 
     output_path.write_text(
         json.dumps(response_payload, ensure_ascii=False, indent=2, default=repr) + "\n",
@@ -373,6 +424,7 @@ def extract_llm_message_content(
     *,
     persona_id: str = "unknown_persona",
     output_dir: Path = OUTPUT_DIR,
+    verbose_llm_debug: bool = False,
 ) -> str:
     """Extract visible JSON content from a chat completion response.
 
@@ -384,7 +436,12 @@ def extract_llm_message_content(
     finish_reason = getattr(choice, "finish_reason", None)
     message = getattr(choice, "message", None)
     if message is None:
-        debug_path = save_empty_response_debug(str(persona_id), response, output_dir=output_dir)
+        debug_path = save_empty_response_debug(
+            str(persona_id),
+            response,
+            output_dir=output_dir,
+            verbose_llm_debug=verbose_llm_debug,
+        )
         raise RuntimeError(
             f"LLM response for {persona_id} did not contain choices[0].message. "
             f"finish_reason={finish_reason!r}. Debug response saved to: {debug_path}"
@@ -395,10 +452,16 @@ def extract_llm_message_content(
     if isinstance(content, str) and content.strip():
         return content
 
-    debug_path = save_empty_response_debug(str(persona_id), response, output_dir=output_dir)
+    debug_path = save_empty_response_debug(
+        str(persona_id),
+        response,
+        output_dir=output_dir,
+        verbose_llm_debug=verbose_llm_debug,
+    )
     print(f"LLM1 empty content for {persona_id}; finish_reason={finish_reason!r}", flush=True)
     print(
-        "LLM1 available message fields: " + ", ".join(sorted(message_fields)),
+        "LLM1 available response fields: "
+        + ", ".join(sorted({_safe_message_field_name(name) for name in message_fields})),
         flush=True,
     )
     for diagnostic_field in (
@@ -410,8 +473,13 @@ def extract_llm_message_content(
     ):
         if diagnostic_field in message_fields or hasattr(message, diagnostic_field):
             value = _message_field_value(message, message_fields, diagnostic_field)
+            display_name = (
+                "hidden_reasoning_field"
+                if diagnostic_field in {"reasoning_content", "reasoning"}
+                else diagnostic_field
+            )
             print(
-                f"LLM1 message.{diagnostic_field} present: {type(value).__name__}",
+                f"LLM1 response field {display_name!r} present: {type(value).__name__}",
                 flush=True,
             )
 
@@ -457,6 +525,7 @@ def run_behavior_probability_estimation(
     temperature: float = TEMPERATURE,
     max_tokens: int = MAX_TOKENS,
     output_dir: Path = OUTPUT_DIR,
+    verbose_llm_debug: bool = False,
 ) -> dict[str, dict[str, float]]:
     user_prompt = build_behavior_probability_user_prompt(agent_context)
     persona_id = agent_context.get("persona_id", "unknown_persona")
@@ -481,22 +550,26 @@ def run_behavior_probability_estimation(
 
     call_seconds = time.perf_counter() - call_started
     print(f"LLM1-Wahrscheinlichkeitsschätzung für {persona_id} abgeschlossen.", flush=True)
-    print(response.usage, flush=True)
-    print(f"LLM1 response choices for {persona_id}: {_safe_jsonable(response.choices)}", flush=True)
     first_choice = _get_first_choice(response)
     print(
         f"LLM1 finish_reason for {persona_id}: {getattr(first_choice, 'finish_reason', None)!r}",
         flush=True,
     )
-    print(
-        f"LLM1 message for {persona_id}: {_safe_jsonable(getattr(first_choice, 'message', None))}",
-        flush=True,
-    )
+    print(f"LLM1 usage for {persona_id}: {_summarize_usage(response)}", flush=True)
+    if verbose_llm_debug:
+        message = getattr(first_choice, "message", None)
+        message_fields = _public_message_fields(message) if message is not None else {}
+        print(
+            "UNSAFE DEBUG LLM1 response field names for "
+            f"{persona_id}: {sorted({_safe_message_field_name(name) for name in message_fields})}",
+            flush=True,
+        )
 
     content = extract_llm_message_content(
         response,
         persona_id=str(persona_id),
         output_dir=output_dir,
+        verbose_llm_debug=verbose_llm_debug,
     )
 
     try:
@@ -507,7 +580,12 @@ def run_behavior_probability_estimation(
         }
         return result
     except ValueError as exc:
-        debug_path = save_invalid_raw_response(str(persona_id), content, output_dir=output_dir)
+        debug_path = save_invalid_raw_response(
+            str(persona_id),
+            content,
+            output_dir=output_dir,
+            verbose_llm_debug=verbose_llm_debug,
+        )
         raise ValueError(
             f"Ungültiger LLM1-JSON-Output für {persona_id}: {exc}. "
             f"Raw response gespeichert unter: {debug_path}"
@@ -518,10 +596,23 @@ def _safe_persona_id(persona_id: str) -> str:
     return "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in persona_id)
 
 
-def save_invalid_raw_response(persona_id: str, raw_response: str, output_dir: Path = OUTPUT_DIR) -> Path:
+def save_invalid_raw_response(
+    persona_id: str,
+    raw_response: str,
+    output_dir: Path = OUTPUT_DIR,
+    *,
+    verbose_llm_debug: bool = False,
+) -> Path:
     output_path = output_dir / f"llm_behavior_probability_{_safe_persona_id(persona_id)}_raw_invalid.txt"
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(raw_response, encoding="utf-8")
+    if verbose_llm_debug:
+        output_path.write_text(raw_response, encoding="utf-8")
+    else:
+        output_path.write_text(
+            "Invalid LLM1 output redacted by default. Re-run with "
+            "--verbose-llm-debug to save full invalid visible content.\n",
+            encoding="utf-8",
+        )
     return output_path
 
 
@@ -565,6 +656,7 @@ def main(argv: Sequence[str] | None = None) -> None:
                 temperature=args.temperature,
                 max_tokens=args.max_tokens,
                 output_dir=args.output_dir,
+                verbose_llm_debug=args.verbose_llm_debug,
             )
         except ValueError as exc:
             raise ValueError(f"Ungültiger LLM1-Input oder Output für {persona_id}: {exc}") from exc
@@ -584,11 +676,11 @@ def main(argv: Sequence[str] | None = None) -> None:
             record["scenario"] = agent_context["scenario"]
         combined_records.append(record)
 
-        print("\nLLM1-Verhaltenswahrscheinlichkeiten")
-        print("-" * 60)
-        print(json.dumps(probabilities, ensure_ascii=False, indent=2))
-        print("-" * 60)
+        print("\nLLM1-Verhaltenswahrscheinlichkeiten gespeichert.")
         print(f"Gespeichert unter: {output_path}", flush=True)
+        if args.verbose_llm_debug:
+            print("UNSAFE DEBUG LLM1 validated probabilities:")
+            print(json.dumps(probabilities, ensure_ascii=False, indent=2))
 
     combined_payload = {
         "metadata": {

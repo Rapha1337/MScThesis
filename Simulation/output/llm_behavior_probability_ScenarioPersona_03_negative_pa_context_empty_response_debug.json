@@ -1,41 +1,16 @@
 {
-  "id": "chatcmpl-07bf5d97-07f3-442d-80f1-3783612391ba",
-  "choices": [
-    {
-      "finish_reason": "length",
-      "index": 0,
-      "logprobs": null,
-      "message": {
-        "content": null,
-        "refusal": null,
-        "role": "assistant",
-        "annotations": null,
-        "audio": null,
-        "function_call": null,
-        "tool_calls": [],
-        "reasoning_content": "We need to produce probabilities based on given construct values. Let's analyze.\n\nValues (0-1):\nautomaticity 0.412 (moderate low)\npa_self_control 0.715 (high)\naction_planning 0.479 (moderate)\nintention 0.407 (moderate low)\nperceived_behavioral_control 0.791 (high)\nattitude 0.589 (moderate)\nsubjective_norm 0.568 (moderate)\ninterest_enjoyment 0.995 (very high)\nperceived_competence 0.623 (moderate-high)\nperceived_choice 0.803 (high)\npressure_tension 0.578 (moderate)\nmotivational_competence 0.723 (high)\n\nWe need to estimate probabilities for six actions.\n\nWe must consider influences per matrix and interaction rules.\n\nFirst, do_planned_activity: positive influences from intention (+++), action_planning (+++), perceived_behavioral_control (+++), automaticity (++), pa_self_control (++), attitude (++), interest_enjoyment (++), perceived_competence (++), perceived_choice (++). Negative influences: pressure_tension (--). Also subjective_norm +.\n\nGiven moderate intention (0.407) not high, but high perceived_control (0.791) and decent action_planning (0.479) moderate. High pa_self_control (0.715). Automaticity moderate (0.412). Interest_enjoyment extremely high (0.995) positive. Pressure_tension moderate (0.578) negative moderate.\n\nOverall, do_planned_activity likely moderate-high but not extremely high because intention moderate. However high control and planning moderate boost. So maybe around 0.30-0.35.\n\nAdapt_activity: positive influences: automaticity +, pa_self_control ++, action_planning ++, perceived_control ++, attitude +, interest_enjoyment +, perceived_competence ++, perceived_choice +, motivational_competence ++, pressure_tension - (negative). So many positives moderate. Given high pa_self_control, moderate planning, high control, high competence, high choice, high interest, moderate automaticity. So adapt_activity likely also moderate, maybe 0.25.\n\nPostpone_activity: negative influences from many constructs: intention ---, pressure_tension +, low planning etc. Positive influences: pressure_tension +, maybe low intention. Since intention moderate low, pressure moderate positive for postpone. So postpone maybe 0.15.\n\nSkip_activity: negative influences from intention (---) and others, but pressure_tension ++ (positive for skip). Also low intention (0.407) not extremely low, but moderate. Pressure moderate (0.578) pushes skip. However high control and competence reduce skip. So skip maybe low, maybe 0.08.\n\nExtra_activity: requires high automaticity, interest_enjoyment, competence, choice. Automaticity moderate (0.412) not high, but interest extremely high, competence moderate, choice high. So extra maybe low-moderate, maybe 0.07.\n\nApp_ignored: negative influences from low interest (but interest high), low choice (choice high), low competence (moderate), high pressure (moderate). So overall low. Maybe 0.05.\n\nCheck sum: 0.30+0.25+0.15+0.08+0.07+0.05 = 0.90. Need sum 1.0. Adjust.\n\nLet's increase do_planned_activity to 0.35, adapt 0.27, postpone 0.16, skip 0.07, extra 0.09, app_ignored 0.06. Sum = 0.35+0.27+0.16+0.07+0.09+0.06 = 1.00.\n\nCheck plausibility: extra 0.09 maybe a bit"
-      },
-      "stop_reason": null,
-      "token_ids": null
-    }
-  ],
-  "created": 1781166257,
-  "model": "gpt-oss-120b",
-  "object": "chat.completion",
-  "moderation": null,
-  "service_tier": null,
-  "system_fingerprint": null,
+  "persona_id": "ScenarioPersona_03_negative_pa_context",
+  "finish_reason": "length",
   "usage": {
-    "completion_tokens": 800,
     "prompt_tokens": 2159,
-    "total_tokens": 2959,
-    "completion_tokens_details": null,
-    "prompt_tokens_details": null,
-    "time_to_first_token_ms": 4045,
-    "time_per_output_token_ms": 0,
-    "tokens_per_second": 0
+    "response_tokens": 800,
+    "tokens_total": 2959,
+    "token_source": "api"
   },
-  "prompt_logprobs": null,
-  "prompt_token_ids": null,
-  "kv_transfer_params": null
+  "message_field_names": [
+    "content",
+    "hidden_reasoning_field"
+  ],
+  "content_present": false,
+  "redaction_note": "Historical full LLM response debug content was removed. Full LLM messages, prompts, completions, and hidden reasoning should not be stored by default."
 }
