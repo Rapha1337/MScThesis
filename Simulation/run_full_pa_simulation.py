@@ -163,6 +163,7 @@ class FullSimulationConfig:
     daily_log_path: Path | None = None
     enable_resource_tracking: bool = True
     enable_codecarbon: bool = False
+    verbose_llm_debug: bool = False
 
 
 @dataclass
@@ -209,6 +210,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--enable-codecarbon",
         action="store_true",
         help="Enable optional CodeCarbon tracking when codecarbon is installed.",
+    )
+    parser.add_argument(
+        "--verbose-llm-debug",
+        action="store_true",
+        help=(
+            "Unsafe debug-only mode: pass through additional LLM diagnostics. "
+            "Reasoning content is still redacted."
+        ),
     )
     parser.add_argument("--include-full-hourly-context", action="store_true")
     parser.add_argument("--physical-activity-hours-per-week", default=None)
@@ -337,6 +346,7 @@ def config_from_args(args: argparse.Namespace) -> FullSimulationConfig:
         daily_log_path=Path(args.daily_log_path) if args.daily_log_path else None,
         enable_resource_tracking=bool(args.enable_resource_tracking),
         enable_codecarbon=bool(args.enable_codecarbon),
+        verbose_llm_debug=bool(args.verbose_llm_debug),
     )
 
 
@@ -701,6 +711,7 @@ def _run_pipeline(
         daily_log_path=pipeline_daily_log_path,
         resource_tracker=resource_tracker,
         resource_usage_token_source="dry_run" if config.dry_run else "unavailable",
+        verbose_llm_debug=config.verbose_llm_debug,
         **kwargs,
     )
 

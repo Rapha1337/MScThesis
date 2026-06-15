@@ -72,6 +72,13 @@ EXPECTED_PA_DECISION_FIELDS = frozenset(
         "diary_entry",
     }
 )
+DETERMINISTIC_PA_DECISION_METADATA_FIELDS = frozenset(
+    {
+        "app_interaction_status",
+        "activity_performed",
+        "diary_entry_generated_for_simulation",
+    }
+)
 
 DAILY_CONTEXT_FIELDS: tuple[str, ...] = (
     "persona_id",
@@ -190,6 +197,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=TEMPERATURE)
     parser.add_argument("--llm1-max-tokens", type=int, default=LLM1_MAX_TOKENS)
     parser.add_argument("--llm2-max-tokens", type=int, default=LLM2_MAX_TOKENS)
+    parser.add_argument(
+        "--verbose-llm-debug",
+        action="store_true",
+        help=(
+            "Unsafe debug-only mode: print/save additional LLM diagnostics. "
+            "Reasoning content is still redacted."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -370,19 +385,24 @@ def validate_pa_decision_output(
     expected_persona_id: str,
     expected_day_index: int,
 ) -> dict[str, Any]:
-    actual_fields = set(payload)
+    core_payload = {
+        key: value
+        for key, value in payload.items()
+        if key not in DETERMINISTIC_PA_DECISION_METADATA_FIELDS
+    }
+    actual_fields = set(core_payload)
     if actual_fields != EXPECTED_PA_DECISION_FIELDS:
         missing = sorted(EXPECTED_PA_DECISION_FIELDS - actual_fields)
         extra = sorted(actual_fields - EXPECTED_PA_DECISION_FIELDS)
         raise ValueError(f"PA decision fields mismatch. Missing: {missing}; extra: {extra}.")
 
-    persona_id = _require_non_empty_string(payload, "persona_id")
+    persona_id = _require_non_empty_string(core_payload, "persona_id")
     if persona_id != expected_persona_id:
         raise ValueError(
             f"persona_id must match input persona_id {expected_persona_id!r}; got {persona_id!r}."
         )
 
-    day_index = payload["day_index"]
+    day_index = core_payload["day_index"]
     if isinstance(day_index, bool) or not isinstance(day_index, int):
         raise ValueError("day_index must be an integer.")
     if int(day_index) != int(expected_day_index):
@@ -390,20 +410,20 @@ def validate_pa_decision_output(
             f"day_index must match input day_index {expected_day_index}; got {day_index}."
         )
 
-    decision_code = payload["decision_code"]
+    decision_code = core_payload["decision_code"]
     if isinstance(decision_code, bool) or not isinstance(decision_code, int):
         raise ValueError("decision_code must be an integer.")
     if decision_code not in PA_DECISION_CODEBOOK:
         raise ValueError(f"decision_code must be one of {sorted(PA_DECISION_CODEBOOK)}.")
 
     expected_label = PA_DECISION_CODEBOOK[decision_code]
-    if payload["decision_label"] != expected_label:
+    if core_payload["decision_label"] != expected_label:
         raise ValueError(
             f"decision_label must be {expected_label!r} for decision_code {decision_code}."
         )
 
-    rationale_short = _require_non_empty_string(payload, "rationale_short")
-    diary_entry = _require_non_empty_string(payload, "diary_entry")
+    rationale_short = _require_non_empty_string(core_payload, "rationale_short")
+    diary_entry = _require_non_empty_string(core_payload, "diary_entry")
 
     return add_pa_decision_metadata(
         {
@@ -462,11 +482,33 @@ def _extract_llm_content(response: Any, persona_id: str) -> str:
     return content
 
 
-def save_invalid_raw_response(persona_id: str, raw_response: str, output_dir: Path = OUTPUT_DIR) -> Path:
+def save_invalid_raw_response(
+    persona_id: str,
+    raw_response: str,
+    output_dir: Path = OUTPUT_DIR,
+    *,
+    verbose_llm_debug: bool = False,
+) -> Path:
     output_path = output_dir / f"llm_pa_decision_{_safe_persona_id(persona_id)}_raw_invalid.txt"
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(raw_response, encoding="utf-8")
+    if verbose_llm_debug:
+        output_path.write_text(raw_response, encoding="utf-8")
+    else:
+        output_path.write_text(
+            "Invalid LLM2 output redacted by default. Re-run with "
+            "--verbose-llm-debug to save full invalid visible content.\n",
+            encoding="utf-8",
+        )
     return output_path
+
+
+def _summarize_usage(response: Any) -> str:
+    usage = extract_token_usage(response)
+    return (
+        f"tokens prompt={usage['prompt_tokens']} "
+        f"response={usage['response_tokens']} total={usage['tokens_total']} "
+        f"source={usage['token_source']}"
+    )
 
 
 def run_pa_decision_llm(
@@ -477,6 +519,7 @@ def run_pa_decision_llm(
     temperature: float = TEMPERATURE,
     max_tokens: int = LLM2_MAX_TOKENS,
     output_dir: Path = OUTPUT_DIR,
+    verbose_llm_debug: bool = False,
 ) -> dict[str, Any]:
     persona_id = str(pa_decision_input["persona_id"])
     day_index = int(pa_decision_input["day_index"])
@@ -502,7 +545,19 @@ def run_pa_decision_llm(
 
     call_seconds = time.perf_counter() - call_started
     print(f"LLM2-PA-Entscheidung für {persona_id} abgeschlossen.", flush=True)
-    print(response.usage, flush=True)
+    choices = getattr(response, "choices", None)
+    finish_reason = getattr(choices[0], "finish_reason", None) if choices else None
+    print(
+        f"LLM2 finish_reason for {persona_id}/day {day_index}: {finish_reason!r}",
+        flush=True,
+    )
+    print(f"LLM2 usage for {persona_id}/day {day_index}: {_summarize_usage(response)}", flush=True)
+    if verbose_llm_debug:
+        print(
+            "UNSAFE DEBUG LLM2 response object suppressed; full messages, prompts, "
+            "completions, and hidden reasoning are not printed.",
+            flush=True,
+        )
     content = _extract_llm_content(response, persona_id)
 
     try:
@@ -517,7 +572,12 @@ def run_pa_decision_llm(
         }
         return result
     except ValueError as exc:
-        debug_path = save_invalid_raw_response(persona_id, content, output_dir=output_dir)
+        debug_path = save_invalid_raw_response(
+            persona_id,
+            content,
+            output_dir=output_dir,
+            verbose_llm_debug=verbose_llm_debug,
+        )
         raise ValueError(
             f"Ungültiger LLM2-JSON-Output für {persona_id}: {exc}. "
             f"Raw response gespeichert unter: {debug_path}"
@@ -781,6 +841,7 @@ def run_pipeline_for_context(
     pa_decision_runner: Callable[..., Mapping[str, Any]] = run_pa_decision_llm,
     resource_tracker: Any | None = None,
     resource_usage_token_source: str = "unavailable",
+    verbose_llm_debug: bool = False,
 ) -> dict[str, Any]:
     persona_id = str(agent_context.get("persona_id", "unknown_persona"))
     day_index = int(agent_context.get("day_index", 0))
@@ -793,6 +854,7 @@ def run_pipeline_for_context(
         temperature=temperature,
         max_tokens=llm1_max_tokens,
         output_dir=output_dir,
+        verbose_llm_debug=verbose_llm_debug,
     ))
     behavior_seconds = time.perf_counter() - behavior_started
     behavior_usage = _resource_usage_from_payload(
@@ -831,6 +893,7 @@ def run_pipeline_for_context(
             temperature=temperature,
             max_tokens=llm2_max_tokens,
             output_dir=output_dir,
+            verbose_llm_debug=verbose_llm_debug,
         )
     )
     pa_seconds = time.perf_counter() - pa_started
@@ -928,13 +991,19 @@ def main(argv: Sequence[str] | None = None) -> None:
             llm2_max_tokens=args.llm2_max_tokens,
             output_dir=args.output_dir,
             daily_log_path=args.daily_log_path or args.output_dir / DAILY_DECISION_LOG_PATH.name,
+            verbose_llm_debug=args.verbose_llm_debug,
         )
         records.append(record)
 
-        print("\nLLM-PA-Pipeline-Ergebnis")
-        print("-" * 60)
-        print(json.dumps(record, ensure_ascii=False, indent=2))
-        print("-" * 60)
+        print("\nLLM-PA-Pipeline-Ergebnis gespeichert.")
+        print(
+            "Kurzstatus: "
+            f"persona_id={record['persona_id']}, day_index={record['day_index']}, "
+            f"decision_label={record['pa_decision']['decision_label']}"
+        )
+        if args.verbose_llm_debug:
+            print("UNSAFE DEBUG validated pipeline record:")
+            print(json.dumps(record, ensure_ascii=False, indent=2))
 
     combined_payload = {
         "metadata": {
