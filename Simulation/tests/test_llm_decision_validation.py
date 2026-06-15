@@ -14,9 +14,8 @@ if str(ROOT_DIR) not in sys.path:
 
 BEHAVIOR_POLICY = {
     "do_planned_activity": 0.25,
-    "adapt_activity": 0.20,
-    "postpone_activity": 0.15,
-    "skip_activity": 0.15,
+    "adapt_activity": 0.30,
+    "skip_activity": 0.20,
     "extra_activity": 0.10,
     "app_ignored": 0.15,
 }
@@ -86,10 +85,26 @@ def _valid_decision() -> dict:
         "persona_id": "ScenarioPersona_01_favourable_pa_context",
         "day_index": 21,
         "decision_code": 1,
-        "decision_label": "done_as_planned",
+        "decision_label": "do_planned_activity",
         "rationale_short": "Behavior policy and daily context support doing the activity.",
         "diary_entry": "Ich hatte heute genug Luft und habe mich wie geplant bewegt.",
     }
+
+
+
+
+def _validated_decision(decision: dict | None = None) -> dict:
+    from run_llm_pa_decision import validate_pa_decision_output
+
+    payload = dict(decision or _valid_decision())
+    return validate_pa_decision_output(payload, payload["persona_id"], payload["day_index"])
+
+
+def _decision_with_label(decision_code: int, decision_label: str) -> dict:
+    payload = _valid_decision()
+    payload["decision_code"] = decision_code
+    payload["decision_label"] = decision_label
+    return payload
 
 
 def test_run_llm_pa_decision_importable_without_api_key(monkeypatch) -> None:
@@ -97,20 +112,56 @@ def test_run_llm_pa_decision_importable_without_api_key(monkeypatch) -> None:
     module = importlib.import_module("run_llm_pa_decision")
     importlib.reload(module)
 
-    assert module.PA_DECISION_CODEBOOK[0] == "not_done"
+    assert module.PA_DECISION_CODEBOOK[0] == "skip_activity"
 
 
 def test_decision_codebook_contains_exact_codes() -> None:
     from run_llm_pa_decision import PA_DECISION_CODEBOOK
 
     assert PA_DECISION_CODEBOOK == {
-        0: "not_done",
-        1: "done_as_planned",
-        2: "postponed",
-        3: "adapted",
-        4: "extra_movement",
-        5: "app_ignored",
+        0: "skip_activity",
+        1: "do_planned_activity",
+        2: "adapt_activity",
+        3: "extra_activity",
+        4: "app_ignored",
     }
+
+
+@pytest.mark.parametrize(
+    ("decision_code", "decision_label", "expected_status"),
+    [
+        (0, "skip_activity", "engaged"),
+        (1, "do_planned_activity", "engaged"),
+        (2, "adapt_activity", "engaged"),
+        (3, "extra_activity", "engaged"),
+        (4, "app_ignored", "ignored"),
+    ],
+)
+def test_valid_decisions_include_app_interaction_status(
+    decision_code: int, decision_label: str, expected_status: str
+) -> None:
+    validated = _validated_decision(_decision_with_label(decision_code, decision_label))
+
+    assert validated["app_interaction_status"] == expected_status
+    assert validated["diary_entry_generated_for_simulation"] is True
+
+
+@pytest.mark.parametrize(
+    ("decision_code", "decision_label", "expected_activity_performed"),
+    [
+        (0, "skip_activity", False),
+        (1, "do_planned_activity", True),
+        (2, "adapt_activity", True),
+        (3, "extra_activity", True),
+        (4, "app_ignored", False),
+    ],
+)
+def test_valid_decisions_include_activity_performed_metadata(
+    decision_code: int, decision_label: str, expected_activity_performed: bool
+) -> None:
+    validated = _validated_decision(_decision_with_label(decision_code, decision_label))
+
+    assert validated["activity_performed"] is expected_activity_performed
 
 
 def test_load_pa_decision_prompt_concatenates_prompt_and_fewshot_in_order(tmp_path: Path) -> None:
@@ -207,10 +258,17 @@ def test_valid_pa_decision_output_is_accepted() -> None:
 
     payload = _valid_decision()
 
-    assert validate_pa_decision_output(payload, payload["persona_id"], payload["day_index"]) == payload
+    validated = validate_pa_decision_output(payload, payload["persona_id"], payload["day_index"])
+
+    assert validated == {
+        **payload,
+        "app_interaction_status": "engaged",
+        "activity_performed": True,
+        "diary_entry_generated_for_simulation": True,
+    }
 
 
-@pytest.mark.parametrize("bad_code", [-1, 6, "1", True])
+@pytest.mark.parametrize("bad_code", [-1, 5, "1", True])
 def test_invalid_decision_code_is_rejected(bad_code) -> None:
     from run_llm_pa_decision import validate_pa_decision_output
 
@@ -223,7 +281,7 @@ def test_invalid_decision_code_is_rejected(bad_code) -> None:
 
 @pytest.mark.parametrize(
     "bad_label",
-    ["not_done", "not_completed", "completed_as_planned", "adapted_completed"],
+    ["not_done", "done_as_planned", "postponed", "adapted", "extra_movement", "not_completed"],
 )
 def test_wrong_or_old_decision_label_for_code_is_rejected(bad_label: str) -> None:
     from run_llm_pa_decision import validate_pa_decision_output
@@ -313,7 +371,7 @@ def test_run_pipeline_for_context_with_fake_llms_writes_intermediate_and_final_o
     assert behavior_path.exists()
     assert decision_path.exists()
     assert json.loads(behavior_path.read_text(encoding="utf-8"))["behavior_policy"] == BEHAVIOR_POLICY
-    assert json.loads(decision_path.read_text(encoding="utf-8")) == _valid_decision()
+    assert json.loads(decision_path.read_text(encoding="utf-8")) == _validated_decision()
     daily_log_path = tmp_path / "llm_pa_decision_daily_log.csv"
     assert daily_log_path.exists()
     assert record["output_files"] == {
@@ -322,7 +380,7 @@ def test_run_pipeline_for_context_with_fake_llms_writes_intermediate_and_final_o
         "daily_decision_log": str(daily_log_path),
     }
     assert record["behavior_policy"] == BEHAVIOR_POLICY
-    assert record["pa_decision"] == _valid_decision()
+    assert record["pa_decision"] == _validated_decision()
     assert len(captured_pa_inputs) == 1
     assert captured_pa_inputs[0]["planned_activity"] is None
 
@@ -353,7 +411,7 @@ def test_main_writes_combined_pipeline_output_with_metadata(tmp_path: Path, monk
             "persona_id": agent_context["persona_id"],
             "day_index": agent_context["day_index"],
             "behavior_policy": dict(BEHAVIOR_POLICY),
-            "pa_decision": _valid_decision(),
+            "pa_decision": _validated_decision(),
             "output_files": {
                 "behavior_policy": str(output_dir / "llm_behavior_probability_fake.json"),
                 "pa_decision": str(output_dir / "llm_pa_decision_fake.json"),
@@ -386,10 +444,10 @@ def test_main_writes_combined_pipeline_output_with_metadata(tmp_path: Path, monk
     assert payload["metadata"]["pa_decision_fewshot_file"] == str(fewshot_path)
     assert payload["metadata"]["n_contexts"] == 1
     assert payload["records"][0]["behavior_policy"] == BEHAVIOR_POLICY
-    assert payload["records"][0]["pa_decision"] == _valid_decision()
+    assert payload["records"][0]["pa_decision"] == _validated_decision()
 
 
-@pytest.mark.parametrize("decision_label", ["done_as_planned", "adapted", "extra_movement"])
+@pytest.mark.parametrize("decision_label", ["do_planned_activity", "adapt_activity", "extra_activity"])
 def test_simple_construct_update_increases_after_successful_pa(decision_label: str) -> None:
     from run_llm_pa_decision import update_psychological_constructs_simple
 
@@ -404,7 +462,7 @@ def test_simple_construct_update_increases_after_successful_pa(decision_label: s
     }
 
 
-@pytest.mark.parametrize("decision_label", ["not_done", "postponed", "app_ignored"])
+@pytest.mark.parametrize("decision_label", ["skip_activity", "app_ignored"])
 def test_simple_construct_update_decreases_after_unsuccessful_pa(decision_label: str) -> None:
     from run_llm_pa_decision import update_psychological_constructs_simple
 
@@ -423,17 +481,17 @@ def test_simple_construct_update_clamps_values_to_unit_interval() -> None:
     from run_llm_pa_decision import update_psychological_constructs_simple
 
     increased = update_psychological_constructs_simple(
-        {"high": 0.99, "pressure_tension": 0.01}, "done_as_planned"
+        {"high": 0.99, "pressure_tension": 0.01}, "do_planned_activity"
     )
     decreased = update_psychological_constructs_simple(
-        {"low": 0.01, "pressure_tension": 0.99}, "not_done"
+        {"low": 0.01, "pressure_tension": 0.99}, "skip_activity"
     )
 
     assert increased == {"high": 1.0, "pressure_tension": 0.0}
     assert decreased == {"low": 0.0, "pressure_tension": 1.0}
 
 
-@pytest.mark.parametrize("decision_label", ["done_as_planned", "not_done"])
+@pytest.mark.parametrize("decision_label", ["do_planned_activity", "skip_activity"])
 def test_planned_activity_next_day_has_required_fields(decision_label: str) -> None:
     from run_llm_pa_decision import generate_planned_activity_next_day
 
@@ -487,8 +545,11 @@ def test_daily_decision_csv_log_rows_include_required_columns(tmp_path: Path) ->
     assert tuple(rows[0].keys()) == DAILY_DECISION_LOG_COLUMNS
     assert rows[0]["persona_id"] == "ScenarioPersona_01_favourable_pa_context"
     assert rows[0]["day_index"] == "21"
-    assert rows[0]["decision_label"] == "done_as_planned"
+    assert rows[0]["decision_label"] == "do_planned_activity"
     assert rows[0]["activity_done"] == "True"
+    assert rows[0]["activity_performed"] == "True"
+    assert rows[0]["app_interaction_status"] == "engaged"
+    assert rows[0]["diary_entry_generated_for_simulation"] == "True"
     assert json.loads(rows[0]["planned_activity_next_day"]) == planned_activity_next_day
     assert json.loads(rows[0]["behavior_policy"]) == BEHAVIOR_POLICY
     assert json.loads(rows[0]["previous_psychological_constructs"]) == {"automaticity": 0.5}
@@ -515,6 +576,9 @@ def test_run_pipeline_for_context_record_contains_closed_loop_update(tmp_path: P
 
     assert "closed_loop_update" in record
     assert record["closed_loop_update"]["activity_done"] is True
+    assert record["closed_loop_update"]["activity_performed"] is True
+    assert record["closed_loop_update"]["app_interaction_status"] == "engaged"
+    assert record["closed_loop_update"]["diary_entry_generated_for_simulation"] is True
     assert record["closed_loop_update"]["previous_psychological_constructs"] == {
         "automaticity": 0.5
     }
@@ -529,3 +593,34 @@ def test_run_pipeline_for_context_record_contains_closed_loop_update(tmp_path: P
         "description",
     }
     assert (tmp_path / "llm_pa_decision_daily_log.csv").exists()
+
+
+def test_app_ignored_pipeline_metadata_marks_no_pa_and_simulation_diary(tmp_path: Path) -> None:
+    from run_llm_pa_decision import run_pipeline_for_context
+
+    def fake_behavior_runner(agent_context, **kwargs):
+        return {"probabilities": dict(BEHAVIOR_POLICY)}
+
+    def fake_pa_decision_runner(pa_decision_input, **kwargs):
+        return _decision_with_label(4, "app_ignored")
+
+    record = run_pipeline_for_context(
+        _agent_context(),
+        behavior_system_prompt="behavior prompt",
+        pa_decision_system_prompt="pa prompt",
+        output_dir=tmp_path,
+        behavior_runner=fake_behavior_runner,
+        pa_decision_runner=fake_pa_decision_runner,
+    )
+
+    assert record["pa_decision"]["decision_label"] == "app_ignored"
+    assert record["pa_decision"]["app_interaction_status"] == "ignored"
+    assert record["pa_decision"]["activity_performed"] is False
+    assert record["pa_decision"]["diary_entry_generated_for_simulation"] is True
+    assert record["closed_loop_update"]["activity_done"] is False
+    assert record["closed_loop_update"]["activity_performed"] is False
+    assert record["closed_loop_update"]["app_interaction_status"] == "ignored"
+    assert record["closed_loop_update"]["diary_entry_generated_for_simulation"] is True
+    assert record["closed_loop_update"]["updated_psychological_constructs"] == {
+        "automaticity": pytest.approx(0.48)
+    }
