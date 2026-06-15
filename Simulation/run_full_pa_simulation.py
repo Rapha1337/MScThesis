@@ -38,6 +38,7 @@ from run_llm_pa_decision import (  # noqa: E402
     PA_DECISION_CODEBOOK,
     MODEL_NAME,
     TEMPERATURE,
+    TOP_P,
     DIARY_ENTRY_GENERATED_FOR_SIMULATION,
     SUCCESSFUL_PA_DECISION_LABELS,
     UNSUCCESSFUL_PA_DECISION_LABELS,
@@ -164,6 +165,8 @@ class FullSimulationConfig:
     enable_resource_tracking: bool = True
     enable_codecarbon: bool = False
     verbose_llm_debug: bool = False
+    top_p: float = TOP_P
+    llm_seed: int | None = None
 
 
 @dataclass
@@ -190,6 +193,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--model", default=MODEL_NAME)
     parser.add_argument("--temperature", type=float, default=TEMPERATURE)
+    parser.add_argument("--top-p", dest="top_p", type=float, default=TOP_P)
+    parser.add_argument("--llm-seed", type=int, default=None)
     parser.add_argument("--llm1-max-tokens", type=int, default=LLM1_MAX_TOKENS)
     parser.add_argument("--llm2-max-tokens", type=int, default=LLM2_MAX_TOKENS)
     parser.add_argument("--dry-run", action="store_true")
@@ -338,6 +343,8 @@ def config_from_args(args: argparse.Namespace) -> FullSimulationConfig:
         output_dir=Path(args.output_dir),
         model=str(args.model),
         temperature=float(args.temperature),
+        top_p=float(args.top_p),
+        llm_seed=int(args.llm_seed) if args.llm_seed is not None else None,
         llm1_max_tokens=int(args.llm1_max_tokens),
         llm2_max_tokens=int(args.llm2_max_tokens),
         dry_run=bool(args.dry_run),
@@ -705,6 +712,8 @@ def _run_pipeline(
         planned_activity=planned_activity_for_day,
         model=config.model,
         temperature=config.temperature,
+        top_p=config.top_p,
+        llm_seed=config.llm_seed,
         llm1_max_tokens=config.llm1_max_tokens,
         llm2_max_tokens=config.llm2_max_tokens,
         output_dir=output_dir,
@@ -766,6 +775,9 @@ def _build_simulation_run_manifest(
             "n_days": config.n_days,
             "base_seed": config.base_seed,
             "start_date": config.start_date.isoformat(),
+            "temperature": config.temperature,
+            "top_p": config.top_p,
+            "llm_seed": config.llm_seed,
         },
         "models": {
             "llm1": config.model,
@@ -838,6 +850,8 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
         "output_dir": str(config.output_dir),
         "model": config.model,
         "temperature": config.temperature,
+        "top_p": config.top_p,
+        "llm_seed": config.llm_seed,
         "llm1_max_tokens": config.llm1_max_tokens,
         "llm2_max_tokens": config.llm2_max_tokens,
         "dry_run": config.dry_run,

@@ -675,3 +675,90 @@ def test_app_ignored_pipeline_metadata_marks_no_pa_and_simulation_diary(tmp_path
     assert record["closed_loop_update"]["updated_psychological_constructs"] == {
         "automaticity": pytest.approx(0.48)
     }
+
+
+def test_run_pa_decision_llm_request_uses_deterministic_defaults(monkeypatch, tmp_path: Path) -> None:
+    import run_llm_pa_decision as module
+
+    calls: list[dict] = []
+
+    class _FakeMessage:
+        content = json.dumps(_valid_decision())
+
+    class _FakeChoice:
+        message = _FakeMessage()
+        finish_reason = "stop"
+
+    class _FakeResponse:
+        choices = [_FakeChoice()]
+        usage = {"completion_tokens": 1, "prompt_tokens": 1, "total_tokens": 2}
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return _FakeResponse()
+
+    class _FakeClient:
+        chat = type("Chat", (), {"completions": _FakeCompletions()})()
+
+    monkeypatch.setattr(module, "get_client", lambda: _FakeClient())
+    module.run_pa_decision_llm(
+        module.build_pa_decision_input(_agent_context(), BEHAVIOR_POLICY),
+        system_prompt="system",
+        output_dir=tmp_path,
+    )
+
+    assert calls[0]["temperature"] == 0
+    assert calls[0]["top_p"] == 1
+    assert "seed" not in calls[0]
+
+
+def test_run_pipeline_for_context_passes_generation_settings_to_both_llms(tmp_path: Path) -> None:
+    from run_llm_pa_decision import run_pipeline_for_context
+
+    behavior_kwargs: dict = {}
+    pa_kwargs: dict = {}
+
+    def behavior_runner(agent_context, **kwargs):
+        del agent_context
+        behavior_kwargs.update(kwargs)
+        return {"probabilities": dict(BEHAVIOR_POLICY)}
+
+    def pa_runner(pa_decision_input, **kwargs):
+        del pa_decision_input
+        pa_kwargs.update(kwargs)
+        return _valid_decision()
+
+    run_pipeline_for_context(
+        _agent_context(),
+        behavior_system_prompt="behavior",
+        pa_decision_system_prompt="pa",
+        model="model",
+        temperature=0.3,
+        top_p=0.7,
+        llm_seed=42,
+        output_dir=tmp_path,
+        behavior_runner=behavior_runner,
+        pa_decision_runner=pa_runner,
+    )
+
+    assert behavior_kwargs["temperature"] == 0.3
+    assert behavior_kwargs["top_p"] == 0.7
+    assert behavior_kwargs["llm_seed"] == 42
+    assert pa_kwargs["temperature"] == 0.3
+    assert pa_kwargs["top_p"] == 0.7
+    assert pa_kwargs["llm_seed"] == 42
+
+
+def test_llm_pa_decision_cli_generation_defaults_and_overrides() -> None:
+    from run_llm_pa_decision import parse_args
+
+    defaults = parse_args([])
+    custom = parse_args(["--temperature", "0.2", "--top-p", "0.8", "--llm-seed", "123"])
+
+    assert defaults.temperature == 0
+    assert defaults.top_p == 1
+    assert defaults.llm_seed is None
+    assert custom.temperature == 0.2
+    assert custom.top_p == 0.8
+    assert custom.llm_seed == 123
