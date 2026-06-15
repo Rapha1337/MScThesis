@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import sys
+import time
 from typing import Any, Mapping, Sequence
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -18,6 +19,8 @@ if str(SIMULATION_DIR) not in sys.path:
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
+
+from resource_usage import extract_token_usage  # noqa: E402
 
 DEFAULT_CONTEXT_PATH = SIMULATION_DIR / "output" / "llm_day_contexts_heterogeneous_test.json"
 FALLBACK_CONTEXT_PATH = SIMULATION_DIR / "output" / "llm_day_contexts.json"
@@ -34,7 +37,6 @@ PROBABILITY_NORMALIZATION_MAX_SUM = 1.05
 BEHAVIOR_PROBABILITY_KEYS: tuple[str, ...] = (
     "do_planned_activity",
     "adapt_activity",
-    "postpone_activity",
     "skip_activity",
     "extra_activity",
     "app_ignored",
@@ -460,6 +462,7 @@ def run_behavior_probability_estimation(
     persona_id = agent_context.get("persona_id", "unknown_persona")
     print(f"Starte LLM1-Wahrscheinlichkeitsschätzung für {persona_id} ...", flush=True)
 
+    call_started = time.perf_counter()
     response = get_client().chat.completions.create(
         model=model,
         messages=[
@@ -476,6 +479,7 @@ def run_behavior_probability_estimation(
         max_tokens=max_tokens,
     )
 
+    call_seconds = time.perf_counter() - call_started
     print(f"LLM1-Wahrscheinlichkeitsschätzung für {persona_id} abgeschlossen.", flush=True)
     print(response.usage, flush=True)
     print(f"LLM1 response choices for {persona_id}: {_safe_jsonable(response.choices)}", flush=True)
@@ -496,7 +500,12 @@ def run_behavior_probability_estimation(
     )
 
     try:
-        return parse_and_validate_behavior_probabilities(content)
+        result = parse_and_validate_behavior_probabilities(content)
+        result["_resource_usage"] = {
+            **extract_token_usage(response),
+            "paper_seconds": call_seconds,
+        }
+        return result
     except ValueError as exc:
         debug_path = save_invalid_raw_response(str(persona_id), content, output_dir=output_dir)
         raise ValueError(

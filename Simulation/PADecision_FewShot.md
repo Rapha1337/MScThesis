@@ -1,3 +1,5 @@
+Hinweis zu `app_ignored`: Wenn diese Kategorie in Beispielen oder Modelloutputs vorkommt, bedeutet sie fehlende sinnvolle Interaktion mit der App-Empfehlung. Eine trotzdem erzeugte Begründung oder diary-ähnliche Passage ist dann nur eine simulierte Rekonstruktion für Analysezwecke, keine tatsächlich in der App eingegebene Reflexion.
+
 ### Beispiel 1: Förderliche Behavior Policy und günstiger Tageskontext
 
 Input:
@@ -8,8 +10,7 @@ Input:
   "day_index": 1,
   "behavior_policy": {
     "do_planned_activity": 0.56,
-    "adapt_activity": 0.24,
-    "postpone_activity": 0.06,
+    "adapt_activity": 0.30,
     "skip_activity": 0.04,
     "extra_activity": 0.08,
     "app_ignored": 0.02
@@ -934,7 +935,7 @@ Output:
   "persona_id": "ExamplePersona_01",
   "day_index": 1,
   "decision_code": 1,
-  "decision_label": "done_as_planned",
+  "decision_label": "do_planned_activity",
   "rationale_short": "Die Behavior Policy spricht überwiegend für die geplante Aktivität und der Tageskontext bietet am Abend ein realistisches Zeitfenster mit ausreichender Energie und guter Erreichbarkeit.",
   "diary_entry": "Am Abend hatte ich endlich etwas Zeit für mich und habe mich daran erinnert, dass ich heute noch körperlich aktiv sein wollte. Ich war nicht völlig voller Energie, aber es war machbar und danach war ich zufrieden, dass ich es gemacht habe."
 }
@@ -951,8 +952,7 @@ Input:
   "behavior_policy": {
     "do_planned_activity": 0.18,
     "adapt_activity": 0.17,
-    "postpone_activity": 0.2,
-    "skip_activity": 0.3,
+    "skip_activity": 0.5,
     "extra_activity": 0.05,
     "app_ignored": 0.1
   },
@@ -1919,7 +1919,7 @@ Output:
   "persona_id": "ExamplePersona_02",
   "day_index": 2,
   "decision_code": 0,
-  "decision_label": "not_done",
+  "decision_label": "skip_activity",
   "rationale_short": "Die Behavior Policy spricht nur schwach für körperliche Aktivität und der Tageskontext erschwert die Umsetzung durch niedrige Energie, hohe Belastung und fehlende passende Zeitfenster.",
   "diary_entry": "Ich habe heute zwar kurz daran gedacht, mich noch zu bewegen, aber es fühlte sich einfach nach zu viel an. Der Tag war voll, mein Kopf war müde und ich hatte weder Energie noch Lust, mich noch aufzuraffen."
 }
@@ -1935,8 +1935,7 @@ Input:
   "day_index": 3,
   "behavior_policy": {
     "do_planned_activity": 0.36,
-    "adapt_activity": 0.26,
-    "postpone_activity": 0.16,
+    "adapt_activity": 0.42,
     "skip_activity": 0.1,
     "extra_activity": 0.08,
     "app_ignored": 0.04
@@ -2893,9 +2892,9 @@ Output:
 {
   "persona_id": "ExamplePersona_03",
   "day_index": 3,
-  "decision_code": 3,
-  "decision_label": "adapted",
-  "rationale_short": "Die Behavior Policy zeigt eine durchschnittliche, aber ausreichende Tendenz zur Aktivität, und der Tageskontext erlaubt eine angepasste Umsetzung zu einem späteren Zeitpunkt am Tag.",
+  "decision_code": 2,
+  "decision_label": "adapt_activity",
+  "rationale_short": "Die Behavior Policy zeigt eine durchschnittliche, aber ausreichende Tendenz zur Aktivität, und der Tageskontext erlaubt eine flexible Umsetzung in angepasster Form.",
   "diary_entry": "Ich war heute nicht besonders motiviert und hatte morgens keine Zeit, die Aktivität wie geplant zu machen. Am Nachmittag hatte ich dann doch ein freies Zeitfenster und wollte sie diesmal nicht ganz ausfallen lassen. Als ich einmal angefangen hatte, war es weniger mühsam als gedacht, und am Ende war ich froh, es gemacht zu haben."
 }
 ```
@@ -2911,8 +2910,7 @@ Input:
   "behavior_policy": {
     "do_planned_activity": 0.32,
     "adapt_activity": 0.24,
-    "postpone_activity": 0.18,
-    "skip_activity": 0.15,
+    "skip_activity": 0.33,
     "extra_activity": 0.07,
     "app_ignored": 0.04
   },
@@ -3869,8 +3867,8 @@ Output:
   "persona_id": "ExamplePersona_04",
   "day_index": 4,
   "decision_code": 0,
-  "decision_label": "not_done",
+  "decision_label": "skip_activity",
   "rationale_short": "Die Behavior Policy zeigt eine durchschnittliche, aber nicht starke Tendenz zur Aktivität, und der Tageskontext bietet zwar keine klaren Barrieren, aber auch keinen besonders unterstützenden Anlass zur Umsetzung.",
-  "diary_entry": "Ich habe kurz überlegt, ob ich mich noch bewegen soll, aber irgendwie hat der letzte Anstoss gefehlt. Es war kein besonders schlechter Tag, aber mir war es wohl einfach nicht wichtig genug. Ich habe die Aktivität immer weiter vor mir hergeschoben, und am Ende war es zu spät und ich hatte keine Lust und Energie mehr."
+  "diary_entry": "Ich habe kurz überlegt, ob ich mich noch bewegen soll, aber irgendwie hat der letzte Anstoss gefehlt. Es war kein besonders schlechter Tag, aber mir war es wohl einfach nicht wichtig genug. Am Ende habe ich sie ausgelassen, weil mir Zeit, Lust und Energie gefehlt haben."
 }
 ```
