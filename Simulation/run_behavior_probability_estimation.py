@@ -29,6 +29,7 @@ OUTPUT_DIR = SIMULATION_DIR / "output"
 COMBINED_OUTPUT_PATH = OUTPUT_DIR / "llm_behavior_probabilities_all_agents.json"
 MODEL_NAME = "gpt-oss-120b"
 TEMPERATURE = 0
+TOP_P = 1
 MAX_TOKENS = 2000
 PROBABILITY_SUM_TOLERANCE = 1e-6
 PROBABILITY_NORMALIZATION_MIN_SUM = 0.95
@@ -102,6 +103,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--model", default=MODEL_NAME)
     parser.add_argument("--temperature", type=float, default=TEMPERATURE)
+    parser.add_argument("--top-p", dest="top_p", type=float, default=TOP_P)
+    parser.add_argument("--llm-seed", type=int, default=None)
     parser.add_argument("--max-tokens", type=int, default=MAX_TOKENS)
     parser.add_argument(
         "--verbose-llm-debug",
@@ -523,6 +526,8 @@ def run_behavior_probability_estimation(
     system_prompt: str,
     model: str = MODEL_NAME,
     temperature: float = TEMPERATURE,
+    top_p: float = TOP_P,
+    llm_seed: int | None = None,
     max_tokens: int = MAX_TOKENS,
     output_dir: Path = OUTPUT_DIR,
     verbose_llm_debug: bool = False,
@@ -545,7 +550,11 @@ def run_behavior_probability_estimation(
             },
         ],
         temperature=temperature,
+        top_p=top_p,
         max_tokens=max_tokens,
+        # Seed is opt-in because OpenAI-compatible providers vary in support.
+        # With no seed, determinism remains best-effort via temperature=0/top_p=1.
+        **({"seed": int(llm_seed)} if llm_seed is not None else {}),
     )
 
     call_seconds = time.perf_counter() - call_started
@@ -654,6 +663,8 @@ def main(argv: Sequence[str] | None = None) -> None:
                 system_prompt=system_prompt,
                 model=args.model,
                 temperature=args.temperature,
+                top_p=args.top_p,
+                llm_seed=args.llm_seed,
                 max_tokens=args.max_tokens,
                 output_dir=args.output_dir,
                 verbose_llm_debug=args.verbose_llm_debug,
@@ -688,6 +699,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             "prompt_file": str(args.prompt_path),
             "model": args.model,
             "temperature": args.temperature,
+            "top_p": args.top_p,
+            "llm_seed": args.llm_seed,
             "max_tokens": args.max_tokens,
             "n_contexts": len(agent_contexts),
         },
