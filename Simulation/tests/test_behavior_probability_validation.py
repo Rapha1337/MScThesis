@@ -326,3 +326,43 @@ def test_extract_llm_message_content_does_not_use_reasoning_as_output(tmp_path) 
 
     with pytest.raises(RuntimeError, match="keine sichtbare JSON-Antwort"):
         extract_llm_message_content(response, persona_id="reasoning", output_dir=tmp_path)
+
+
+def test_run_behavior_probability_estimation_request_uses_deterministic_defaults(monkeypatch, tmp_path: Path) -> None:
+    from psychological_state import DEFAULT_PSYCHOLOGICAL_STATE
+    import run_behavior_probability_estimation as module
+
+    calls: list[dict] = []
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return _FakeResponse(_FakeMessage(content=json.dumps(_valid_payload())))
+
+    class _FakeClient:
+        chat = type("Chat", (), {"completions": _FakeCompletions()})()
+
+    monkeypatch.setattr(module, "get_client", lambda: _FakeClient())
+    module.run_behavior_probability_estimation(
+        {"persona_id": "p1", "psychological_state": DEFAULT_PSYCHOLOGICAL_STATE},
+        system_prompt="system",
+        output_dir=tmp_path,
+    )
+
+    assert calls[0]["temperature"] == 0
+    assert calls[0]["top_p"] == 1
+    assert "seed" not in calls[0]
+
+
+def test_behavior_probability_cli_generation_defaults_and_overrides() -> None:
+    from run_behavior_probability_estimation import parse_args
+
+    defaults = parse_args([])
+    custom = parse_args(["--temperature", "0.2", "--top-p", "0.8", "--llm-seed", "123"])
+
+    assert defaults.temperature == 0
+    assert defaults.top_p == 1
+    assert defaults.llm_seed is None
+    assert custom.temperature == 0.2
+    assert custom.top_p == 0.8
+    assert custom.llm_seed == 123
