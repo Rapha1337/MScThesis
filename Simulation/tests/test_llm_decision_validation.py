@@ -268,6 +268,57 @@ def test_valid_pa_decision_output_is_accepted() -> None:
     }
 
 
+def test_pa_decision_metadata_extras_are_tolerated_and_overwritten() -> None:
+    from run_llm_pa_decision import validate_pa_decision_output
+
+    payload = _decision_with_label(4, "app_ignored")
+    payload.update(
+        {
+            "app_interaction_status": "engaged",
+            "activity_performed": True,
+            "diary_entry_generated_for_simulation": False,
+        }
+    )
+
+    validated = validate_pa_decision_output(payload, payload["persona_id"], payload["day_index"])
+
+    assert validated["app_interaction_status"] == "ignored"
+    assert validated["activity_performed"] is False
+    assert validated["diary_entry_generated_for_simulation"] is True
+
+
+def test_only_deterministic_pa_decision_metadata_extras_are_tolerated() -> None:
+    from run_llm_pa_decision import validate_pa_decision_output
+
+    payload = _valid_decision()
+    payload.update(
+        {
+            "app_interaction_status": "ignored",
+            "activity_performed": False,
+            "diary_entry_generated_for_simulation": False,
+            "unexpected_debug_field": "must still fail",
+        }
+    )
+
+    with pytest.raises(ValueError, match="unexpected_debug_field"):
+        validate_pa_decision_output(payload, payload["persona_id"], payload["day_index"])
+
+
+def test_pa_decision_prompt_and_fewshot_do_not_output_metadata_fields() -> None:
+    prompt_text = (ROOT_DIR / "PADecision_Prompt.md").read_text(encoding="utf-8")
+    fewshot_text = (ROOT_DIR / "PADecision_FewShot.md").read_text(encoding="utf-8")
+
+    metadata_fields = {
+        "app_interaction_status",
+        "activity_performed",
+        "diary_entry_generated_for_simulation",
+    }
+
+    for field_name in metadata_fields:
+        assert field_name not in prompt_text
+        assert field_name not in fewshot_text
+
+
 @pytest.mark.parametrize("bad_code", [-1, 5, "1", True])
 def test_invalid_decision_code_is_rejected(bad_code) -> None:
     from run_llm_pa_decision import validate_pa_decision_output
