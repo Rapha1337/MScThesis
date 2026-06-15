@@ -28,7 +28,7 @@ UBELIX_ESTIMATION_CONFIG: dict[str, Any] = {"enabled": False}
 
 @dataclass
 class ResourceUsageConfig:
-    """Configuration for Kai-style JSONL resource usage tracking."""
+    """Configuration for JSONL resource usage tracking."""
 
     resource_log_path: Path
     enable_tracking: bool = True
@@ -40,7 +40,7 @@ class ResourceUsageConfig:
 
 
 class CarbonTrackerManager:
-    """Small CodeCarbon manager compatible with Kai's tracker pattern."""
+    """Small CodeCarbon manager compatible with tracker pattern."""
 
     def __init__(self, enabled: bool = True, carbon_config: Mapping[str, Any] | None = None) -> None:
         self._enabled = enabled
@@ -142,7 +142,7 @@ def extract_token_usage(response: Any) -> dict[str, int | str]:
 
 
 class ResourceUsageTracker:
-    """Track per-item and per-run resource usage using Kai's JSONL/TOTAL pattern."""
+    """Track per-item and per-run resource usage using JSONL/TOTAL pattern."""
 
     def __init__(self, config: ResourceUsageConfig) -> None:
         self.config = config
@@ -306,9 +306,8 @@ class ResourceUsageTracker:
         lines.append(json.dumps(total_record, ensure_ascii=False) + "\n")
         self.config.resource_log_path.write_text("".join(lines), encoding="utf-8")
 
-
 class ResourceUsageEngine:
-    """Dominant Kai-style facade used by simulation runners."""
+    """Dominant facade used by simulation runners."""
 
     def __init__(
         self,
