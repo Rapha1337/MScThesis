@@ -38,8 +38,8 @@ COMBINED_OUTPUT_PATH = OUTPUT_DIR / "llm_pa_decision_pipeline_all_agents.json"
 DAILY_DECISION_LOG_PATH = OUTPUT_DIR / "llm_pa_decision_daily_log.csv"
 MODEL_NAME = "gpt-oss-120b"
 TEMPERATURE = 0
-LLM1_MAX_TOKENS = 2000
-LLM2_MAX_TOKENS = 1200
+LLM1_MAX_TOKENS = 2500
+LLM2_MAX_TOKENS = 2500
 
 PA_DECISION_CODEBOOK: dict[int, str] = {
     0: "skip_activity",
