@@ -38,6 +38,7 @@ COMBINED_OUTPUT_PATH = OUTPUT_DIR / "llm_pa_decision_pipeline_all_agents.json"
 DAILY_DECISION_LOG_PATH = OUTPUT_DIR / "llm_pa_decision_daily_log.csv"
 MODEL_NAME = "gpt-oss-120b"
 TEMPERATURE = 0
+TOP_P = 1
 LLM1_MAX_TOKENS = 2500
 LLM2_MAX_TOKENS = 2500
 
@@ -195,6 +196,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--model", default=MODEL_NAME)
     parser.add_argument("--temperature", type=float, default=TEMPERATURE)
+    parser.add_argument("--top-p", dest="top_p", type=float, default=TOP_P)
+    parser.add_argument("--llm-seed", type=int, default=None)
     parser.add_argument("--llm1-max-tokens", type=int, default=LLM1_MAX_TOKENS)
     parser.add_argument("--llm2-max-tokens", type=int, default=LLM2_MAX_TOKENS)
     parser.add_argument(
@@ -517,6 +520,8 @@ def run_pa_decision_llm(
     system_prompt: str,
     model: str = MODEL_NAME,
     temperature: float = TEMPERATURE,
+    top_p: float = TOP_P,
+    llm_seed: int | None = None,
     max_tokens: int = LLM2_MAX_TOKENS,
     output_dir: Path = OUTPUT_DIR,
     verbose_llm_debug: bool = False,
@@ -540,7 +545,11 @@ def run_pa_decision_llm(
             },
         ],
         temperature=temperature,
+        top_p=top_p,
         max_tokens=max_tokens,
+        # Seed is opt-in because OpenAI-compatible providers vary in support.
+        # With no seed, determinism remains best-effort via temperature=0/top_p=1.
+        **({"seed": int(llm_seed)} if llm_seed is not None else {}),
     )
 
     call_seconds = time.perf_counter() - call_started
@@ -833,6 +842,8 @@ def run_pipeline_for_context(
     planned_activity: Any | None = None,
     model: str = MODEL_NAME,
     temperature: float = TEMPERATURE,
+    top_p: float = TOP_P,
+    llm_seed: int | None = None,
     llm1_max_tokens: int = LLM1_MAX_TOKENS,
     llm2_max_tokens: int = LLM2_MAX_TOKENS,
     output_dir: Path = OUTPUT_DIR,
@@ -852,6 +863,8 @@ def run_pipeline_for_context(
         system_prompt=behavior_system_prompt,
         model=model,
         temperature=temperature,
+        top_p=top_p,
+        llm_seed=llm_seed,
         max_tokens=llm1_max_tokens,
         output_dir=output_dir,
         verbose_llm_debug=verbose_llm_debug,
@@ -891,6 +904,8 @@ def run_pipeline_for_context(
             system_prompt=pa_decision_system_prompt,
             model=model,
             temperature=temperature,
+            top_p=top_p,
+            llm_seed=llm_seed,
             max_tokens=llm2_max_tokens,
             output_dir=output_dir,
             verbose_llm_debug=verbose_llm_debug,
@@ -987,6 +1002,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             planned_activity=planned_activity_for_persona(planned_activities, persona_id),
             model=args.model,
             temperature=args.temperature,
+            top_p=args.top_p,
+            llm_seed=args.llm_seed,
             llm1_max_tokens=args.llm1_max_tokens,
             llm2_max_tokens=args.llm2_max_tokens,
             output_dir=args.output_dir,
@@ -1015,6 +1032,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             "daily_log_file": str(args.daily_log_path or args.output_dir / DAILY_DECISION_LOG_PATH.name),
             "model": args.model,
             "temperature": args.temperature,
+            "top_p": args.top_p,
+            "llm_seed": args.llm_seed,
             "llm1_max_tokens": args.llm1_max_tokens,
             "llm2_max_tokens": args.llm2_max_tokens,
             "n_contexts": len(agent_contexts),
