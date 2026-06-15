@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 from typing import Any, Callable, Mapping, Sequence
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -20,6 +21,7 @@ if str(SIMULATION_DIR) not in sys.path:
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+from resource_usage import extract_token_usage  # noqa: E402
 from run_behavior_probability_estimation import (  # noqa: E402
     DEFAULT_PROMPT_PATH as DEFAULT_BEHAVIOR_PROMPT_PATH,
     load_behavior_probability_prompt,
@@ -40,18 +42,21 @@ LLM1_MAX_TOKENS = 2000
 LLM2_MAX_TOKENS = 1200
 
 PA_DECISION_CODEBOOK: dict[int, str] = {
-    0: "not_done",
-    1: "done_as_planned",
-    2: "postponed",
-    3: "adapted",
-    4: "extra_movement",
-    5: "app_ignored",
+    0: "skip_activity",
+    1: "do_planned_activity",
+    2: "adapt_activity",
+    3: "extra_activity",
+    4: "app_ignored",
 }
 
 SUCCESSFUL_PA_DECISION_LABELS = frozenset(
-    {"done_as_planned", "adapted", "extra_movement"}
+    {"do_planned_activity", "adapt_activity", "extra_activity"}
 )
-UNSUCCESSFUL_PA_DECISION_LABELS = frozenset({"not_done", "postponed", "app_ignored"})
+UNSUCCESSFUL_PA_DECISION_LABELS = frozenset({"skip_activity", "app_ignored"})
+APP_IGNORED_DECISION_LABEL = "app_ignored"
+ENGAGED_APP_INTERACTION_STATUS = "engaged"
+IGNORED_APP_INTERACTION_STATUS = "ignored"
+DIARY_ENTRY_GENERATED_FOR_SIMULATION = True
 
 # Keep this alias for callers that imported the old constant name, but use the
 # new PA-decision labels everywhere.
@@ -93,6 +98,9 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "decision_code",
     "decision_label",
     "activity_done",
+    "activity_performed",
+    "app_interaction_status",
+    "diary_entry_generated_for_simulation",
     "planned_activity_for_day",
     "planned_activity_next_day",
     "behavior_policy",
@@ -335,6 +343,28 @@ def _require_non_empty_string(payload: Mapping[str, Any], field_name: str) -> st
     return value
 
 
+def activity_performed_for_decision_label(decision_label: str) -> bool:
+    """Return whether the final PA decision includes performed physical activity."""
+    return decision_label in SUCCESSFUL_PA_DECISION_LABELS
+
+
+def app_interaction_status_for_decision_label(decision_label: str) -> str:
+    """Return app engagement metadata for a final PA decision label."""
+    if decision_label == APP_IGNORED_DECISION_LABEL:
+        return IGNORED_APP_INTERACTION_STATUS
+    return ENGAGED_APP_INTERACTION_STATUS
+
+
+def add_pa_decision_metadata(pa_decision: Mapping[str, Any]) -> dict[str, Any]:
+    """Attach deterministic trace metadata to a validated PA decision."""
+    decision_label = str(pa_decision["decision_label"])
+    enriched = dict(pa_decision)
+    enriched["app_interaction_status"] = app_interaction_status_for_decision_label(decision_label)
+    enriched["activity_performed"] = activity_performed_for_decision_label(decision_label)
+    enriched["diary_entry_generated_for_simulation"] = DIARY_ENTRY_GENERATED_FOR_SIMULATION
+    return enriched
+
+
 def validate_pa_decision_output(
     payload: Mapping[str, Any],
     expected_persona_id: str,
@@ -375,14 +405,16 @@ def validate_pa_decision_output(
     rationale_short = _require_non_empty_string(payload, "rationale_short")
     diary_entry = _require_non_empty_string(payload, "diary_entry")
 
-    return {
-        "persona_id": persona_id,
-        "day_index": int(day_index),
-        "decision_code": int(decision_code),
-        "decision_label": expected_label,
-        "rationale_short": rationale_short,
-        "diary_entry": diary_entry,
-    }
+    return add_pa_decision_metadata(
+        {
+            "persona_id": persona_id,
+            "day_index": int(day_index),
+            "decision_code": int(decision_code),
+            "decision_label": expected_label,
+            "rationale_short": rationale_short,
+            "diary_entry": diary_entry,
+        }
+    )
 
 
 def parse_and_validate_pa_decision(
@@ -451,6 +483,7 @@ def run_pa_decision_llm(
     user_prompt = build_pa_decision_user_prompt(pa_decision_input)
 
     print(f"Starte LLM2-PA-Entscheidung für {persona_id} ...", flush=True)
+    call_started = time.perf_counter()
     response = get_client().chat.completions.create(
         model=model,
         messages=[
@@ -467,16 +500,22 @@ def run_pa_decision_llm(
         max_tokens=max_tokens,
     )
 
+    call_seconds = time.perf_counter() - call_started
     print(f"LLM2-PA-Entscheidung für {persona_id} abgeschlossen.", flush=True)
     print(response.usage, flush=True)
     content = _extract_llm_content(response, persona_id)
 
     try:
-        return parse_and_validate_pa_decision(
+        result = parse_and_validate_pa_decision(
             content,
             expected_persona_id=persona_id,
             expected_day_index=day_index,
         )
+        result["_resource_usage"] = {
+            **extract_token_usage(response),
+            "paper_seconds": call_seconds,
+        }
+        return result
     except ValueError as exc:
         debug_path = save_invalid_raw_response(persona_id, content, output_dir=output_dir)
         raise ValueError(
@@ -542,7 +581,7 @@ def update_psychological_constructs_simple(
     previous_constructs: dict[str, float],
     decision_label: str,
     delta_done: float = 0.02,
-    delta_not_done: float = -0.02,
+    delta_no_pa: float = -0.02,
 ) -> dict[str, float]:
     """Apply a small deterministic placeholder update to psychological constructs.
 
@@ -552,7 +591,7 @@ def update_psychological_constructs_simple(
     if decision_label in SUCCESSFUL_PA_DECISION_LABELS:
         supportive_delta = delta_done
     elif decision_label in UNSUCCESSFUL_PA_DECISION_LABELS:
-        supportive_delta = delta_not_done
+        supportive_delta = delta_no_pa
     else:
         supportive_delta = 0.0
 
@@ -606,6 +645,19 @@ def write_daily_decision_log_row(
         "decision_code": int(pa_decision["decision_code"]),
         "decision_label": str(pa_decision["decision_label"]),
         "activity_done": bool(activity_done),
+        "activity_performed": bool(pa_decision.get("activity_performed", activity_done)),
+        "app_interaction_status": str(
+            pa_decision.get(
+                "app_interaction_status",
+                app_interaction_status_for_decision_label(str(pa_decision["decision_label"])),
+            )
+        ),
+        "diary_entry_generated_for_simulation": bool(
+            pa_decision.get(
+                "diary_entry_generated_for_simulation",
+                DIARY_ENTRY_GENERATED_FOR_SIMULATION,
+            )
+        ),
         "planned_activity_for_day": _json_log_value(planned_activity_for_day),
         "planned_activity_next_day": _json_log_value(dict(planned_activity_next_day)),
         "behavior_policy": _json_log_value(dict(behavior_policy)),
@@ -638,7 +690,7 @@ def build_closed_loop_update(
     persona_id = str(pa_decision["persona_id"])
     day_index = int(pa_decision["day_index"])
     decision_label = str(pa_decision["decision_label"])
-    activity_done = decision_label in SUCCESSFUL_PA_DECISION_LABELS
+    activity_done = activity_performed_for_decision_label(decision_label)
     previous_constructs = extract_psychological_construct_values(agent_context)
     updated_constructs = update_psychological_constructs_simple(
         previous_constructs,
@@ -661,10 +713,56 @@ def build_closed_loop_update(
 
     return {
         "activity_done": activity_done,
+        "activity_performed": activity_done,
+        "app_interaction_status": app_interaction_status_for_decision_label(decision_label),
+        "diary_entry_generated_for_simulation": DIARY_ENTRY_GENERATED_FOR_SIMULATION,
         "previous_psychological_constructs": previous_constructs,
         "updated_psychological_constructs": updated_constructs,
         "planned_activity_next_day": planned_activity_next_day,
     }
+
+
+def _resource_usage_from_payload(payload: Mapping[str, Any], fallback_seconds: float, token_source: str) -> dict[str, Any]:
+    usage = payload.get("_resource_usage")
+    if not isinstance(usage, Mapping):
+        return {
+            "prompt_tokens": 0,
+            "response_tokens": 0,
+            "tokens_total": 0,
+            "token_source": token_source,
+            "paper_seconds": fallback_seconds,
+        }
+    return {
+        "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+        "response_tokens": int(usage.get("response_tokens") or 0),
+        "tokens_total": int(usage.get("tokens_total") or 0),
+        "token_source": str(usage.get("token_source") or token_source),
+        "paper_seconds": float(usage.get("paper_seconds") or fallback_seconds),
+    }
+
+
+def _log_resource_usage(
+    resource_tracker: Any | None,
+    *,
+    paper_id: str,
+    stage: str,
+    usage: Mapping[str, Any],
+) -> None:
+    if resource_tracker is None:
+        return
+    token_source = str(usage.get("token_source") or "unavailable")
+    resource_tracker.log_paper(
+        paper_id=paper_id,
+        stage=stage,
+        prompt_tokens=int(usage.get("prompt_tokens") or 0),
+        response_tokens=int(usage.get("response_tokens") or 0),
+        tokens_total=int(usage.get("tokens_total") or 0),
+        prompt_tokens_source=token_source,
+        response_tokens_source=token_source,
+        embedding_tokens_source="unavailable",
+        token_source=token_source,
+        paper_seconds=float(usage.get("paper_seconds") or 0.0),
+    )
 
 
 def run_pipeline_for_context(
@@ -681,17 +779,31 @@ def run_pipeline_for_context(
     daily_log_path: Path | None = None,
     behavior_runner: Callable[..., Mapping[str, Any]] = run_behavior_probability_estimation,
     pa_decision_runner: Callable[..., Mapping[str, Any]] = run_pa_decision_llm,
+    resource_tracker: Any | None = None,
+    resource_usage_token_source: str = "unavailable",
 ) -> dict[str, Any]:
     persona_id = str(agent_context.get("persona_id", "unknown_persona"))
     day_index = int(agent_context.get("day_index", 0))
 
-    behavior_payload = behavior_runner(
+    behavior_started = time.perf_counter()
+    behavior_payload = dict(behavior_runner(
         agent_context,
         system_prompt=behavior_system_prompt,
         model=model,
         temperature=temperature,
         max_tokens=llm1_max_tokens,
         output_dir=output_dir,
+    ))
+    behavior_seconds = time.perf_counter() - behavior_started
+    behavior_usage = _resource_usage_from_payload(
+        behavior_payload, behavior_seconds, resource_usage_token_source
+    )
+    behavior_payload.pop("_resource_usage", None)
+    _log_resource_usage(
+        resource_tracker,
+        paper_id=f"llm1_persona_{persona_id}_day_{day_index}",
+        stage="llm1_behavior_probability",
+        usage=behavior_usage,
     )
     if "probabilities" in behavior_payload:
         behavior_policy = validate_behavior_policy(behavior_payload["probabilities"])
@@ -710,6 +822,7 @@ def run_pipeline_for_context(
         behavior_policy,
         planned_activity=planned_activity,
     )
+    pa_started = time.perf_counter()
     pa_decision = dict(
         pa_decision_runner(
             pa_decision_input,
@@ -719,6 +832,15 @@ def run_pipeline_for_context(
             max_tokens=llm2_max_tokens,
             output_dir=output_dir,
         )
+    )
+    pa_seconds = time.perf_counter() - pa_started
+    pa_usage = _resource_usage_from_payload(pa_decision, pa_seconds, resource_usage_token_source)
+    pa_decision.pop("_resource_usage", None)
+    _log_resource_usage(
+        resource_tracker,
+        paper_id=f"llm2_persona_{persona_id}_day_{day_index}",
+        stage="llm2_pa_decision",
+        usage=pa_usage,
     )
     pa_decision = validate_pa_decision_output(
         pa_decision,
