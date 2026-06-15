@@ -1,0 +1,11 @@
+{
+  "persona_id": "StudentPersona_01",
+  "day_index": 3,
+  "decision_code": 1,
+  "decision_label": "do_planned_activity",
+  "rationale_short": "Die Behavior Policy favorisiert stark die geplante Aktivität und der Tageskontext bietet zwischen 17 Uhr und 20 Uhr ein freies Zeitfenster mit mittlerer Energie und erreichbarem Fitnessstudio.",
+  "diary_entry": "Nach dem Abendessen habe ich mich noch motiviert gefühlt und die 20 Minuten Oberkörper‑Workout im Gym erledigt – es war zwar anstrengend, aber ich bin froh, dass ich es geschafft habe.",
+  "app_interaction_status": "engaged",
+  "activity_performed": true,
+  "diary_entry_generated_for_simulation": true
+}

@@ -1,0 +1,11 @@
+{
+  "persona_id": "StudentPersona_01",
+  "day_index": 0,
+  "decision_code": 3,
+  "decision_label": "extra_activity",
+  "rationale_short": "Die Behavior Policy weist die höchste Tendenz für zusätzliche Bewegung auf und der Tageskontext bietet am Nachmittag/Abend ein freies Zeitfenster, mittlere Energie und leicht erreichbare Indoor‑Möglichkeiten, sodass ein spontanes kurzes Training realistisch ist.",
+  "diary_entry": "Ich habe nach dem Lernen kurz einen kleinen Workout zu Hause gemacht – ein paar Dehnungen und ein paar Kniebeugen, weil ich mich noch ein bisschen energiegeladen fühlte und die Zeit dafür hatte.",
+  "app_interaction_status": "engaged",
+  "activity_performed": true,
+  "diary_entry_generated_for_simulation": true
+}

@@ -1,0 +1,11 @@
+{
+  "persona_id": "StudentPersona_01",
+  "day_index": 6,
+  "behavior_policy": {
+    "do_planned_activity": 0.65,
+    "adapt_activity": 0.2,
+    "skip_activity": 0.08,
+    "extra_activity": 0.05,
+    "app_ignored": 0.02
+  }
+}
