@@ -273,6 +273,40 @@ def _run_real_assessment(tmp_path: Path) -> dict:
     )
 
 
+@pytest.mark.parametrize("json_mode", [False, True])
+def test_state_assessment_response_format_is_explicitly_opt_in(
+    monkeypatch: pytest.MonkeyPatch, json_mode: bool
+) -> None:
+    captured: dict = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            choice = type(
+                "Choice",
+                (),
+                {
+                    "message": type("Message", (), {"content": json.dumps(_valid_payload())})(),
+                    "finish_reason": "stop",
+                },
+            )()
+            return type("Response", (), {"choices": [choice], "usage": None})()
+
+    fake_client = type(
+        "Client",
+        (),
+        {"chat": type("Chat", (), {"completions": FakeCompletions()})()},
+    )()
+    monkeypatch.setattr(state_assessment, "_get_client", lambda: fake_client)
+
+    state_assessment.call_state_assessment_llm("prompt", json_mode=json_mode)
+
+    if json_mode:
+        assert captured["response_format"] == {"type": "json_object"}
+    else:
+        assert "response_format" not in captured
+
+
 def test_malformed_json_is_saved_with_metadata_and_retried_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -304,8 +338,10 @@ def test_malformed_json_is_saved_with_metadata_and_retried_once(
     assert len(calls) == 2
     assert calls[0]["max_tokens"] == 10000
     assert calls[0]["repair_instruction"] is None
+    assert calls[0]["json_mode"] is False
     assert calls[1]["max_tokens"] == 12000
-    assert "property names" in calls[1]["repair_instruction"]
+    assert calls[1]["repair_instruction"] == state_assessment.JSON_REPAIR_INSTRUCTION
+    assert calls[1]["json_mode"] is False
     raw_path = tmp_path / "state_assessment_Persona_01_raw_invalid.txt"
     metadata_path = tmp_path / "state_assessment_Persona_01_parse_error.json"
     assert raw_path.read_text(encoding="utf-8").endswith("bad: true}")
@@ -350,3 +386,47 @@ def test_second_malformed_json_is_saved_and_raised_without_third_attempt(
         )
     )
     assert retry_metadata["state_assessment_max_tokens"] == 12000
+
+
+def test_retry_uses_configured_json_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    responses = iter(
+        [
+            {"raw_response": "{invalid}", "finish_reason": "stop", "resource_usage": {}},
+            {
+                "raw_response": json.dumps(_valid_payload()),
+                "finish_reason": "stop",
+                "resource_usage": {},
+            },
+        ]
+    )
+    calls: list[dict] = []
+
+    def fake_call(*args, **kwargs):
+        calls.append(kwargs)
+        return next(responses)
+
+    monkeypatch.setattr(state_assessment, "call_state_assessment_llm", fake_call)
+    _run_real_assessment_with_json_mode(tmp_path)
+
+    assert [call["json_mode"] for call in calls] == [True, True]
+
+
+def _run_real_assessment_with_json_mode(tmp_path: Path) -> dict:
+    return run_state_assessment(
+        persona_id="Persona_01",
+        day_index=2,
+        previous_normalized_values=_previous_values(),
+        current_day_context={"weekday": 2},
+        planned_physical_activity=None,
+        pa_decision={
+            "decision_label": "extra_activity",
+            "rationale_short": "rationale",
+            "diary_entry": "current",
+        },
+        previous_diary_entries=[],
+        output_dir=tmp_path,
+        max_tokens=10000,
+        json_mode=True,
+    )
