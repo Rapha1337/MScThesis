@@ -10,6 +10,7 @@ SIMULATION_DIR = Path(__file__).resolve().parents[1]
 if str(SIMULATION_DIR) not in sys.path:
     sys.path.append(str(SIMULATION_DIR))
 
+import state_assessment
 from psychological_state import BACKEND_CONSTRUCT_RANGES
 from state_assessment import (
     ACTIVE_CONSTRUCTS,
@@ -40,6 +41,10 @@ def test_prompt_loads_and_contains_all_required_context() -> None:
     prompt = load_state_assessment_prompt()
     assert "Leere `items`-Arrays" in prompt
     assert "keine gültige finale Ausgabe" in prompt
+    assert "Python `json.loads`" in prompt
+    assert "nachgestellten Kommas" in prompt
+    assert "doppelten Anführungszeichen" in prompt
+    assert "maximal 8 Wörter" in prompt
     rendered = render_state_assessment_prompt(
         prompt,
         persona_id="Persona_01",
@@ -248,3 +253,100 @@ def test_state_assessment_logs_direct_targets_and_smoothed_values() -> None:
     assert result["psychological_construct_values_after_smoothed_update"] == pytest.approx(
         _previous_values()
     )
+
+
+def _run_real_assessment(tmp_path: Path) -> dict:
+    return run_state_assessment(
+        persona_id="Persona_01",
+        day_index=2,
+        previous_normalized_values=_previous_values(),
+        current_day_context={"weekday": 2},
+        planned_physical_activity=None,
+        pa_decision={
+            "decision_label": "extra_activity",
+            "rationale_short": "rationale",
+            "diary_entry": "current",
+        },
+        previous_diary_entries=[],
+        output_dir=tmp_path,
+        max_tokens=10000,
+    )
+
+
+def test_malformed_json_is_saved_with_metadata_and_retried_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    valid_raw = json.dumps(_valid_payload())
+    responses = iter(
+        [
+            {
+                "raw_response": '{"persona_id": "Persona_01", bad: true}',
+                "finish_reason": "stop",
+                "resource_usage": {},
+            },
+            {
+                "raw_response": valid_raw,
+                "finish_reason": "stop",
+                "resource_usage": {},
+            },
+        ]
+    )
+    calls: list[dict] = []
+
+    def fake_call(*args, **kwargs):
+        calls.append(kwargs)
+        return next(responses)
+
+    monkeypatch.setattr(state_assessment, "call_state_assessment_llm", fake_call)
+    result = _run_real_assessment(tmp_path)
+
+    assert result["state_assessment_mode"] == "llm"
+    assert len(calls) == 2
+    assert calls[0]["max_tokens"] == 10000
+    assert calls[0]["repair_instruction"] is None
+    assert calls[1]["max_tokens"] == 12000
+    assert "property names" in calls[1]["repair_instruction"]
+    raw_path = tmp_path / "state_assessment_Persona_01_raw_invalid.txt"
+    metadata_path = tmp_path / "state_assessment_Persona_01_parse_error.json"
+    assert raw_path.read_text(encoding="utf-8").endswith("bad: true}")
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    assert metadata["persona_id"] == "Persona_01"
+    assert metadata["day_index"] == 2
+    assert metadata["line_number"] == 1
+    assert metadata["column_number"] > 0
+    assert metadata["character_position"] > 0
+    assert metadata["finish_reason"] == "stop"
+    assert metadata["response_length"] == len(raw_path.read_text(encoding="utf-8"))
+    assert metadata["state_assessment_max_tokens"] == 10000
+    assert metadata["model_name"] == "gpt-oss-120b"
+    assert metadata["raw_invalid_output_path"] == str(raw_path)
+
+
+def test_second_malformed_json_is_saved_and_raised_without_third_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = 0
+
+    def fake_call(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return {
+            "raw_response": "{invalid,}",
+            "finish_reason": "length",
+            "resource_usage": {},
+        }
+
+    monkeypatch.setattr(state_assessment, "call_state_assessment_llm", fake_call)
+    with pytest.raises(ValueError, match="not valid JSON"):
+        _run_real_assessment(tmp_path)
+
+    assert calls == 2
+    assert (tmp_path / "state_assessment_Persona_01_raw_invalid.txt").exists()
+    assert (tmp_path / "state_assessment_Persona_01_parse_error.json").exists()
+    assert (tmp_path / "state_assessment_Persona_01_retry_raw_invalid.txt").exists()
+    retry_metadata = json.loads(
+        (tmp_path / "state_assessment_Persona_01_retry_parse_error.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert retry_metadata["state_assessment_max_tokens"] == 12000

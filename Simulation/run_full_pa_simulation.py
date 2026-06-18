@@ -179,6 +179,7 @@ class FullSimulationConfig:
     llm2_max_tokens: int
     dry_run: bool
     include_full_hourly_context: bool
+    state_assessment_max_tokens: int = STATE_ASSESSMENT_MAX_TOKENS
     cli_overrides: dict[str, list[float | None]] | None = None
     daily_log_path: Path | None = None
     enable_resource_tracking: bool = True
@@ -215,6 +216,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--llm-seed", type=int, default=None)
     parser.add_argument("--llm1-max-tokens", type=int, default=LLM1_MAX_TOKENS)
     parser.add_argument("--llm2-max-tokens", type=int, default=LLM2_MAX_TOKENS)
+    parser.add_argument(
+        "--state-assessment-max-tokens",
+        type=int,
+        default=STATE_ASSESSMENT_MAX_TOKENS,
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--enable-resource-tracking",
@@ -365,6 +371,7 @@ def config_from_args(args: argparse.Namespace) -> FullSimulationConfig:
         llm_seed=int(args.llm_seed) if args.llm_seed is not None else None,
         llm1_max_tokens=int(args.llm1_max_tokens),
         llm2_max_tokens=int(args.llm2_max_tokens),
+        state_assessment_max_tokens=int(args.state_assessment_max_tokens),
         dry_run=bool(args.dry_run),
         include_full_hourly_context=bool(args.include_full_hourly_context),
         cli_overrides=_parse_cli_overrides(args),
@@ -879,6 +886,7 @@ def _build_simulation_run_manifest(
                 (SIMULATION_DIR / "AssessmentModel_Prompt.md").relative_to(ROOT_DIR)
             ),
             "state_assessment_model_name": config.model,
+            "state_assessment_max_tokens": config.state_assessment_max_tokens,
             "state_assessment_call_count": state_assessment_call_count,
             "state_assessment_dry_run_count": state_assessment_dry_run_count,
             "previous_diary_entries_passed_as_context": True,
@@ -961,6 +969,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
         "llm_seed": config.llm_seed,
         "llm1_max_tokens": config.llm1_max_tokens,
         "llm2_max_tokens": config.llm2_max_tokens,
+        "state_assessment_max_tokens": config.state_assessment_max_tokens,
         "dry_run": config.dry_run,
         "include_full_hourly_context": config.include_full_hourly_context,
         "daily_log_path": str(daily_log_path),
@@ -1072,7 +1081,8 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     temperature=config.temperature,
                     top_p=config.top_p,
                     llm_seed=config.llm_seed,
-                    max_tokens=max(config.llm2_max_tokens, STATE_ASSESSMENT_MAX_TOKENS),
+                    max_tokens=config.state_assessment_max_tokens,
+                    output_dir=per_day_output_dir,
                 )
                 state_assessment_call_count += 1
                 if assessment["state_assessment_mode"] == "dry_run_mock":
