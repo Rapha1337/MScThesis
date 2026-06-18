@@ -37,7 +37,7 @@ def _valid_payload() -> dict:
     )
 
 
-def test_prompt_loads_and_contains_all_required_context() -> None:
+def test_prompt_loads_and_contains_only_allowed_assessment_context() -> None:
     prompt = load_state_assessment_prompt()
     assert "Leere `items`-Arrays" in prompt
     assert "keine gültige finale Ausgabe" in prompt
@@ -50,10 +50,6 @@ def test_prompt_loads_and_contains_all_required_context() -> None:
         persona_id="Persona_01",
         day_index=2,
         previous_psychological_construct_values=_previous_values(),
-        current_day_context={"weekday": 2},
-        planned_physical_activity=None,
-        physical_activity_decision="extra_activity",
-        decision_rationale="Spontaneous movement was plausible.",
         current_simulated_diary_entry="I went for a short walk.",
         previous_diary_entries=[{"day_index": 0, "diary_entry": "Earlier entry"}],
         previous_diary_entries_summary=None,
@@ -66,14 +62,55 @@ def test_prompt_loads_and_contains_all_required_context() -> None:
         "persona_id",
         "day_index",
         "previous_psychological_construct_values",
-        "current_day_context",
-        "planned_physical_activity",
-        "physical_activity_decision",
-        "decision_rationale",
         "current_simulated_diary_entry",
         "previous_diary_entries",
         "previous_diary_entries_summary",
     ))
+    assert state_assessment.REQUIRED_PROMPT_PLACEHOLDERS == (
+        "persona_id",
+        "day_index",
+        "previous_psychological_construct_values",
+        "current_simulated_diary_entry",
+        "previous_diary_entries",
+        "previous_diary_entries_summary",
+    )
+    for forbidden_placeholder in (
+        "{current_day_context}",
+        "{planned_physical_activity}",
+        "{physical_activity_decision}",
+        "{decision_rationale}",
+    ):
+        assert forbidden_placeholder not in prompt
+
+
+def test_rendered_prompt_excludes_decision_context_and_sampling_metadata() -> None:
+    prompt = load_state_assessment_prompt()
+    rendered = render_state_assessment_prompt(
+        prompt,
+        persona_id="Persona_01",
+        day_index=2,
+        previous_psychological_construct_values=_previous_values(),
+        current_simulated_diary_entry="Today I rested.",
+        previous_diary_entries=[],
+        previous_diary_entries_summary=None,
+    )
+    forbidden_values = (
+        "behavior_policy",
+        "active_decision_probabilities",
+        "sampled_decision_label",
+        "sampled_decision_probability",
+        "decision rationale",
+        "planned physical activity",
+        "current day context",
+    )
+    assert all(value not in rendered.lower() for value in forbidden_values)
+
+
+def test_prompt_requires_direct_evidence_and_does_not_minimize_no_pa_days() -> None:
+    prompt = load_state_assessment_prompt()
+    assert "Keine PA heute ≠ niedrige Intention" in prompt
+    assert "Ein Tag ohne PA ist für sich allein kein Beleg für niedrige Werte" in prompt
+    assert "direkte, konstruktspezifische Tagebuchevidenz erforderlich" in prompt
 
 
 def test_validation_accepts_exactly_nine_constructs_and_recomputes_means() -> None:
@@ -177,13 +214,7 @@ def test_dry_run_assessment_keeps_state_and_records_previous_context() -> None:
         persona_id="Persona_01",
         day_index=2,
         previous_normalized_values=_previous_values(),
-        current_day_context={"weekday": 2},
-        planned_physical_activity=None,
-        pa_decision={
-            "decision_label": "extra_activity",
-            "rationale_short": "rationale",
-            "diary_entry": "current",
-        },
+        current_simulated_diary_entry="current",
         previous_diary_entries=previous_entries,
         dry_run=True,
     )
@@ -234,13 +265,7 @@ def test_state_assessment_logs_direct_targets_and_smoothed_values() -> None:
         persona_id="Persona_01",
         day_index=0,
         previous_normalized_values=_previous_values(),
-        current_day_context={"weekday": 0},
-        planned_physical_activity=None,
-        pa_decision={
-            "decision_label": "skip_activity",
-            "rationale_short": "No activity occurred.",
-            "diary_entry": "No activity today.",
-        },
+        current_simulated_diary_entry="No activity today.",
         previous_diary_entries=[],
         dry_run=True,
     )
@@ -260,13 +285,7 @@ def _run_real_assessment(tmp_path: Path) -> dict:
         persona_id="Persona_01",
         day_index=2,
         previous_normalized_values=_previous_values(),
-        current_day_context={"weekday": 2},
-        planned_physical_activity=None,
-        pa_decision={
-            "decision_label": "extra_activity",
-            "rationale_short": "rationale",
-            "diary_entry": "current",
-        },
+        current_simulated_diary_entry="current",
         previous_diary_entries=[],
         output_dir=tmp_path,
         max_tokens=10000,
@@ -418,13 +437,7 @@ def _run_real_assessment_with_json_mode(tmp_path: Path) -> dict:
         persona_id="Persona_01",
         day_index=2,
         previous_normalized_values=_previous_values(),
-        current_day_context={"weekday": 2},
-        planned_physical_activity=None,
-        pa_decision={
-            "decision_label": "extra_activity",
-            "rationale_short": "rationale",
-            "diary_entry": "current",
-        },
+        current_simulated_diary_entry="current",
         previous_diary_entries=[],
         output_dir=tmp_path,
         max_tokens=10000,
