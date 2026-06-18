@@ -196,6 +196,13 @@ def test_build_pa_decision_input_has_expected_structure_and_planned_activity() -
         "persona_id",
         "day_index",
         "behavior_policy",
+        "behavior_policy_raw",
+        "decision_context_has_planned_pa",
+        "active_decision_probabilities",
+        "sampled_decision_label",
+        "sampled_decision_probability",
+        "decision_sampling_seed",
+        "decision_sampling_random_value",
         "planned_physical_activity",
         "was_physical_activity_planned_today",
         "psychological_construct_values",
@@ -204,6 +211,16 @@ def test_build_pa_decision_input_has_expected_structure_and_planned_activity() -
     assert result["persona_id"] == "ScenarioPersona_01_favourable_pa_context"
     assert result["day_index"] == 21
     assert result["behavior_policy"] == BEHAVIOR_POLICY
+    assert result["behavior_policy_raw"] == BEHAVIOR_POLICY
+    assert result["decision_context_has_planned_pa"] is True
+    assert set(result["active_decision_probabilities"]) == set(BEHAVIOR_POLICY)
+    assert sum(result["active_decision_probabilities"].values()) == pytest.approx(1.0)
+    assert result["sampled_decision_label"] in BEHAVIOR_POLICY
+    assert result["sampled_decision_probability"] == pytest.approx(
+        result["active_decision_probabilities"][result["sampled_decision_label"]]
+    )
+    assert isinstance(result["decision_sampling_seed"], int)
+    assert 0.0 <= result["decision_sampling_random_value"] < 1.0
     assert result["planned_physical_activity"] == planned_activity
     assert result["was_physical_activity_planned_today"] is True
     assert result["psychological_construct_values"] == {"automaticity": 0.5}
@@ -226,6 +243,56 @@ def test_build_pa_decision_input_excludes_raw_psychological_state() -> None:
     assert "psychological_state" not in serialized
     assert "values_normalized" not in serialized
     assert "raw_scale_means" not in serialized
+
+
+def test_unplanned_day_uses_extra_vs_no_activity_distribution() -> None:
+    from run_llm_pa_decision import build_pa_decision_input
+
+    result = build_pa_decision_input(_agent_context(), BEHAVIOR_POLICY)
+
+    assert result["decision_context_has_planned_pa"] is False
+    assert result["active_decision_probabilities"] == {
+        "extra_activity": pytest.approx(BEHAVIOR_POLICY["extra_activity"]),
+        "skip_activity": pytest.approx(1.0 - BEHAVIOR_POLICY["extra_activity"]),
+    }
+
+
+def test_planned_day_rounding_safe_active_distribution_is_normalized() -> None:
+    from run_llm_pa_decision import derive_active_decision_probabilities
+
+    probabilities = derive_active_decision_probabilities(
+        {
+            "do_planned_activity": 0.249,
+            "adapt_activity": 0.300,
+            "skip_activity": 0.350,
+            "extra_activity": 0.100,
+        },
+        has_planned_pa=True,
+    )
+
+    assert set(probabilities) == set(BEHAVIOR_POLICY)
+    assert probabilities["extra_activity"] > 0
+    assert sum(probabilities.values()) == pytest.approx(1.0)
+
+
+def test_llm2_output_cannot_override_sampled_decision() -> None:
+    from run_llm_pa_decision import validate_pa_decision_output
+
+    with pytest.raises(ValueError, match="must not override"):
+        validate_pa_decision_output(
+            _valid_decision(),
+            _valid_decision()["persona_id"],
+            _valid_decision()["day_index"],
+            expected_decision_label="skip_activity",
+        )
+
+
+def test_prompt_distinguishes_unplanned_no_activity_from_skipping_plan() -> None:
+    prompt = (ROOT_DIR / "PADecision_Prompt.md").read_text(encoding="utf-8")
+
+    assert "keine spontane oder zusätzliche PA" in prompt
+    assert "niemals als Überspringen" in prompt
+    assert "sowohl an Tagen mit geplanter PA als auch an Tagen ohne geplante PA" in prompt
 
 
 def test_build_pa_decision_input_keeps_complete_24h_hourly_context() -> None:
@@ -386,7 +453,18 @@ def test_run_pipeline_for_context_with_fake_llms_writes_intermediate_and_final_o
         assert "psychological_state" not in serialized
         assert "values_normalized" not in serialized
         assert "raw_scale_means" not in serialized
-        return _valid_decision()
+        label = pa_decision_input["sampled_decision_label"]
+        code = next(
+            code
+            for code, value in {
+                0: "skip_activity",
+                1: "do_planned_activity",
+                2: "adapt_activity",
+                3: "extra_activity",
+            }.items()
+            if value == label
+        )
+        return _decision_with_label(code, label)
 
     record = run_pipeline_for_context(
         _agent_context(),
@@ -402,7 +480,9 @@ def test_run_pipeline_for_context_with_fake_llms_writes_intermediate_and_final_o
     assert behavior_path.exists()
     assert decision_path.exists()
     assert json.loads(behavior_path.read_text(encoding="utf-8"))["behavior_policy"] == BEHAVIOR_POLICY
-    assert json.loads(decision_path.read_text(encoding="utf-8")) == _validated_decision()
+    saved_decision = json.loads(decision_path.read_text(encoding="utf-8"))
+    assert saved_decision["decision_label"] == captured_pa_inputs[0]["sampled_decision_label"]
+    assert saved_decision["activity_performed"] is False
     daily_log_path = tmp_path / "llm_pa_decision_daily_log.csv"
     assert daily_log_path.exists()
     assert record["output_files"] == {
@@ -411,7 +491,8 @@ def test_run_pipeline_for_context_with_fake_llms_writes_intermediate_and_final_o
         "daily_decision_log": str(daily_log_path),
     }
     assert record["behavior_policy"] == BEHAVIOR_POLICY
-    assert record["pa_decision"] == _validated_decision()
+    assert record["pa_decision"] == saved_decision
+    assert record["sampled_decision_label"] == saved_decision["decision_label"]
     assert len(captured_pa_inputs) == 1
     assert captured_pa_inputs[0]["planned_physical_activity"] is None
     assert captured_pa_inputs[0]["was_physical_activity_planned_today"] is False
@@ -503,7 +584,11 @@ def test_planned_activity_next_day_legacy_helper_is_deprecated(decision_label: s
 
 def test_daily_decision_csv_log_rows_include_required_columns(tmp_path: Path) -> None:
     import csv
-    from run_llm_pa_decision import DAILY_DECISION_LOG_COLUMNS, write_daily_decision_log_row
+    from run_llm_pa_decision import (
+        DAILY_DECISION_LOG_COLUMNS,
+        build_pa_decision_input,
+        write_daily_decision_log_row,
+    )
 
     log_path = tmp_path / "llm_pa_decision_daily_log.csv"
     write_daily_decision_log_row(
@@ -515,6 +600,11 @@ def test_daily_decision_csv_log_rows_include_required_columns(tmp_path: Path) ->
         planned_physical_activity={"activity_type": "physical_activity"},
         was_physical_activity_planned_today=True,
         behavior_policy=BEHAVIOR_POLICY,
+        decision_metadata=build_pa_decision_input(
+            _agent_context(),
+            BEHAVIOR_POLICY,
+            {"activity_type": "physical_activity"},
+        ),
         previous_psychological_constructs={"automaticity": 0.5},
         updated_psychological_constructs={"automaticity": 0.52},
     )
@@ -536,6 +626,9 @@ def test_daily_decision_csv_log_rows_include_required_columns(tmp_path: Path) ->
     }
     assert rows[0]["was_physical_activity_planned_today"] == "True"
     assert json.loads(rows[0]["behavior_policy"]) == BEHAVIOR_POLICY
+    assert rows[0]["sampled_decision_label"]
+    assert rows[0]["decision_sampling_seed"]
+    assert 0.0 <= float(rows[0]["decision_sampling_random_value"]) < 1.0
     assert json.loads(rows[0]["previous_psychological_constructs"]) == {"automaticity": 0.5}
     assert json.loads(rows[0]["updated_psychological_constructs"]) == {"automaticity": 0.52}
 
@@ -547,7 +640,9 @@ def test_run_pipeline_for_context_record_contains_closed_loop_update(tmp_path: P
         return {"probabilities": dict(BEHAVIOR_POLICY)}
 
     def fake_pa_decision_runner(pa_decision_input, **kwargs):
-        return _valid_decision()
+        label = pa_decision_input["sampled_decision_label"]
+        code = next(code for code, value in {0: "skip_activity", 1: "do_planned_activity", 2: "adapt_activity", 3: "extra_activity"}.items() if value == label)
+        return _decision_with_label(code, label)
 
     record = run_pipeline_for_context(
         _agent_context(),
@@ -559,8 +654,8 @@ def test_run_pipeline_for_context_record_contains_closed_loop_update(tmp_path: P
     )
 
     assert "closed_loop_update" in record
-    assert record["closed_loop_update"]["activity_done"] is True
-    assert record["closed_loop_update"]["activity_performed"] is True
+    assert record["closed_loop_update"]["activity_done"] is False
+    assert record["closed_loop_update"]["activity_performed"] is False
     assert "app_interaction_status" not in record["closed_loop_update"]
     assert record["closed_loop_update"]["diary_entry_generated_for_simulation"] is True
     assert record["closed_loop_update"]["previous_psychological_constructs"] == {
@@ -579,7 +674,7 @@ def test_run_pa_decision_llm_request_uses_deterministic_defaults(monkeypatch, tm
     calls: list[dict] = []
 
     class _FakeMessage:
-        content = json.dumps(_valid_decision())
+        content = json.dumps(_decision_with_label(0, "skip_activity"))
 
     class _FakeChoice:
         message = _FakeMessage()
@@ -621,9 +716,10 @@ def test_run_pipeline_for_context_passes_generation_settings_to_both_llms(tmp_pa
         return {"probabilities": dict(BEHAVIOR_POLICY)}
 
     def pa_runner(pa_decision_input, **kwargs):
-        del pa_decision_input
         pa_kwargs.update(kwargs)
-        return _valid_decision()
+        label = pa_decision_input["sampled_decision_label"]
+        code = next(code for code, value in {0: "skip_activity", 1: "do_planned_activity", 2: "adapt_activity", 3: "extra_activity"}.items() if value == label)
+        return _decision_with_label(code, label)
 
     run_pipeline_for_context(
         _agent_context(),
