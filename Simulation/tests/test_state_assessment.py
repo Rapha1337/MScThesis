@@ -13,6 +13,7 @@ if str(SIMULATION_DIR) not in sys.path:
 from psychological_state import BACKEND_CONSTRUCT_RANGES
 from state_assessment import (
     ACTIVE_CONSTRUCTS,
+    apply_smoothed_bounded_construct_update,
     CONSTRUCT_ITEM_COUNTS,
     build_dry_run_state_assessment,
     load_state_assessment_prompt,
@@ -194,3 +195,56 @@ def test_item_counts_match_required_schema() -> None:
     payload = _valid_payload()
     for construct, expected_count in CONSTRUCT_ITEM_COUNTS.items():
         assert len(payload["item_scores"][construct]["items"]) == expected_count
+
+
+def test_smoothed_bounded_update_handles_null_zero_direction_bounds_and_clipping() -> None:
+    previous = _previous_values()
+    targets = dict(previous)
+    raw_targets: dict[str, float | None] = {key: 4.0 for key in ACTIVE_CONSTRUCTS}
+    targets.update(
+        {
+            "automaticity": 0.0,
+            "pa_specific_self_control": 1.0,
+            "action_planning": 0.0,
+            "intention": 1.0,
+        }
+    )
+    raw_targets["automaticity"] = 1.0
+    raw_targets["pa_specific_self_control"] = 7.0
+    raw_targets["action_planning"] = None
+    previous["intention"] = 0.99
+
+    result = apply_smoothed_bounded_construct_update(previous, targets, raw_targets)
+
+    assert result["updated_values"]["automaticity"] == pytest.approx(0.4)
+    assert result["updated_values"]["pa_specific_self_control"] == pytest.approx(0.6)
+    assert result["updated_values"]["action_planning"] == pytest.approx(0.5)
+    assert result["updated_values"]["intention"] == pytest.approx(0.992)
+    assert max(abs(delta) for delta in result["delta_applied"].values()) <= 0.10
+    assert all(0.0 <= value <= 1.0 for value in result["updated_values"].values())
+
+
+def test_state_assessment_logs_direct_targets_and_smoothed_values() -> None:
+    result = run_state_assessment(
+        persona_id="Persona_01",
+        day_index=0,
+        previous_normalized_values=_previous_values(),
+        current_day_context={"weekday": 0},
+        planned_physical_activity=None,
+        pa_decision={
+            "decision_label": "skip_activity",
+            "rationale_short": "No activity occurred.",
+            "diary_entry": "No activity today.",
+        },
+        previous_diary_entries=[],
+        dry_run=True,
+    )
+    assert result["psychological_construct_update_strategy"] == "smoothed_bounded"
+    assert result["psychological_construct_update_alpha"] == pytest.approx(0.20)
+    assert result["psychological_construct_update_max_daily_change"] == pytest.approx(0.10)
+    assert result["state_assessment_target_values_normalized"] == pytest.approx(
+        _previous_values()
+    )
+    assert result["psychological_construct_values_after_smoothed_update"] == pytest.approx(
+        _previous_values()
+    )
