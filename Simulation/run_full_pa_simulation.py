@@ -98,6 +98,19 @@ LLM_HOURLY_FIELDS: tuple[str, ...] = (
     "snow_cover",
 )
 LLM_POI_TARGETS: tuple[str, ...] = ("indoor_activity", "outdoor_activity")
+GLOBAL_ENVIRONMENT_FIELDS: tuple[str, ...] = (
+    "month",
+    "season",
+    "temperature_c",
+    "feels_like_c",
+    "humidity_pct",
+    "wind_m_s",
+    "precipitation_mm",
+    "is_wet",
+    "sun_frac",
+    "is_daylight",
+    "snow_cover",
+)
 
 PERSONA_INPUT_CLI_TO_INTERNAL: dict[str, str] = {
     "physical_activity_hours_per_week": "fitness_hours_week",
@@ -551,12 +564,74 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
     return states
 
 
+def build_global_environment_by_date(
+    config: FullSimulationConfig,
+) -> dict[str, list[dict[str, Any]]]:
+    """Generate the run-level hourly environment exactly once per calendar date."""
+    _install_lightweight_optional_dependency_stubs()
+    from env_time_weather import TimeWeatherEnv
+
+    start_day_offset = min(int(config.start_date.day) - 1, 29)
+    horizon_hours = max(24 * 365, 24 * (start_day_offset + config.n_days + 1))
+    environment_by_date: dict[str, list[dict[str, Any]]] = {}
+
+    for day_index in range(config.n_days):
+        calendar_date = config.start_date + timedelta(days=day_index)
+        env = TimeWeatherEnv(
+            month=int(config.start_date.month),
+            sample_rate_hours=1,
+            horizon_hours=horizon_hours,
+            bern_map=_LightweightBernMap(),
+        )
+        env.reset(seed=config.base_seed + day_index)
+        hourly_environment = env.build_hourly_environment_24h(
+            start_t=24 * (start_day_offset + day_index)
+        )
+        environment_by_date[calendar_date.isoformat()] = [
+            {
+                "hour": int(entry["hour"]),
+                **{field: entry[field] for field in GLOBAL_ENVIRONMENT_FIELDS},
+            }
+            for entry in hourly_environment
+        ]
+
+    return _json_ready(environment_by_date)
+
+
+def _merge_global_environment(
+    persona_hourly_context: Sequence[Mapping[str, Any]],
+    global_hourly_environment: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    if len(persona_hourly_context) != 24 or len(global_hourly_environment) != 24:
+        raise ValueError(
+            "Persona context and global environment must each contain 24 hourly entries."
+        )
+
+    merged: list[dict[str, Any]] = []
+    for persona_entry, environment_entry in zip(
+        persona_hourly_context, global_hourly_environment, strict=True
+    ):
+        if persona_entry.get("hour") != environment_entry.get("hour"):
+            raise ValueError(
+                "Global environment hour does not align with persona hourly context: "
+                f"{environment_entry.get('hour')} != {persona_entry.get('hour')}."
+            )
+        merged.append(
+            {
+                **dict(persona_entry),
+                **{field: environment_entry[field] for field in GLOBAL_ENVIRONMENT_FIELDS},
+            }
+        )
+    return merged
+
+
 def build_llm_ready_context_for_day(
     state: PersonaRuntimeState,
     *,
     day_index: int,
     calendar_date: date,
     start_day_offset: int,
+    global_hourly_environment: Sequence[Mapping[str, Any]],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     absolute_day_index = int(start_day_offset) + int(day_index)
     state.runner._sim_hour = absolute_day_index * 24
@@ -568,6 +643,10 @@ def build_llm_ready_context_for_day(
             f"got {len(hourly_context)}."
         )
 
+    shared_hourly_context = _merge_global_environment(
+        hourly_context,
+        global_hourly_environment,
+    )
     llm_context = {
         "persona_id": state.persona_id,
         "seed": int(state.seed),
@@ -576,7 +655,9 @@ def build_llm_ready_context_for_day(
         "phase": diagnostic_context.get("phase"),
         "weekday": diagnostic_context.get("weekday"),
         "psychological_state": dict(state.psychological_state),
-        "hourly_context_24h": [_compact_hourly_entry(entry) for entry in hourly_context],
+        "hourly_context_24h": [
+            _compact_hourly_entry(entry) for entry in shared_hourly_context
+        ],
     }
     return _json_ready(llm_context), _json_ready(diagnostic_context)
 
@@ -1054,6 +1135,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
         state_assessment_prompt = load_state_assessment_prompt()
 
         persona_states = _build_persona_states(config)
+        global_environment_by_date = build_global_environment_by_date(config)
         persona_metadata = {
             "personas": [
                 {
@@ -1082,6 +1164,9 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     day_index=day_index,
                     calendar_date=calendar_date,
                     start_day_offset=start_day_offset,
+                    global_hourly_environment=global_environment_by_date[
+                        calendar_date.isoformat()
+                    ],
                 )
                 compact_contexts.append(llm_context)
                 constructs_before = _extract_constructs(state.psychological_state)
