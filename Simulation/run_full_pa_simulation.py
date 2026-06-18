@@ -43,7 +43,6 @@ from run_llm_pa_decision import (  # noqa: E402
     SUCCESSFUL_PA_DECISION_LABELS,
     UNSUCCESSFUL_PA_DECISION_LABELS,
     activity_performed_for_decision_label,
-    app_interaction_status_for_decision_label,
     load_behavior_probability_prompt,
     load_pa_decision_prompt,
     run_pipeline_for_context,
@@ -61,6 +60,7 @@ DEFAULT_OUTPUT_DIR = SIMULATION_DIR / "output" / "full_pa_simulation"
 SIMULATION_RUN_MANIFEST_FILENAME = "simulation_run_manifest.json"
 RESOURCE_USAGE_FILENAME = "resource_usage.jsonl"
 DEPRECATED_DECISION_CATEGORIES: tuple[str, ...] = (
+    "app_ignored",
     "postpone_activity",
     "postponed",
     "not_done",
@@ -73,9 +73,8 @@ PSYCHOLOGICAL_SEED_OFFSET = 10_000_019
 BEHAVIOR_POLICY_DRY_RUN: dict[str, float] = {
     "do_planned_activity": 0.25,
     "adapt_activity": 0.30,
-    "skip_activity": 0.20,
+    "skip_activity": 0.35,
     "extra_activity": 0.10,
-    "app_ignored": 0.15,
 }
 
 LLM_HOURLY_FIELDS: tuple[str, ...] = (
@@ -129,7 +128,6 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "decision_label",
     "activity_done",
     "activity_performed",
-    "app_interaction_status",
     "diary_entry_generated_for_simulation",
     "planned_physical_activity",
     "was_physical_activity_planned_today",
@@ -140,6 +138,13 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "state_assessment_item_scores",
     "state_assessment_mean_scores_raw",
     "state_assessment_mean_scores_normalized",
+    "state_assessment_target_values_normalized",
+    "psychological_construct_update_strategy",
+    "psychological_construct_update_alpha",
+    "psychological_construct_update_max_daily_change",
+    "psychological_construct_update_delta_proposed",
+    "psychological_construct_update_delta_applied",
+    "psychological_construct_values_after_smoothed_update",
     "psychological_construct_values_after_state_assessment",
     "behavior_policy",
     "previous_psychological_constructs",
@@ -672,12 +677,6 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         "decision_label": str(pa_decision["decision_label"]),
         "activity_done": bool(closed_loop["activity_done"]),
         "activity_performed": bool(closed_loop.get("activity_performed", closed_loop["activity_done"])),
-        "app_interaction_status": str(
-            closed_loop.get(
-                "app_interaction_status",
-                app_interaction_status_for_decision_label(str(pa_decision["decision_label"])),
-            )
-        ),
         "diary_entry_generated_for_simulation": bool(
             closed_loop.get(
                 "diary_entry_generated_for_simulation",
@@ -702,6 +701,27 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         ),
         "state_assessment_mean_scores_normalized": _json_log_value(
             record.get("state_assessment_mean_scores_normalized")
+        ),
+        "state_assessment_target_values_normalized": _json_log_value(
+            record.get("state_assessment_target_values_normalized")
+        ),
+        "psychological_construct_update_strategy": record.get(
+            "psychological_construct_update_strategy"
+        ),
+        "psychological_construct_update_alpha": record.get(
+            "psychological_construct_update_alpha"
+        ),
+        "psychological_construct_update_max_daily_change": record.get(
+            "psychological_construct_update_max_daily_change"
+        ),
+        "psychological_construct_update_delta_proposed": _json_log_value(
+            record.get("psychological_construct_update_delta_proposed")
+        ),
+        "psychological_construct_update_delta_applied": _json_log_value(
+            record.get("psychological_construct_update_delta_applied")
+        ),
+        "psychological_construct_values_after_smoothed_update": _json_log_value(
+            record.get("psychological_construct_values_after_smoothed_update")
         ),
         "psychological_construct_values_after_state_assessment": _json_log_value(
             record.get("psychological_construct_values_after_state_assessment")
@@ -849,6 +869,10 @@ def _build_simulation_run_manifest(
             "llm2": config.model,
             "state_assessment": config.model,
         },
+        "psychological_construct_update_strategy": "smoothed_bounded",
+        "psychological_construct_update_alpha": 0.20,
+        "psychological_construct_update_max_daily_change": 0.10,
+        "psychological_construct_update_null_handling": "keep_previous",
         "state_assessment": {
             "state_assessment_enabled": True,
             "state_assessment_prompt_path": str(
@@ -861,12 +885,18 @@ def _build_simulation_run_manifest(
             "previous_diary_entry_context_strategy": "all_previous_entries_for_run",
             "active_constructs": list(ACTIVE_CONSTRUCTS),
             "placeholder_next_day_activity_generation_disabled": True,
+            "psychological_construct_update_strategy": "smoothed_bounded",
+            "psychological_construct_update_alpha": 0.20,
+            "psychological_construct_update_max_daily_change": 0.10,
+            "psychological_construct_update_null_handling": "keep_previous",
         },
         "decision_schema": {
             "active_categories": [PA_DECISION_CODEBOOK[key] for key in sorted(PA_DECISION_CODEBOOK)],
             "successful_activity_categories": sorted(SUCCESSFUL_PA_DECISION_LABELS),
             "unsuccessful_or_no_activity_categories": sorted(UNSUCCESSFUL_PA_DECISION_LABELS),
             "deprecated_categories": list(DEPRECATED_DECISION_CATEGORIES),
+            "app_ignored_active": False,
+            "app_specific_output_fields_active": False,
         },
         "prompt_files": {
             "llm1": str((SIMULATION_DIR / "BehaviorProbability_Prompt.md").relative_to(ROOT_DIR)),
@@ -1079,6 +1109,9 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     ].items()
                 }
                 closed_loop_update["updated_psychological_constructs"] = dict(constructs_after)
+                closed_loop_update["state_assessment_target_constructs"] = dict(
+                    assessment["state_assessment_target_values_normalized"]
+                )
                 activity_done = bool(closed_loop_update.get("activity_done"))
                 decision_label = str(pipeline_record["pa_decision"]["decision_label"])
                 if activity_done != activity_performed_for_decision_label(decision_label):
@@ -1107,6 +1140,25 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     "state_assessment_mean_scores_normalized": assessment[
                         "state_assessment_mean_scores_normalized"
                     ],
+                    "state_assessment_target_values_normalized": assessment[
+                        "state_assessment_target_values_normalized"
+                    ],
+                    "psychological_construct_update_strategy": assessment[
+                        "psychological_construct_update_strategy"
+                    ],
+                    "psychological_construct_update_alpha": assessment[
+                        "psychological_construct_update_alpha"
+                    ],
+                    "psychological_construct_update_max_daily_change": assessment[
+                        "psychological_construct_update_max_daily_change"
+                    ],
+                    "psychological_construct_update_delta_proposed": assessment[
+                        "psychological_construct_update_delta_proposed"
+                    ],
+                    "psychological_construct_update_delta_applied": assessment[
+                        "psychological_construct_update_delta_applied"
+                    ],
+                    "psychological_construct_values_after_smoothed_update": constructs_after,
                     "psychological_construct_values_after_state_assessment": constructs_after,
                     "previous_diary_entries_count": assessment[
                         "previous_diary_entries_count"

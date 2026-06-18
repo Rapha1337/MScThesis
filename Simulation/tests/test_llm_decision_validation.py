@@ -15,9 +15,8 @@ if str(ROOT_DIR) not in sys.path:
 BEHAVIOR_POLICY = {
     "do_planned_activity": 0.25,
     "adapt_activity": 0.30,
-    "skip_activity": 0.20,
+    "skip_activity": 0.35,
     "extra_activity": 0.10,
-    "app_ignored": 0.15,
 }
 
 
@@ -123,27 +122,19 @@ def test_decision_codebook_contains_exact_codes() -> None:
         1: "do_planned_activity",
         2: "adapt_activity",
         3: "extra_activity",
-        4: "app_ignored",
     }
 
 
-@pytest.mark.parametrize(
-    ("decision_code", "decision_label", "expected_status"),
-    [
-        (0, "skip_activity", "engaged"),
-        (1, "do_planned_activity", "engaged"),
-        (2, "adapt_activity", "engaged"),
-        (3, "extra_activity", "engaged"),
-        (4, "app_ignored", "ignored"),
-    ],
-)
-def test_valid_decisions_include_app_interaction_status(
-    decision_code: int, decision_label: str, expected_status: str
-) -> None:
+@pytest.mark.parametrize("decision_code,decision_label", [(0, "skip_activity"), (1, "do_planned_activity"), (2, "adapt_activity"), (3, "extra_activity")])
+def test_valid_decisions_do_not_include_app_specific_metadata(decision_code: int, decision_label: str) -> None:
     validated = _validated_decision(_decision_with_label(decision_code, decision_label))
-
-    assert validated["app_interaction_status"] == expected_status
+    assert "app_interaction_status" not in validated
     assert validated["diary_entry_generated_for_simulation"] is True
+
+
+def test_app_ignored_decision_is_rejected() -> None:
+    with pytest.raises(ValueError, match="decision_code"):
+        _validated_decision(_decision_with_label(4, "app_ignored"))
 
 
 @pytest.mark.parametrize(
@@ -153,7 +144,6 @@ def test_valid_decisions_include_app_interaction_status(
         (1, "do_planned_activity", True),
         (2, "adapt_activity", True),
         (3, "extra_activity", True),
-        (4, "app_ignored", False),
     ],
 )
 def test_valid_decisions_include_activity_performed_metadata(
@@ -266,29 +256,17 @@ def test_valid_pa_decision_output_is_accepted() -> None:
 
     assert validated == {
         **payload,
-        "app_interaction_status": "engaged",
         "activity_performed": True,
         "diary_entry_generated_for_simulation": True,
     }
 
 
-def test_pa_decision_metadata_extras_are_tolerated_and_overwritten() -> None:
+def test_app_interaction_status_extra_is_rejected() -> None:
     from run_llm_pa_decision import validate_pa_decision_output
-
-    payload = _decision_with_label(4, "app_ignored")
-    payload.update(
-        {
-            "app_interaction_status": "engaged",
-            "activity_performed": True,
-            "diary_entry_generated_for_simulation": False,
-        }
-    )
-
-    validated = validate_pa_decision_output(payload, payload["persona_id"], payload["day_index"])
-
-    assert validated["app_interaction_status"] == "ignored"
-    assert validated["activity_performed"] is False
-    assert validated["diary_entry_generated_for_simulation"] is True
+    payload = _valid_decision()
+    payload["app_interaction_status"] = "engaged"
+    with pytest.raises(ValueError, match="app_interaction_status"):
+        validate_pa_decision_output(payload, payload["persona_id"], payload["day_index"])
 
 
 def test_only_deterministic_pa_decision_metadata_extras_are_tolerated() -> None:
@@ -297,7 +275,6 @@ def test_only_deterministic_pa_decision_metadata_extras_are_tolerated() -> None:
     payload = _valid_decision()
     payload.update(
         {
-            "app_interaction_status": "ignored",
             "activity_performed": False,
             "diary_entry_generated_for_simulation": False,
             "unexpected_debug_field": "must still fail",
@@ -313,7 +290,6 @@ def test_pa_decision_prompt_and_fewshot_do_not_output_metadata_fields() -> None:
     fewshot_text = (ROOT_DIR / "PADecision_FewShot.md").read_text(encoding="utf-8")
 
     metadata_fields = {
-        "app_interaction_status",
         "activity_performed",
         "diary_entry_generated_for_simulation",
     }
@@ -553,7 +529,7 @@ def test_daily_decision_csv_log_rows_include_required_columns(tmp_path: Path) ->
     assert rows[0]["decision_label"] == "do_planned_activity"
     assert rows[0]["activity_done"] == "True"
     assert rows[0]["activity_performed"] == "True"
-    assert rows[0]["app_interaction_status"] == "engaged"
+    assert "app_interaction_status" not in rows[0]
     assert rows[0]["diary_entry_generated_for_simulation"] == "True"
     assert json.loads(rows[0]["planned_physical_activity"]) == {
         "activity_type": "physical_activity"
@@ -585,7 +561,7 @@ def test_run_pipeline_for_context_record_contains_closed_loop_update(tmp_path: P
     assert "closed_loop_update" in record
     assert record["closed_loop_update"]["activity_done"] is True
     assert record["closed_loop_update"]["activity_performed"] is True
-    assert record["closed_loop_update"]["app_interaction_status"] == "engaged"
+    assert "app_interaction_status" not in record["closed_loop_update"]
     assert record["closed_loop_update"]["diary_entry_generated_for_simulation"] is True
     assert record["closed_loop_update"]["previous_psychological_constructs"] == {
         "automaticity": 0.5
@@ -595,37 +571,6 @@ def test_run_pipeline_for_context_record_contains_closed_loop_update(tmp_path: P
     }
     assert "planned_activity_next_day" not in record["closed_loop_update"]
     assert (tmp_path / "llm_pa_decision_daily_log.csv").exists()
-
-
-def test_app_ignored_pipeline_metadata_marks_no_pa_and_simulation_diary(tmp_path: Path) -> None:
-    from run_llm_pa_decision import run_pipeline_for_context
-
-    def fake_behavior_runner(agent_context, **kwargs):
-        return {"probabilities": dict(BEHAVIOR_POLICY)}
-
-    def fake_pa_decision_runner(pa_decision_input, **kwargs):
-        return _decision_with_label(4, "app_ignored")
-
-    record = run_pipeline_for_context(
-        _agent_context(),
-        behavior_system_prompt="behavior prompt",
-        pa_decision_system_prompt="pa prompt",
-        output_dir=tmp_path,
-        behavior_runner=fake_behavior_runner,
-        pa_decision_runner=fake_pa_decision_runner,
-    )
-
-    assert record["pa_decision"]["decision_label"] == "app_ignored"
-    assert record["pa_decision"]["app_interaction_status"] == "ignored"
-    assert record["pa_decision"]["activity_performed"] is False
-    assert record["pa_decision"]["diary_entry_generated_for_simulation"] is True
-    assert record["closed_loop_update"]["activity_done"] is False
-    assert record["closed_loop_update"]["activity_performed"] is False
-    assert record["closed_loop_update"]["app_interaction_status"] == "ignored"
-    assert record["closed_loop_update"]["diary_entry_generated_for_simulation"] is True
-    assert record["closed_loop_update"]["updated_psychological_constructs"] == {
-        "automaticity": pytest.approx(0.5)
-    }
 
 
 def test_run_pa_decision_llm_request_uses_deterministic_defaults(monkeypatch, tmp_path: Path) -> None:

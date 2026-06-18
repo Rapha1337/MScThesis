@@ -31,7 +31,6 @@ Wenn `was_physical_activity_planned_today` wahr ist, wähle ausschließlich:
 Wenn `was_physical_activity_planned_today` falsch ist, wähle ausschließlich:
 
 * `3 = extra_activity`: trotz fehlendem PA-Slot findet spontane oder zusätzliche PA statt.
-* `4 = app_ignored`: historischer Kategoriename für keine ausgeführte PA bei fehlendem PA-Slot; interpretiere ihn ausschließlich als fehlende Entscheidungsbeteiligung/keine PA und nicht als Bezug auf ein System oder eine Empfehlung.
 
 Die Behavior Policy beschreibt psychologische Ausgangstendenzen, nicht die finale Entscheidung. Prüfe ihre Plausibilität anhand der Konstruktwerte und des Tageskontexts, insbesondere Zeitfenster, feste Blöcke, Energie, Wetter, Tageslicht, Ort und Erreichbarkeit. Die Entscheidung gilt nur für den aktuellen Tag.
 

@@ -133,10 +133,11 @@ def test_full_simulation_dry_run_writes_resource_usage_jsonl(tmp_path: Path) -> 
     assert [record["stage"] for record in records[:-1]] == [
         "llm1_behavior_probability",
         "llm2_pa_decision",
+        "state_assessment",
     ]
     assert all(record["token_source"] == "dry_run" for record in records[:-1])
     assert records[-1]["paper_id"] == "TOTAL"
-    assert records[-1]["paper_count"] == 2
+    assert records[-1]["paper_count"] == 3
     assert records[-1]["run_status"] == "success"
     assert records[-1]["output_files"]["simulation_run_manifest"] == "simulation_run_manifest.json"
 
@@ -152,8 +153,13 @@ def test_full_simulation_dry_run_writes_resource_usage_jsonl(tmp_path: Path) -> 
         "do_planned_activity",
         "adapt_activity",
         "extra_activity",
-        "app_ignored",
     ]
+    assert manifest["decision_schema"]["unsuccessful_or_no_activity_categories"] == [
+        "skip_activity"
+    ]
+    assert "app_ignored" in manifest["decision_schema"]["deprecated_categories"]
+    assert manifest["decision_schema"]["app_ignored_active"] is False
+    assert manifest["decision_schema"]["app_specific_output_fields_active"] is False
     assert "postpone_activity" in manifest["decision_schema"]["deprecated_categories"]
     assert "postponed" in manifest["decision_schema"]["deprecated_categories"]
     assert manifest["output_files"]["resource_usage"] == "resource_usage.jsonl"

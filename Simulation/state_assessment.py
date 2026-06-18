@@ -13,6 +13,8 @@ SIMULATION_DIR = Path(__file__).resolve().parent
 DEFAULT_PROMPT_PATH = SIMULATION_DIR / "AssessmentModel_Prompt.md"
 DEFAULT_MODEL_NAME = "gpt-oss-120b"
 DEFAULT_MAX_TOKENS = 5000
+PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA = 0.20
+PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE = 0.10
 
 CONSTRUCT_ITEM_COUNTS: dict[str, int] = {
     "automaticity": 4,
@@ -264,6 +266,36 @@ def normalize_mean_scores(
     return normalized
 
 
+def apply_smoothed_bounded_construct_update(
+    previous_values: Mapping[str, float],
+    target_values: Mapping[str, float | None],
+    raw_target_values: Mapping[str, float | None],
+    *,
+    alpha: float = PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA,
+    max_daily_change: float = PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE,
+) -> dict[str, dict[str, float]]:
+    """Move constructs deterministically toward assessment targets with a daily bound."""
+    proposed_deltas: dict[str, float] = {}
+    applied_deltas: dict[str, float] = {}
+    updated_values: dict[str, float] = {}
+    for construct in ACTIVE_CONSTRUCTS:
+        previous = float(previous_values[construct])
+        if raw_target_values[construct] is None:
+            proposed_delta = 0.0
+            applied_delta = 0.0
+        else:
+            proposed_delta = alpha * (float(target_values[construct]) - previous)
+            applied_delta = max(-max_daily_change, min(max_daily_change, proposed_delta))
+        proposed_deltas[construct] = proposed_delta
+        applied_deltas[construct] = applied_delta
+        updated_values[construct] = min(1.0, max(0.0, previous + applied_delta))
+    return {
+        "delta_proposed": proposed_deltas,
+        "delta_applied": applied_deltas,
+        "updated_values": updated_values,
+    }
+
+
 def build_dry_run_state_assessment(
     *,
     persona_id: str,
@@ -411,20 +443,42 @@ def run_state_assessment(
         expected_persona_id=persona_id,
         expected_day_index=day_index,
     )
-    normalized = normalize_mean_scores(
+    target_normalized = normalize_mean_scores(
         validated["mean_scores_raw"],
         previous_normalized_values,
+    )
+    visible_targets: dict[str, float | None] = {
+        construct: (
+            None
+            if validated["mean_scores_raw"][construct] is None
+            else target_normalized[construct]
+        )
+        for construct in ACTIVE_CONSTRUCTS
+    }
+    update = apply_smoothed_bounded_construct_update(
+        previous_normalized_values,
+        visible_targets,
+        validated["mean_scores_raw"],
     )
     return {
         "state_assessment_enabled": True,
         "state_assessment_mode": mode,
         "state_assessment_item_scores": validated["item_scores"],
         "state_assessment_mean_scores_raw": validated["mean_scores_raw"],
-        "state_assessment_mean_scores_normalized": normalized,
+        "state_assessment_mean_scores_normalized": target_normalized,
+        "state_assessment_target_values_normalized": visible_targets,
         "psychological_construct_values_before_state_assessment": dict(
             previous_normalized_values
         ),
-        "psychological_construct_values_after_state_assessment": normalized,
+        "psychological_construct_update_strategy": "smoothed_bounded",
+        "psychological_construct_update_alpha": PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA,
+        "psychological_construct_update_max_daily_change": (
+            PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE
+        ),
+        "psychological_construct_update_delta_proposed": update["delta_proposed"],
+        "psychological_construct_update_delta_applied": update["delta_applied"],
+        "psychological_construct_values_after_smoothed_update": update["updated_values"],
+        "psychological_construct_values_after_state_assessment": update["updated_values"],
         "previous_diary_entries_count": len(previous_diary_entries),
         "previous_diary_entries_context_used": [dict(entry) for entry in previous_diary_entries],
         "previous_diary_entries_context_strategy": "all_previous_entries_for_run",

@@ -1,5 +1,3 @@
-Hinweis zu `app_ignored`: Der historische Kategoriename bezeichnet in diesem Modell fehlende Entscheidungsbeteiligung und keine ausgeführte PA. Er verweist hier nicht auf eine Empfehlung oder Intervention.
-
 ### Beispiel 1: Förderliche Behavior Policy und günstiger Tageskontext
 
 Input:
@@ -11,9 +9,8 @@ Input:
   "behavior_policy": {
     "do_planned_activity": 0.56,
     "adapt_activity": 0.30,
-    "skip_activity": 0.04,
-    "extra_activity": 0.08,
-    "app_ignored": 0.02
+    "skip_activity": 0.06,
+    "extra_activity": 0.08
   },
   "was_physical_activity_planned_today": true,
   "planned_physical_activity": {
@@ -953,9 +950,8 @@ Input:
   "behavior_policy": {
     "do_planned_activity": 0.18,
     "adapt_activity": 0.17,
-    "skip_activity": 0.5,
-    "extra_activity": 0.05,
-    "app_ignored": 0.1
+    "skip_activity": 0.6,
+    "extra_activity": 0.05
   },
   "was_physical_activity_planned_today": true,
   "planned_physical_activity": {
@@ -1938,9 +1934,8 @@ Input:
   "behavior_policy": {
     "do_planned_activity": 0.36,
     "adapt_activity": 0.42,
-    "skip_activity": 0.1,
-    "extra_activity": 0.08,
-    "app_ignored": 0.04
+    "skip_activity": 0.14,
+    "extra_activity": 0.08
   },
   "was_physical_activity_planned_today": true,
   "planned_physical_activity": {
@@ -2913,9 +2908,8 @@ Input:
   "behavior_policy": {
     "do_planned_activity": 0.32,
     "adapt_activity": 0.24,
-    "skip_activity": 0.33,
-    "extra_activity": 0.07,
-    "app_ignored": 0.04
+    "skip_activity": 0.37,
+    "extra_activity": 0.07
   },
   "was_physical_activity_planned_today": true,
   "planned_physical_activity": {
