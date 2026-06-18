@@ -10,6 +10,20 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
 
+GLOBAL_ENVIRONMENT_FIELDS = {
+    "month",
+    "season",
+    "temperature_c",
+    "feels_like_c",
+    "humidity_pct",
+    "wind_m_s",
+    "precipitation_mm",
+    "is_wet",
+    "sun_frac",
+    "is_daylight",
+    "snow_cover",
+}
+
 
 def _run_dry_simulation(tmp_path: Path, *, include_full_hourly_context: bool = True):
     from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
@@ -49,6 +63,129 @@ def test_full_pa_dry_run_records_include_24_hour_context_when_requested(tmp_path
     for record in trace["records"]:
         assert len(record["hourly_context_24h"]) == 24
         assert record["context_summary"]["n_hourly_context_entries"] == 24
+
+
+def test_global_environment_is_shared_across_three_personas_for_two_days(
+    tmp_path: Path,
+) -> None:
+    from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
+
+    config = FullSimulationConfig(
+        n_personas=3,
+        n_days=2,
+        start_date=date(2026, 3, 2),
+        base_seed=137,
+        output_dir=tmp_path / "shared_environment",
+        model="gpt-oss-120b",
+        temperature=0,
+        llm1_max_tokens=2000,
+        llm2_max_tokens=1200,
+        dry_run=True,
+        include_full_hourly_context=True,
+        cli_overrides={"indoor_activity_distance_km": [1.0, 3.0, 8.0]},
+    )
+    trace = run_full_simulation(config)
+    records_by_date: dict[str, list[dict]] = {}
+    for record in trace["records"]:
+        records_by_date.setdefault(record["calendar_date"], []).append(record)
+
+    assert len(records_by_date) == 2
+    for records in records_by_date.values():
+        assert len(records) == 3
+        for hour in range(24):
+            environments = [
+                {
+                    field: record["hourly_context_24h"][hour][field]
+                    for field in GLOBAL_ENVIRONMENT_FIELDS
+                }
+                for record in records
+            ]
+            assert environments[1:] == environments[:-1]
+
+    assert any(
+        len(
+            {
+                (
+                    record["hourly_context_24h"][hour]["activity_type"],
+                    record["hourly_context_24h"][hour]["energy_level"],
+                    json.dumps(
+                        record["hourly_context_24h"][hour]["poi_accessibility"],
+                        sort_keys=True,
+                    ),
+                )
+                for record in records
+            }
+        )
+        > 1
+        for records in records_by_date.values()
+        for hour in range(24)
+    )
+    assert {
+        record["persona_metadata"]["poi_distances_km"]["indoor_activity"]
+        for record in trace["records"]
+    } == {1.0, 3.0, 8.0}
+
+
+def test_start_date_changes_global_month_season_and_daylight(tmp_path: Path) -> None:
+    from run_full_pa_simulation import FullSimulationConfig, build_global_environment_by_date
+
+    def environment_for(start_date: date, name: str) -> list[dict]:
+        config = FullSimulationConfig(
+            n_personas=1,
+            n_days=1,
+            start_date=start_date,
+            base_seed=137,
+            output_dir=tmp_path / name,
+            model="gpt-oss-120b",
+            temperature=0,
+            llm1_max_tokens=2000,
+            llm2_max_tokens=1200,
+            dry_run=True,
+            include_full_hourly_context=True,
+        )
+        return build_global_environment_by_date(config)[start_date.isoformat()]
+
+    january = environment_for(date(2026, 1, 2), "january")
+    july = environment_for(date(2026, 7, 2), "july")
+
+    assert {entry["month"] for entry in january} == {1}
+    assert {entry["season"] for entry in january} == {"winter"}
+    assert {entry["month"] for entry in july} == {7}
+    assert {entry["season"] for entry in july} == {"summer"}
+    assert sum(entry["is_daylight"] for entry in july) > sum(
+        entry["is_daylight"] for entry in january
+    )
+
+
+def test_shared_environment_is_consistent_in_compact_and_trace_exports(
+    tmp_path: Path,
+) -> None:
+    config, _ = _run_dry_simulation(tmp_path)
+    compact = json.loads(
+        (config.output_dir / "contexts_compact.json").read_text(encoding="utf-8")
+    )["llm_contexts"]
+    trace = json.loads(
+        (config.output_dir / "full_simulation_trace.json").read_text(encoding="utf-8")
+    )["records"]
+
+    for exported_contexts in (compact, trace):
+        by_date: dict[str, list[dict]] = {}
+        for context in exported_contexts:
+            by_date.setdefault(context["calendar_date"], []).append(context)
+        for contexts in by_date.values():
+            for hour in range(24):
+                expected = {
+                    field: contexts[0]["hourly_context_24h"][hour][field]
+                    for field in GLOBAL_ENVIRONMENT_FIELDS
+                }
+                assert all(
+                    {
+                        field: context["hourly_context_24h"][hour][field]
+                        for field in GLOBAL_ENVIRONMENT_FIELDS
+                    }
+                    == expected
+                    for context in contexts
+                )
 
 
 def test_full_pa_dry_run_derives_daily_plans_and_carries_constructs_forward(tmp_path: Path) -> None:
