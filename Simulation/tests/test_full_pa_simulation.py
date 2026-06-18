@@ -76,6 +76,32 @@ def test_full_pa_dry_run_derives_daily_plans_and_carries_constructs_forward(tmp_
         ]
 
 
+def test_full_pa_dry_run_logs_gated_sampling_metadata(tmp_path: Path) -> None:
+    _, trace = _run_dry_simulation(tmp_path)
+
+    for record in trace["records"]:
+        assert record["behavior_policy_raw"] == record["behavior_policy"]
+        assert record["sampled_decision_label"] == record["pa_decision"]["decision_label"]
+        assert isinstance(record["decision_sampling_seed"], int)
+        assert 0.0 <= record["decision_sampling_random_value"] < 1.0
+        assert record["sampled_decision_probability"] == record[
+            "active_decision_probabilities"
+        ][record["sampled_decision_label"]]
+        if record["was_physical_activity_planned_today"]:
+            assert set(record["active_decision_probabilities"]) == {
+                "do_planned_activity",
+                "adapt_activity",
+                "skip_activity",
+                "extra_activity",
+            }
+            assert record["active_decision_probabilities"]["extra_activity"] > 0
+        else:
+            assert record["active_decision_probabilities"] == {
+                "extra_activity": 0.10,
+                "skip_activity": 0.90,
+            }
+
+
 def test_full_pa_dry_run_assesses_state_after_each_diary_with_history(tmp_path: Path) -> None:
     from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
 

@@ -66,8 +66,8 @@ Legende:
 | automaticity                 |                  ++ |              + |            -- |             ++ |
 | pa_specific_self_control     |                  ++ |             ++ |            -- |              + |
 | action_planning              |                 +++ |             ++ |            -- |              + |
-| intention                    |                 +++ |              + |           --- |              + |
-| perceived_behavioral_control |                 +++ |             ++ |            -- |              + |
+| intention                    |                  ++ |              + |           --- |              + |
+| perceived_behavioral_control |                  ++ |             ++ |            -- |              + |
 | attitude_toward_the_behavior |                  ++ |              + |            -- |              + |
 | subjective_norm              |                   + |            0/+ |             - |            0/+ |
 | intrinsic_motivation         |                  ++ |             ++ |            -- |             ++ |
