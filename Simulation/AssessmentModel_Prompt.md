@@ -94,6 +94,8 @@ Verwende exakt diese neun JSON-Schlüssel:
 * `intrinsic_motivation`
 * `motivational_competence`
 
+Jedes `items`-Array muss die oben angegebene Anzahl an Item-Objekten enthalten. Leere `items`-Arrays im kompakten Schema-Beispiel sind nur Platzhalter und keine gültige finale Ausgabe.
+
 Die JSON-Struktur muss folgendem Schema entsprechen:
 
 {
@@ -180,6 +182,10 @@ Die JSON-Struktur muss folgendem Schema entsprechen:
 ### Aktueller simulierter Tagebucheintrag
 
 {current_simulated_diary_entry}
+
+### Vorherige simulierte Tagebucheinträge dieses Simulation Runs
+
+{previous_diary_entries}
 
 ### Zusammenfassung vorheriger simulierter Tagebucheinträge
 
