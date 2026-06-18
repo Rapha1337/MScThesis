@@ -23,7 +23,6 @@ def test_run_behavior_probability_estimation_importable_without_api_key(monkeypa
         "adapt_activity",
         "skip_activity",
         "extra_activity",
-        "app_ignored",
     )
 
 
@@ -32,9 +31,8 @@ def _valid_payload() -> dict:
         "probabilities": {
             "do_planned_activity": 0.25,
             "adapt_activity": 0.30,
-            "skip_activity": 0.20,
+            "skip_activity": 0.35,
             "extra_activity": 0.10,
-            "app_ignored": 0.15,
         }
     }
 
@@ -121,13 +119,13 @@ def test_missing_probability_key_rejected() -> None:
     from run_behavior_probability_estimation import validate_behavior_probability_payload
 
     payload = _valid_payload()
-    payload["probabilities"].pop("app_ignored")
+    payload["probabilities"].pop("extra_activity")
 
     with pytest.raises(ValueError, match="Missing"):
         validate_behavior_probability_payload(payload)
 
 
-@pytest.mark.parametrize("extra_key", ["not_a_probability", "postpone_activity"])
+@pytest.mark.parametrize("extra_key", ["not_a_probability", "postpone_activity", "app_ignored"])
 def test_extra_probability_key_rejected(extra_key: str) -> None:
     from run_behavior_probability_estimation import validate_behavior_probability_payload
 

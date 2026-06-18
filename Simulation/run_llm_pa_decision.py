@@ -48,16 +48,12 @@ PA_DECISION_CODEBOOK: dict[int, str] = {
     1: "do_planned_activity",
     2: "adapt_activity",
     3: "extra_activity",
-    4: "app_ignored",
 }
 
 SUCCESSFUL_PA_DECISION_LABELS = frozenset(
     {"do_planned_activity", "adapt_activity", "extra_activity"}
 )
-UNSUCCESSFUL_PA_DECISION_LABELS = frozenset({"skip_activity", "app_ignored"})
-APP_IGNORED_DECISION_LABEL = "app_ignored"
-ENGAGED_APP_INTERACTION_STATUS = "engaged"
-IGNORED_APP_INTERACTION_STATUS = "ignored"
+UNSUCCESSFUL_PA_DECISION_LABELS = frozenset({"skip_activity"})
 DIARY_ENTRY_GENERATED_FOR_SIMULATION = True
 
 # Keep this alias for callers that imported the old constant name, but use the
@@ -76,7 +72,6 @@ EXPECTED_PA_DECISION_FIELDS = frozenset(
 )
 DETERMINISTIC_PA_DECISION_METADATA_FIELDS = frozenset(
     {
-        "app_interaction_status",
         "activity_performed",
         "diary_entry_generated_for_simulation",
     }
@@ -107,7 +102,6 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "decision_label",
     "activity_done",
     "activity_performed",
-    "app_interaction_status",
     "diary_entry_generated_for_simulation",
     "planned_physical_activity",
     "was_physical_activity_planned_today",
@@ -371,18 +365,10 @@ def activity_performed_for_decision_label(decision_label: str) -> bool:
     return decision_label in SUCCESSFUL_PA_DECISION_LABELS
 
 
-def app_interaction_status_for_decision_label(decision_label: str) -> str:
-    """Return app engagement metadata for a final PA decision label."""
-    if decision_label == APP_IGNORED_DECISION_LABEL:
-        return IGNORED_APP_INTERACTION_STATUS
-    return ENGAGED_APP_INTERACTION_STATUS
-
-
 def add_pa_decision_metadata(pa_decision: Mapping[str, Any]) -> dict[str, Any]:
     """Attach deterministic trace metadata to a validated PA decision."""
     decision_label = str(pa_decision["decision_label"])
     enriched = dict(pa_decision)
-    enriched["app_interaction_status"] = app_interaction_status_for_decision_label(decision_label)
     enriched["activity_performed"] = activity_performed_for_decision_label(decision_label)
     enriched["diary_entry_generated_for_simulation"] = DIARY_ENTRY_GENERATED_FOR_SIMULATION
     return enriched
@@ -700,12 +686,6 @@ def write_daily_decision_log_row(
         "decision_label": str(pa_decision["decision_label"]),
         "activity_done": bool(activity_done),
         "activity_performed": bool(pa_decision.get("activity_performed", activity_done)),
-        "app_interaction_status": str(
-            pa_decision.get(
-                "app_interaction_status",
-                app_interaction_status_for_decision_label(str(pa_decision["decision_label"])),
-            )
-        ),
         "diary_entry_generated_for_simulation": bool(
             pa_decision.get(
                 "diary_entry_generated_for_simulation",
@@ -763,7 +743,6 @@ def build_closed_loop_update(
     return {
         "activity_done": activity_done,
         "activity_performed": activity_done,
-        "app_interaction_status": app_interaction_status_for_decision_label(decision_label),
         "diary_entry_generated_for_simulation": DIARY_ENTRY_GENERATED_FOR_SIMULATION,
         "previous_psychological_constructs": previous_constructs,
         "updated_psychological_constructs": updated_constructs,
