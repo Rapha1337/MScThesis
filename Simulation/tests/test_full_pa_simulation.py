@@ -114,6 +114,17 @@ def test_full_pa_dry_run_assesses_state_after_each_diary_with_history(tmp_path: 
     assert manifest["state_assessment"][
         "placeholder_next_day_activity_generation_disabled"
     ] is True
+    assert manifest["state_assessment"]["state_assessment_max_tokens"] == 10000
+    run_config = json.loads((config.output_dir / "run_config.json").read_text(encoding="utf-8"))
+    assert run_config["state_assessment_max_tokens"] == 10000
+
+
+def test_state_assessment_max_tokens_cli_defaults_to_10000() -> None:
+    from run_full_pa_simulation import config_from_args, parse_args
+
+    args = parse_args([])
+    assert args.state_assessment_max_tokens == 10000
+    assert config_from_args(args).state_assessment_max_tokens == 10000
 
 
 def test_full_pa_dry_run_outputs_valid_json_and_csv_rows(tmp_path: Path) -> None:
