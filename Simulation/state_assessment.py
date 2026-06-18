@@ -15,9 +15,9 @@ DEFAULT_MODEL_NAME = "gpt-oss-120b"
 DEFAULT_MAX_TOKENS = 10000
 RETRY_MIN_MAX_TOKENS = 12000
 JSON_REPAIR_INSTRUCTION = (
-    "Your previous response was not valid JSON. Return only a complete valid JSON object. "
-    "All property names must be enclosed in double quotes. Do not use comments, markdown, "
-    "trailing commas, ellipses, or unquoted keys."
+    "Your previous response was malformed. Return only one complete valid JSON object "
+    "parseable by Python json.loads. All property names must be enclosed in double quotes. "
+    "Do not use markdown, comments, trailing commas, ellipses, or unquoted keys."
 )
 PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA = 0.20
 PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE = 0.10
@@ -372,14 +372,15 @@ def call_state_assessment_llm(
     llm_seed: int | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     repair_instruction: str | None = None,
+    json_mode: bool = False,
 ) -> dict[str, Any]:
     started = time.perf_counter()
     messages = [
         {
             "role": "system",
             "content": (
-                "Return exactly one valid JSON object. Do not use markdown fences or "
-                "commentary outside the JSON object."
+                "Return exactly one valid JSON object. Do not use markdown fences, comments, "
+                "trailing commas, unquoted keys, or commentary outside the JSON object."
             ),
         },
         {"role": "user", "content": rendered_prompt},
@@ -392,7 +393,7 @@ def call_state_assessment_llm(
         temperature=temperature,
         top_p=top_p,
         max_tokens=max_tokens,
-        response_format={"type": "json_object"},
+        **({"response_format": {"type": "json_object"}} if json_mode else {}),
         **({"seed": int(llm_seed)} if llm_seed is not None else {}),
     )
     return {
@@ -465,6 +466,7 @@ def run_state_assessment(
     llm_seed: int | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     output_dir: Path | None = None,
+    json_mode: bool = False,
 ) -> dict[str, Any]:
     template = prompt_template if prompt_template is not None else load_state_assessment_prompt()
     rendered_prompt = render_state_assessment_prompt(
@@ -506,6 +508,7 @@ def run_state_assessment(
                 llm_seed=llm_seed,
                 max_tokens=attempt_max_tokens,
                 repair_instruction=JSON_REPAIR_INSTRUCTION if attempt else None,
+                json_mode=json_mode,
             )
             try:
                 raw_payload = parse_state_assessment_json(llm_result["raw_response"])

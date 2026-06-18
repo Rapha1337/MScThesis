@@ -115,8 +115,10 @@ def test_full_pa_dry_run_assesses_state_after_each_diary_with_history(tmp_path: 
         "placeholder_next_day_activity_generation_disabled"
     ] is True
     assert manifest["state_assessment"]["state_assessment_max_tokens"] == 10000
+    assert manifest["state_assessment"]["state_assessment_json_mode_enabled"] is False
     run_config = json.loads((config.output_dir / "run_config.json").read_text(encoding="utf-8"))
     assert run_config["state_assessment_max_tokens"] == 10000
+    assert run_config["state_assessment_json_mode_enabled"] is False
 
 
 def test_state_assessment_max_tokens_cli_defaults_to_10000() -> None:
@@ -125,6 +127,32 @@ def test_state_assessment_max_tokens_cli_defaults_to_10000() -> None:
     args = parse_args([])
     assert args.state_assessment_max_tokens == 10000
     assert config_from_args(args).state_assessment_max_tokens == 10000
+    assert args.state_assessment_json_mode is False
+    assert config_from_args(args).state_assessment_json_mode is False
+
+
+def test_state_assessment_json_mode_cli_is_opt_in_and_recorded(tmp_path: Path) -> None:
+    from run_full_pa_simulation import config_from_args, parse_args, run_full_simulation
+
+    args = parse_args([
+        "--state-assessment-json-mode",
+        "--dry-run",
+        "--n-personas",
+        "1",
+        "--n-days",
+        "1",
+        "--output-dir",
+        str(tmp_path),
+        "--disable-resource-tracking",
+    ])
+    assert args.state_assessment_json_mode is True
+    config = config_from_args(args)
+    assert config.state_assessment_json_mode is True
+
+    run_full_simulation(config)
+
+    manifest = json.loads((tmp_path / "simulation_run_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["state_assessment"]["state_assessment_json_mode_enabled"] is True
 
 
 def test_full_pa_dry_run_outputs_valid_json_and_csv_rows(tmp_path: Path) -> None:
