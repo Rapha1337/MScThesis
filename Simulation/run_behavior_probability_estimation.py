@@ -40,7 +40,6 @@ BEHAVIOR_PROBABILITY_KEYS: tuple[str, ...] = (
     "adapt_activity",
     "skip_activity",
     "extra_activity",
-    "app_ignored",
 )
 EXPECTED_TOP_LEVEL_FIELDS = frozenset({"probabilities"})
 EXPECTED_PROBABILITY_FIELDS = frozenset(BEHAVIOR_PROBABILITY_KEYS)
