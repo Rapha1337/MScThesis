@@ -180,6 +180,7 @@ class FullSimulationConfig:
     dry_run: bool
     include_full_hourly_context: bool
     state_assessment_max_tokens: int = STATE_ASSESSMENT_MAX_TOKENS
+    state_assessment_json_mode: bool = False
     cli_overrides: dict[str, list[float | None]] | None = None
     daily_log_path: Path | None = None
     enable_resource_tracking: bool = True
@@ -220,6 +221,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--state-assessment-max-tokens",
         type=int,
         default=STATE_ASSESSMENT_MAX_TOKENS,
+    )
+    parser.add_argument(
+        "--state-assessment-json-mode",
+        action="store_true",
+        help="Opt in to OpenAI-compatible JSON object mode for State Assessment.",
     )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
@@ -372,6 +378,7 @@ def config_from_args(args: argparse.Namespace) -> FullSimulationConfig:
         llm1_max_tokens=int(args.llm1_max_tokens),
         llm2_max_tokens=int(args.llm2_max_tokens),
         state_assessment_max_tokens=int(args.state_assessment_max_tokens),
+        state_assessment_json_mode=bool(args.state_assessment_json_mode),
         dry_run=bool(args.dry_run),
         include_full_hourly_context=bool(args.include_full_hourly_context),
         cli_overrides=_parse_cli_overrides(args),
@@ -887,6 +894,7 @@ def _build_simulation_run_manifest(
             ),
             "state_assessment_model_name": config.model,
             "state_assessment_max_tokens": config.state_assessment_max_tokens,
+            "state_assessment_json_mode_enabled": config.state_assessment_json_mode,
             "state_assessment_call_count": state_assessment_call_count,
             "state_assessment_dry_run_count": state_assessment_dry_run_count,
             "previous_diary_entries_passed_as_context": True,
@@ -970,6 +978,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
         "llm1_max_tokens": config.llm1_max_tokens,
         "llm2_max_tokens": config.llm2_max_tokens,
         "state_assessment_max_tokens": config.state_assessment_max_tokens,
+        "state_assessment_json_mode_enabled": config.state_assessment_json_mode,
         "dry_run": config.dry_run,
         "include_full_hourly_context": config.include_full_hourly_context,
         "daily_log_path": str(daily_log_path),
@@ -1083,6 +1092,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     llm_seed=config.llm_seed,
                     max_tokens=config.state_assessment_max_tokens,
                     output_dir=per_day_output_dir,
+                    json_mode=config.state_assessment_json_mode,
                 )
                 state_assessment_call_count += 1
                 if assessment["state_assessment_mode"] == "dry_run_mock":
