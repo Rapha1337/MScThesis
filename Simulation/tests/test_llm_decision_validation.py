@@ -206,13 +206,17 @@ def test_build_pa_decision_input_has_expected_structure_and_planned_activity() -
         "persona_id",
         "day_index",
         "behavior_policy",
-        "planned_activity",
+        "planned_physical_activity",
+        "was_physical_activity_planned_today",
+        "psychological_construct_values",
         "daily_context",
     }
     assert result["persona_id"] == "ScenarioPersona_01_favourable_pa_context"
     assert result["day_index"] == 21
     assert result["behavior_policy"] == BEHAVIOR_POLICY
-    assert result["planned_activity"] == planned_activity
+    assert result["planned_physical_activity"] == planned_activity
+    assert result["was_physical_activity_planned_today"] is True
+    assert result["psychological_construct_values"] == {"automaticity": 0.5}
     assert result["daily_context"]["persona_id"] == "ScenarioPersona_01_favourable_pa_context"
     assert result["daily_context"]["seed"] == 123
     assert result["daily_context"]["day_index"] == 21
@@ -433,7 +437,8 @@ def test_run_pipeline_for_context_with_fake_llms_writes_intermediate_and_final_o
     assert record["behavior_policy"] == BEHAVIOR_POLICY
     assert record["pa_decision"] == _validated_decision()
     assert len(captured_pa_inputs) == 1
-    assert captured_pa_inputs[0]["planned_activity"] is None
+    assert captured_pa_inputs[0]["planned_physical_activity"] is None
+    assert captured_pa_inputs[0]["was_physical_activity_planned_today"] is False
 
 
 def test_main_writes_combined_pipeline_output_with_metadata(tmp_path: Path, monkeypatch) -> None:
@@ -498,55 +503,12 @@ def test_main_writes_combined_pipeline_output_with_metadata(tmp_path: Path, monk
     assert payload["records"][0]["pa_decision"] == _validated_decision()
 
 
-@pytest.mark.parametrize("decision_label", ["do_planned_activity", "adapt_activity", "extra_activity"])
-def test_simple_construct_update_increases_after_successful_pa(decision_label: str) -> None:
-    from run_llm_pa_decision import update_psychological_constructs_simple
-
-    updated = update_psychological_constructs_simple(
-        {"automaticity": 0.50, "motivation": 0.20, "pressure_tension": 0.30}, decision_label
-    )
-
-    assert updated == {
-        "automaticity": pytest.approx(0.52),
-        "motivation": pytest.approx(0.22),
-        "pressure_tension": pytest.approx(0.28),
-    }
-
-
-@pytest.mark.parametrize("decision_label", ["skip_activity", "app_ignored"])
-def test_simple_construct_update_decreases_after_unsuccessful_pa(decision_label: str) -> None:
-    from run_llm_pa_decision import update_psychological_constructs_simple
-
-    updated = update_psychological_constructs_simple(
-        {"automaticity": 0.50, "motivation": 0.20, "pressure_tension": 0.30}, decision_label
-    )
-
-    assert updated == {
-        "automaticity": pytest.approx(0.48),
-        "motivation": pytest.approx(0.18),
-        "pressure_tension": pytest.approx(0.32),
-    }
-
-
-def test_simple_construct_update_clamps_values_to_unit_interval() -> None:
-    from run_llm_pa_decision import update_psychological_constructs_simple
-
-    increased = update_psychological_constructs_simple(
-        {"high": 0.99, "pressure_tension": 0.01}, "do_planned_activity"
-    )
-    decreased = update_psychological_constructs_simple(
-        {"low": 0.01, "pressure_tension": 0.99}, "skip_activity"
-    )
-
-    assert increased == {"high": 1.0, "pressure_tension": 0.0}
-    assert decreased == {"low": 0.0, "pressure_tension": 1.0}
-
-
 @pytest.mark.parametrize("decision_label", ["do_planned_activity", "skip_activity"])
-def test_planned_activity_next_day_has_required_fields(decision_label: str) -> None:
+def test_planned_activity_next_day_legacy_helper_is_deprecated(decision_label: str) -> None:
     from run_llm_pa_decision import generate_planned_activity_next_day
 
-    planned_activity = generate_planned_activity_next_day(decision_label)
+    with pytest.deprecated_call():
+        planned_activity = generate_planned_activity_next_day(decision_label)
 
     assert set(planned_activity) == {
         "activity_type",
@@ -568,22 +530,14 @@ def test_daily_decision_csv_log_rows_include_required_columns(tmp_path: Path) ->
     from run_llm_pa_decision import DAILY_DECISION_LOG_COLUMNS, write_daily_decision_log_row
 
     log_path = tmp_path / "llm_pa_decision_daily_log.csv"
-    planned_activity_next_day = {
-        "activity_type": "indoor_activity",
-        "duration_min": 20,
-        "intensity": "moderate",
-        "preferred_time_window": [17, 20],
-        "description": "20 Minuten intensive Oberkörpereinheit im Gym",
-    }
-
     write_daily_decision_log_row(
         log_path=log_path,
         persona_id="ScenarioPersona_01_favourable_pa_context",
         day_index=21,
         pa_decision=_valid_decision(),
         activity_done=True,
-        planned_activity_for_day={"activity_type": "outdoor_activity"},
-        planned_activity_next_day=planned_activity_next_day,
+        planned_physical_activity={"activity_type": "physical_activity"},
+        was_physical_activity_planned_today=True,
         behavior_policy=BEHAVIOR_POLICY,
         previous_psychological_constructs={"automaticity": 0.5},
         updated_psychological_constructs={"automaticity": 0.52},
@@ -601,7 +555,10 @@ def test_daily_decision_csv_log_rows_include_required_columns(tmp_path: Path) ->
     assert rows[0]["activity_performed"] == "True"
     assert rows[0]["app_interaction_status"] == "engaged"
     assert rows[0]["diary_entry_generated_for_simulation"] == "True"
-    assert json.loads(rows[0]["planned_activity_next_day"]) == planned_activity_next_day
+    assert json.loads(rows[0]["planned_physical_activity"]) == {
+        "activity_type": "physical_activity"
+    }
+    assert rows[0]["was_physical_activity_planned_today"] == "True"
     assert json.loads(rows[0]["behavior_policy"]) == BEHAVIOR_POLICY
     assert json.loads(rows[0]["previous_psychological_constructs"]) == {"automaticity": 0.5}
     assert json.loads(rows[0]["updated_psychological_constructs"]) == {"automaticity": 0.52}
@@ -634,15 +591,9 @@ def test_run_pipeline_for_context_record_contains_closed_loop_update(tmp_path: P
         "automaticity": 0.5
     }
     assert record["closed_loop_update"]["updated_psychological_constructs"] == {
-        "automaticity": pytest.approx(0.52)
+        "automaticity": pytest.approx(0.5)
     }
-    assert set(record["closed_loop_update"]["planned_activity_next_day"]) == {
-        "activity_type",
-        "duration_min",
-        "intensity",
-        "preferred_time_window",
-        "description",
-    }
+    assert "planned_activity_next_day" not in record["closed_loop_update"]
     assert (tmp_path / "llm_pa_decision_daily_log.csv").exists()
 
 
@@ -673,7 +624,7 @@ def test_app_ignored_pipeline_metadata_marks_no_pa_and_simulation_diary(tmp_path
     assert record["closed_loop_update"]["app_interaction_status"] == "ignored"
     assert record["closed_loop_update"]["diary_entry_generated_for_simulation"] is True
     assert record["closed_loop_update"]["updated_psychological_constructs"] == {
-        "automaticity": pytest.approx(0.48)
+        "automaticity": pytest.approx(0.5)
     }
 
 
