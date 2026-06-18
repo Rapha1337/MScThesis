@@ -46,6 +46,27 @@ def _extract_prompt_input_json(prompt: str) -> dict:
     return json.loads(input_json)
 
 
+def test_behavior_policy_table_has_action_planning_as_only_strongest_influence() -> None:
+    prompt = (ROOT_DIR / "BehaviorProbability_Prompt.md").read_text(encoding="utf-8")
+    table_rows = [
+        line
+        for line in prompt.splitlines()
+        if line.startswith("| ") and not line.startswith("| -")
+    ]
+    strongest_rows = [line for line in table_rows if "+++" in line]
+
+    assert len(strongest_rows) == 1
+    assert "action_planning" in strongest_rows[0]
+    intention_row = next(line for line in table_rows if "| intention " in line)
+    control_row = next(
+        line for line in table_rows if "| perceived_behavioral_control " in line
+    )
+    assert "+++" not in intention_row
+    assert "+++" not in control_row
+    assert "|                  ++ |" in intention_row
+    assert "|                  ++ |" in control_row
+
+
 def test_behavior_probability_user_prompt_only_sends_psychological_construct_values() -> None:
     from psychological_state import DEFAULT_PSYCHOLOGICAL_STATE
     from run_behavior_probability_estimation import build_behavior_probability_user_prompt

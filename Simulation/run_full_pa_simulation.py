@@ -146,6 +146,13 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "psychological_construct_update_delta_applied",
     "psychological_construct_values_after_smoothed_update",
     "psychological_construct_values_after_state_assessment",
+    "behavior_policy_raw",
+    "decision_context_has_planned_pa",
+    "active_decision_probabilities",
+    "sampled_decision_label",
+    "sampled_decision_probability",
+    "decision_sampling_seed",
+    "decision_sampling_random_value",
     "behavior_policy",
     "previous_psychological_constructs",
     "updated_psychological_constructs",
@@ -624,16 +631,29 @@ def _dry_behavior_runner(agent_context: Mapping[str, Any], **kwargs: Any) -> dic
 def _dry_pa_decision_runner(pa_decision_input: Mapping[str, Any], **kwargs: Any) -> dict[str, Any]:
     del kwargs
     planned_activity = pa_decision_input.get("planned_physical_activity")
-    if planned_activity is None:
-        decision_code = 3
-        decision_label = "extra_activity"
-        rationale = "Dry-run day without scheduled PA; simulated extra activity."
+    decision_label = str(pa_decision_input["sampled_decision_label"])
+    decision_code = next(
+        code for code, codebook_label in PA_DECISION_CODEBOOK.items()
+        if codebook_label == decision_label
+    )
+    if planned_activity is None and decision_label == "skip_activity":
+        rationale = "Dry-run day without scheduled PA; no spontaneous activity occurred."
+        diary = "Dry-run: I rested instead and did no additional movement today."
+    elif planned_activity is None:
+        rationale = "Dry-run day without scheduled PA; simulated spontaneous activity."
         diary = "Dry-run: I added some spontaneous movement today."
-    else:
-        decision_code = 2
-        decision_label = "adapt_activity"
+    elif decision_label == "skip_activity":
+        rationale = "Dry-run day with scheduled PA; the planned activity was not performed."
+        diary = "Dry-run: I did not do today's scheduled activity."
+    elif decision_label == "extra_activity":
+        rationale = "Dry-run day with scheduled PA; simulated additional spontaneous activity."
+        diary = "Dry-run: I added spontaneous movement beyond today's plan."
+    elif decision_label == "adapt_activity":
         rationale = "Dry-run day with scheduled PA; simulated adjusted completion."
         diary = "Dry-run: I adjusted today's scheduled activity and still moved."
+    else:
+        rationale = "Dry-run day with scheduled PA; simulated completion as planned."
+        diary = "Dry-run: I completed today's scheduled activity as planned."
 
     return {
         "persona_id": str(pa_decision_input["persona_id"]),
@@ -741,6 +761,17 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
             record.get("psychological_construct_values_after_state_assessment")
         ),
         "behavior_policy": _json_log_value(record.get("behavior_policy")),
+        "behavior_policy_raw": _json_log_value(record.get("behavior_policy_raw")),
+        "decision_context_has_planned_pa": bool(
+            record.get("decision_context_has_planned_pa")
+        ),
+        "active_decision_probabilities": _json_log_value(
+            record.get("active_decision_probabilities")
+        ),
+        "sampled_decision_label": str(record.get("sampled_decision_label")),
+        "sampled_decision_probability": float(record["sampled_decision_probability"]),
+        "decision_sampling_seed": int(record["decision_sampling_seed"]),
+        "decision_sampling_random_value": float(record["decision_sampling_random_value"]),
         "previous_psychological_constructs": _json_log_value(
             record.get("psychological_constructs_before_update")
         ),
@@ -1187,6 +1218,21 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                         "previous_diary_entries_context_used"
                     ],
                     "behavior_policy": dict(pipeline_record["behavior_policy"]),
+                    "behavior_policy_raw": dict(pipeline_record["behavior_policy_raw"]),
+                    "decision_context_has_planned_pa": bool(
+                        pipeline_record["decision_context_has_planned_pa"]
+                    ),
+                    "active_decision_probabilities": dict(
+                        pipeline_record["active_decision_probabilities"]
+                    ),
+                    "sampled_decision_label": pipeline_record["sampled_decision_label"],
+                    "sampled_decision_probability": pipeline_record[
+                        "sampled_decision_probability"
+                    ],
+                    "decision_sampling_seed": pipeline_record["decision_sampling_seed"],
+                    "decision_sampling_random_value": pipeline_record[
+                        "decision_sampling_random_value"
+                    ],
                     "planned_physical_activity": planned_activity_for_day,
                     "was_physical_activity_planned_today": planned_activity_for_day is not None,
                     "persona_metadata": {
