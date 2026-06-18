@@ -1,4 +1,4 @@
-Hinweis zu `app_ignored`: Wenn diese Kategorie in Beispielen oder Modelloutputs vorkommt, bedeutet sie fehlende sinnvolle Interaktion mit der App-Empfehlung. Eine trotzdem erzeugte Begründung oder diary-ähnliche Passage ist dann nur eine simulierte Rekonstruktion für Analysezwecke, keine tatsächlich in der App eingegebene Reflexion.
+Hinweis zu `app_ignored`: Der historische Kategoriename bezeichnet in diesem Modell fehlende Entscheidungsbeteiligung und keine ausgeführte PA. Er verweist hier nicht auf eine Empfehlung oder Intervention.
 
 ### Beispiel 1: Förderliche Behavior Policy und günstiger Tageskontext
 
@@ -15,7 +15,8 @@ Input:
     "extra_activity": 0.08,
     "app_ignored": 0.02
   },
-  "planned_activity": {
+  "was_physical_activity_planned_today": true,
+  "planned_physical_activity": {
     "activity_type": "indoor_activity",
     "duration_min": 30,
     "intensity": "moderate",
@@ -956,7 +957,8 @@ Input:
     "extra_activity": 0.05,
     "app_ignored": 0.1
   },
-  "planned_activity": {
+  "was_physical_activity_planned_today": true,
+  "planned_physical_activity": {
     "activity_type": "indoor_activity",
     "duration_min": 30,
     "intensity": "moderate",
@@ -1940,7 +1942,8 @@ Input:
     "extra_activity": 0.08,
     "app_ignored": 0.04
   },
-  "planned_activity": {
+  "was_physical_activity_planned_today": true,
+  "planned_physical_activity": {
     "activity_type": "indoor_activity",
     "duration_min": 30,
     "intensity": "moderate",
@@ -2914,7 +2917,8 @@ Input:
     "extra_activity": 0.07,
     "app_ignored": 0.04
   },
-  "planned_activity": {
+  "was_physical_activity_planned_today": true,
+  "planned_physical_activity": {
     "activity_type": "indoor_activity",
     "duration_min": 30,
     "intensity": "moderate",
