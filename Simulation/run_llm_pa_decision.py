@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import sys
 import time
+import warnings
 from typing import Any, Callable, Mapping, Sequence
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -88,7 +89,6 @@ DAILY_CONTEXT_FIELDS: tuple[str, ...] = (
     "calendar_date",
     "phase",
     "weekday",
-    "planned_activity_for_day",
     "hourly_context_24h",
 )
 
@@ -109,8 +109,8 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "activity_performed",
     "app_interaction_status",
     "diary_entry_generated_for_simulation",
-    "planned_activity_for_day",
-    "planned_activity_next_day",
+    "planned_physical_activity",
+    "was_physical_activity_planned_today",
     "behavior_policy",
     "previous_psychological_constructs",
     "updated_psychological_constructs",
@@ -322,11 +322,14 @@ def build_pa_decision_input(
     if isinstance(day_index, bool) or not isinstance(day_index, int):
         raise ValueError("agent_context must contain day_index as an integer.")
 
+    planned_physical_activity = _strip_raw_psychological_fields(planned_activity)
     return {
         "persona_id": persona_id,
         "day_index": int(day_index),
         "behavior_policy": validate_behavior_policy(behavior_policy),
-        "planned_activity": _strip_raw_psychological_fields(planned_activity),
+        "planned_physical_activity": planned_physical_activity,
+        "was_physical_activity_planned_today": planned_physical_activity is not None,
+        "psychological_construct_values": extract_psychological_construct_values(agent_context),
         "daily_context": prepare_daily_context_for_pa_decision(agent_context),
     }
 
@@ -338,7 +341,9 @@ INPUT:
 {input_json}
 
 IMPORTANT:
-Use only the provided behavior_policy, daily_context, and planned_activity. Do not infer raw psychological constructs and do not invent app recommendations or planned activities.
+Use only the provided behavior_policy, psychological_construct_values, daily_context,
+planned_physical_activity, and was_physical_activity_planned_today. The planned physical
+activity is schedule-derived for this simulated day; do not propose a new activity.
 Return exactly one valid JSON object in the required PA decision schema.
 """.strip()
 
@@ -646,31 +651,13 @@ def extract_psychological_construct_values(agent_context: Mapping[str, Any]) -> 
     return constructs
 
 
-def update_psychological_constructs_simple(
-    previous_constructs: dict[str, float],
-    decision_label: str,
-    delta_done: float = 0.02,
-    delta_no_pa: float = -0.02,
-) -> dict[str, float]:
-    """Apply a small deterministic placeholder update to psychological constructs.
-
-    Supportive constructs move up after successful PA and down after unsuccessful PA.
-    """
-    if decision_label in SUCCESSFUL_PA_DECISION_LABELS:
-        supportive_delta = delta_done
-    elif decision_label in UNSUCCESSFUL_PA_DECISION_LABELS:
-        supportive_delta = delta_no_pa
-    else:
-        supportive_delta = 0.0
-
-    updated: dict[str, float] = {}
-    for key, value in previous_constructs.items():
-        updated[key] = min(1.0, max(0.0, float(value) + supportive_delta))
-    return updated
-
-
 def generate_planned_activity_next_day(decision_label: str) -> dict[str, Any]:
-    """Generate a deterministic LLM3-placeholder planned activity for tomorrow."""
+    """Deprecated legacy helper; the closed loop now derives PA from each day's schedule."""
+    warnings.warn(
+        "generate_planned_activity_next_day() is deprecated and is not used by the default flow.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     if decision_label in SUCCESSFUL_PA_DECISION_LABELS:
         return {
             "activity_type": "indoor_activity",
@@ -696,8 +683,8 @@ def write_daily_decision_log_row(
     day_index: int,
     pa_decision: Mapping[str, Any],
     activity_done: bool,
-    planned_activity_for_day: Any | None,
-    planned_activity_next_day: Mapping[str, Any],
+    planned_physical_activity: Any | None,
+    was_physical_activity_planned_today: bool,
     behavior_policy: Mapping[str, Any],
     previous_psychological_constructs: Mapping[str, Any],
     updated_psychological_constructs: Mapping[str, Any],
@@ -725,8 +712,8 @@ def write_daily_decision_log_row(
                 DIARY_ENTRY_GENERATED_FOR_SIMULATION,
             )
         ),
-        "planned_activity_for_day": _json_log_value(planned_activity_for_day),
-        "planned_activity_next_day": _json_log_value(dict(planned_activity_next_day)),
+        "planned_physical_activity": _json_log_value(planned_physical_activity),
+        "was_physical_activity_planned_today": bool(was_physical_activity_planned_today),
         "behavior_policy": _json_log_value(dict(behavior_policy)),
         "previous_psychological_constructs": _json_log_value(
             dict(previous_psychological_constructs)
@@ -759,20 +746,15 @@ def build_closed_loop_update(
     decision_label = str(pa_decision["decision_label"])
     activity_done = activity_performed_for_decision_label(decision_label)
     previous_constructs = extract_psychological_construct_values(agent_context)
-    updated_constructs = update_psychological_constructs_simple(
-        previous_constructs,
-        decision_label,
-    )
-    planned_activity_next_day = generate_planned_activity_next_day(decision_label)
-
+    updated_constructs = dict(previous_constructs)
     write_daily_decision_log_row(
         log_path=log_path,
         persona_id=persona_id,
         day_index=day_index,
         pa_decision=pa_decision,
         activity_done=activity_done,
-        planned_activity_for_day=planned_activity_for_day,
-        planned_activity_next_day=planned_activity_next_day,
+        planned_physical_activity=planned_activity_for_day,
+        was_physical_activity_planned_today=planned_activity_for_day is not None,
         behavior_policy=behavior_policy,
         previous_psychological_constructs=previous_constructs,
         updated_psychological_constructs=updated_constructs,
@@ -785,7 +767,6 @@ def build_closed_loop_update(
         "diary_entry_generated_for_simulation": DIARY_ENTRY_GENERATED_FOR_SIMULATION,
         "previous_psychological_constructs": previous_constructs,
         "updated_psychological_constructs": updated_constructs,
-        "planned_activity_next_day": planned_activity_next_day,
     }
 
 

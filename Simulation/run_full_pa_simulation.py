@@ -50,6 +50,12 @@ from run_llm_pa_decision import (  # noqa: E402
 )
 from schedule_model_student import YearPhase  # noqa: E402
 from simulation_runner import SimulationRunner  # noqa: E402
+from state_assessment import (  # noqa: E402
+    ACTIVE_CONSTRUCTS,
+    DEFAULT_MAX_TOKENS as STATE_ASSESSMENT_MAX_TOKENS,
+    load_state_assessment_prompt,
+    run_state_assessment,
+)
 
 DEFAULT_OUTPUT_DIR = SIMULATION_DIR / "output" / "full_pa_simulation"
 SIMULATION_RUN_MANIFEST_FILENAME = "simulation_run_manifest.json"
@@ -125,8 +131,16 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "activity_performed",
     "app_interaction_status",
     "diary_entry_generated_for_simulation",
-    "planned_activity_for_day",
-    "planned_activity_next_day",
+    "planned_physical_activity",
+    "was_physical_activity_planned_today",
+    "state_assessment_enabled",
+    "state_assessment_mode",
+    "previous_diary_entries_count",
+    "psychological_construct_values_before_state_assessment",
+    "state_assessment_item_scores",
+    "state_assessment_mean_scores_raw",
+    "state_assessment_mean_scores_normalized",
+    "psychological_construct_values_after_state_assessment",
     "behavior_policy",
     "previous_psychological_constructs",
     "updated_psychological_constructs",
@@ -179,7 +193,6 @@ class PersonaRuntimeState:
     selected_schedule_parameters: dict[str, Any]
     runner: SimulationRunner
     psychological_state: dict[str, Any]
-    planned_activity_for_day: Any | None = None
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -542,6 +555,36 @@ def build_llm_ready_context_for_day(
     return _json_ready(llm_context), _json_ready(diagnostic_context)
 
 
+def planned_physical_activity_from_schedule(
+    hourly_context: Sequence[Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    """Summarize the current day's schedule-derived physical-activity slot."""
+    slots = [
+        entry
+        for entry in hourly_context
+        if entry.get("activity_type") == "physical_activity"
+        or entry.get("subtype") == "physical_activity"
+    ]
+    if not slots:
+        return None
+    hours = sorted(int(entry["hour"]) for entry in slots)
+    return {
+        "source": "current_day_schedule",
+        "activity_type": "physical_activity",
+        "scheduled_hours": hours,
+        "start_hour": hours[0],
+        "end_hour": hours[-1] + 1,
+        "duration_min": len(hours) * 60,
+        "schedule_entries": [
+            {
+                key: entry.get(key)
+                for key in ("hour", "activity_type", "subtype", "current_location", "active_constraints")
+            }
+            for entry in slots
+        ],
+    }
+
+
 def _dry_behavior_runner(agent_context: Mapping[str, Any], **kwargs: Any) -> dict[str, dict[str, float]]:
     del kwargs
     # Assert the longitudinal state machine is feeding constructs into LLM1 input.
@@ -561,17 +604,17 @@ def _dry_behavior_runner(agent_context: Mapping[str, Any], **kwargs: Any) -> dic
 
 def _dry_pa_decision_runner(pa_decision_input: Mapping[str, Any], **kwargs: Any) -> dict[str, Any]:
     del kwargs
-    planned_activity = pa_decision_input.get("planned_activity")
+    planned_activity = pa_decision_input.get("planned_physical_activity")
     if planned_activity is None:
-        decision_code = 1
-        decision_label = "do_planned_activity"
-        rationale = "Dry-run day without a prior plan; simulated successful activity."
-        diary = "Dry-run: I completed a simple movement activity today."
+        decision_code = 3
+        decision_label = "extra_activity"
+        rationale = "Dry-run day without scheduled PA; simulated extra activity."
+        diary = "Dry-run: I added some spontaneous movement today."
     else:
         decision_code = 2
         decision_label = "adapt_activity"
-        rationale = "Dry-run day with a carried-over plan; simulated adjusted completion."
-        diary = "Dry-run: I adjusted yesterday's plan and still moved today."
+        rationale = "Dry-run day with scheduled PA; simulated adjusted completion."
+        diary = "Dry-run: I adjusted today's scheduled activity and still moved."
 
     return {
         "persona_id": str(pa_decision_input["persona_id"]),
@@ -641,8 +684,28 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
                 DIARY_ENTRY_GENERATED_FOR_SIMULATION,
             )
         ),
-        "planned_activity_for_day": _json_log_value(record.get("planned_activity_for_day")),
-        "planned_activity_next_day": _json_log_value(closed_loop.get("planned_activity_next_day")),
+        "planned_physical_activity": _json_log_value(record.get("planned_physical_activity")),
+        "was_physical_activity_planned_today": bool(
+            record.get("was_physical_activity_planned_today")
+        ),
+        "state_assessment_enabled": bool(record.get("state_assessment_enabled")),
+        "state_assessment_mode": str(record.get("state_assessment_mode")),
+        "previous_diary_entries_count": int(record.get("previous_diary_entries_count", 0)),
+        "psychological_construct_values_before_state_assessment": _json_log_value(
+            record.get("psychological_construct_values_before_state_assessment")
+        ),
+        "state_assessment_item_scores": _json_log_value(
+            record.get("state_assessment_item_scores")
+        ),
+        "state_assessment_mean_scores_raw": _json_log_value(
+            record.get("state_assessment_mean_scores_raw")
+        ),
+        "state_assessment_mean_scores_normalized": _json_log_value(
+            record.get("state_assessment_mean_scores_normalized")
+        ),
+        "psychological_construct_values_after_state_assessment": _json_log_value(
+            record.get("psychological_construct_values_after_state_assessment")
+        ),
         "behavior_policy": _json_log_value(record.get("behavior_policy")),
         "previous_psychological_constructs": _json_log_value(
             record.get("psychological_constructs_before_update")
@@ -761,6 +824,8 @@ def _build_simulation_run_manifest(
     run_id: str,
     run_status: str,
     output_files: Mapping[str, str],
+    state_assessment_call_count: int,
+    state_assessment_dry_run_count: int,
     error: BaseException | None = None,
 ) -> dict[str, Any]:
     return {
@@ -782,6 +847,20 @@ def _build_simulation_run_manifest(
         "models": {
             "llm1": config.model,
             "llm2": config.model,
+            "state_assessment": config.model,
+        },
+        "state_assessment": {
+            "state_assessment_enabled": True,
+            "state_assessment_prompt_path": str(
+                (SIMULATION_DIR / "AssessmentModel_Prompt.md").relative_to(ROOT_DIR)
+            ),
+            "state_assessment_model_name": config.model,
+            "state_assessment_call_count": state_assessment_call_count,
+            "state_assessment_dry_run_count": state_assessment_dry_run_count,
+            "previous_diary_entries_passed_as_context": True,
+            "previous_diary_entry_context_strategy": "all_previous_entries_for_run",
+            "active_constructs": list(ACTIVE_CONSTRUCTS),
+            "placeholder_next_day_activity_generation_disabled": True,
         },
         "decision_schema": {
             "active_categories": [PA_DECISION_CODEBOOK[key] for key in sorted(PA_DECISION_CODEBOOK)],
@@ -795,13 +874,7 @@ def _build_simulation_run_manifest(
             "few_shot": str((SIMULATION_DIR / "PADecision_FewShot.md").relative_to(ROOT_DIR)),
         },
         "output_files": dict(output_files),
-        "notes": {
-            "app_ignored_interpretation": (
-                "No meaningful engagement with the app prompt/recommendation; generated "
-                "rationale/diary entries are simulation reconstructions for interpretability."
-            ),
-            "diary_entries_are_simulation_artifacts": True,
-        },
+        "notes": {"diary_entries_are_simulation_artifacts": True},
     }
 
 
@@ -812,6 +885,8 @@ def _write_simulation_run_manifest(
     run_id: str,
     run_status: str,
     output_files: Mapping[str, str],
+    state_assessment_call_count: int,
+    state_assessment_dry_run_count: int,
     error: BaseException | None = None,
 ) -> Path:
     return _write_json(
@@ -821,6 +896,8 @@ def _write_simulation_run_manifest(
             run_id=run_id,
             run_status=run_status,
             output_files=output_files,
+            state_assessment_call_count=state_assessment_call_count,
+            state_assessment_dry_run_count=state_assessment_dry_run_count,
             error=error,
         ),
     )
@@ -879,6 +956,8 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
     run_error: BaseException | None = None
     trace_payload: dict[str, Any] | None = None
     records: list[dict[str, Any]] = []
+    state_assessment_call_count = 0
+    state_assessment_dry_run_count = 0
     resource_tracker = ResourceUsageEngine(
         resource_log_path=resource_usage_path,
         enable_tracking=config.enable_resource_tracking,
@@ -893,6 +972,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
     try:
         behavior_system_prompt = "DRY RUN BEHAVIOR PROMPT" if config.dry_run else load_behavior_probability_prompt()
         pa_decision_system_prompt = "DRY RUN PA DECISION PROMPT" if config.dry_run else load_pa_decision_prompt()
+        state_assessment_prompt = load_state_assessment_prompt()
 
         persona_states = _build_persona_states(config)
         persona_metadata = {
@@ -911,6 +991,9 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
         _write_json(persona_metadata_path, persona_metadata)
         start_day_offset = min(int(config.start_date.day) - 1, 29)
         compact_contexts: list[dict[str, Any]] = []
+        previous_diary_entries_by_persona: dict[str, list[dict[str, Any]]] = {
+            state.persona_id: [] for state in persona_states
+        }
 
         for state in persona_states:
             for day_index in range(config.n_days):
@@ -923,7 +1006,9 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 )
                 compact_contexts.append(llm_context)
                 constructs_before = _extract_constructs(state.psychological_state)
-                planned_activity_for_day = _json_ready(state.planned_activity_for_day)
+                planned_activity_for_day = _json_ready(
+                    planned_physical_activity_from_schedule(llm_context["hourly_context_24h"])
+                )
                 per_day_output_dir = (
                     config.output_dir
                     / "llm_outputs"
@@ -942,9 +1027,56 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     resource_tracker=resource_tracker,
                 )
                 closed_loop_update = dict(pipeline_record["closed_loop_update"])
+                previous_diary_entries = previous_diary_entries_by_persona[state.persona_id]
+                assessment = run_state_assessment(
+                    persona_id=state.persona_id,
+                    day_index=day_index,
+                    previous_normalized_values=constructs_before,
+                    current_day_context=llm_context,
+                    planned_physical_activity=planned_activity_for_day,
+                    pa_decision=pipeline_record["pa_decision"],
+                    previous_diary_entries=previous_diary_entries,
+                    prompt_template=state_assessment_prompt,
+                    dry_run=config.dry_run,
+                    model=config.model,
+                    temperature=config.temperature,
+                    top_p=config.top_p,
+                    llm_seed=config.llm_seed,
+                    max_tokens=max(config.llm2_max_tokens, STATE_ASSESSMENT_MAX_TOKENS),
+                )
+                state_assessment_call_count += 1
+                if assessment["state_assessment_mode"] == "dry_run_mock":
+                    state_assessment_dry_run_count += 1
+                assessment_usage = dict(assessment.pop("_resource_usage"))
+                resource_tracker.log_paper(
+                    paper_id=f"state_assessment_persona_{state.persona_id}_day_{day_index}",
+                    stage="state_assessment",
+                    prompt_tokens=int(assessment_usage.get("prompt_tokens") or 0),
+                    response_tokens=int(assessment_usage.get("response_tokens") or 0),
+                    tokens_total=int(assessment_usage.get("tokens_total") or 0),
+                    prompt_tokens_source=str(
+                        assessment_usage.get("token_source") or "unavailable"
+                    ),
+                    response_tokens_source=str(
+                        assessment_usage.get("token_source") or "unavailable"
+                    ),
+                    embedding_tokens_source="unavailable",
+                    token_source=str(assessment_usage.get("token_source") or "unavailable"),
+                    paper_seconds=float(assessment_usage.get("paper_seconds") or 0.0),
+                )
+                assessment_output_path = _write_json(
+                    per_day_output_dir / f"state_assessment_{state.persona_id}.json",
+                    {
+                        key: value
+                        for key, value in assessment.items()
+                        if key != "rendered_prompt"
+                    },
+                )
                 constructs_after = {
-                    str(key): round(min(1.0, max(0.0, float(value))), 3)
-                    for key, value in closed_loop_update["updated_psychological_constructs"].items()
+                    str(key): round(float(value), 6)
+                    for key, value in assessment[
+                        "psychological_construct_values_after_state_assessment"
+                    ].items()
                 }
                 closed_loop_update["updated_psychological_constructs"] = dict(constructs_after)
                 activity_done = bool(closed_loop_update.get("activity_done"))
@@ -961,8 +1093,30 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     "phase": llm_context.get("phase"),
                     "weekday": llm_context.get("weekday"),
                     "psychological_constructs_before_update": constructs_before,
+                    "state_assessment_enabled": assessment["state_assessment_enabled"],
+                    "state_assessment_mode": assessment["state_assessment_mode"],
+                    "psychological_construct_values_before_state_assessment": assessment[
+                        "psychological_construct_values_before_state_assessment"
+                    ],
+                    "state_assessment_item_scores": assessment[
+                        "state_assessment_item_scores"
+                    ],
+                    "state_assessment_mean_scores_raw": assessment[
+                        "state_assessment_mean_scores_raw"
+                    ],
+                    "state_assessment_mean_scores_normalized": assessment[
+                        "state_assessment_mean_scores_normalized"
+                    ],
+                    "psychological_construct_values_after_state_assessment": constructs_after,
+                    "previous_diary_entries_count": assessment[
+                        "previous_diary_entries_count"
+                    ],
+                    "previous_diary_entries_context_used": assessment[
+                        "previous_diary_entries_context_used"
+                    ],
                     "behavior_policy": dict(pipeline_record["behavior_policy"]),
-                    "planned_activity_for_day": planned_activity_for_day,
+                    "planned_physical_activity": planned_activity_for_day,
+                    "was_physical_activity_planned_today": planned_activity_for_day is not None,
                     "persona_metadata": {
                         "input_parameters": dict(state.input_parameters),
                         "poi_distances_km": dict(state.poi_distances_km),
@@ -974,6 +1128,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     "context_summary": _context_summary(llm_context),
                     "output_files": dict(pipeline_record.get("output_files", {})),
                 }
+                record["output_files"]["state_assessment"] = str(assessment_output_path)
                 if config.include_full_hourly_context:
                     record["hourly_context_24h"] = llm_context["hourly_context_24h"]
 
@@ -986,7 +1141,14 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     state.psychological_state,
                     constructs_after,
                 )
-                state.planned_activity_for_day = closed_loop_update["planned_activity_next_day"]
+                previous_diary_entries.append(
+                    {
+                        "day_index": int(day_index),
+                        "diary_entry": str(pipeline_record["pa_decision"]["diary_entry"]),
+                        "physical_activity_decision": decision_label,
+                        "planned_physical_activity": planned_activity_for_day,
+                    }
+                )
 
         contexts_payload = {
             "simulation_metadata": {
@@ -997,6 +1159,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 "base_seed": config.base_seed,
                 "dry_run": config.dry_run,
                 "persona_metadata_file": str(persona_metadata_path),
+                "state_assessment_call_count": state_assessment_call_count,
             },
             "llm_contexts": compact_contexts,
         }
@@ -1027,11 +1190,13 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 run_id=run_id,
                 run_status=run_status,
                 output_files=output_files,
+                state_assessment_call_count=state_assessment_call_count,
+                state_assessment_dry_run_count=state_assessment_dry_run_count,
                 error=run_error,
             )
             resource_tracker.stop_run(
                 total_runtime_seconds=time.perf_counter() - run_started,
-                paper_count=len(records) * 2,
+                paper_count=len(records) * 3,
                 run_status=run_status,
                 error_type=type(run_error).__name__ if run_error is not None else None,
                 error_message=str(run_error)[:500] if run_error is not None else None,

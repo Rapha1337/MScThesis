@@ -51,7 +51,7 @@ def test_full_pa_dry_run_records_include_24_hour_context_when_requested(tmp_path
         assert record["context_summary"]["n_hourly_context_entries"] == 24
 
 
-def test_full_pa_dry_run_carries_planned_activity_and_constructs_forward(tmp_path: Path) -> None:
+def test_full_pa_dry_run_derives_daily_plans_and_carries_constructs_forward(tmp_path: Path) -> None:
     _, trace = _run_dry_simulation(tmp_path)
 
     records_by_persona: dict[str, list[dict]] = {}
@@ -62,12 +62,58 @@ def test_full_pa_dry_run_carries_planned_activity_and_constructs_forward(tmp_pat
     for records in records_by_persona.values():
         records.sort(key=lambda item: item["day_index"])
         day_1, day_2 = records
-        assert day_2["planned_activity_for_day"] == day_1["closed_loop_update"][
-            "planned_activity_next_day"
-        ]
+        for record in records:
+            expected = any(
+                entry["activity_type"] == "physical_activity"
+                or entry["subtype"] == "physical_activity"
+                for entry in record["hourly_context_24h"]
+            )
+            assert record["was_physical_activity_planned_today"] is expected
+            assert (record["planned_physical_activity"] is not None) is expected
+            assert "planned_activity_next_day" not in record["closed_loop_update"]
         assert day_2["psychological_constructs_before_update"] == day_1[
             "psychological_constructs_after_update"
         ]
+
+
+def test_full_pa_dry_run_assesses_state_after_each_diary_with_history(tmp_path: Path) -> None:
+    from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
+
+    config = FullSimulationConfig(
+        n_personas=1,
+        n_days=3,
+        start_date=date(2026, 1, 1),
+        base_seed=137,
+        output_dir=tmp_path / "assessment_history",
+        model="gpt-oss-120b",
+        temperature=0,
+        llm1_max_tokens=2000,
+        llm2_max_tokens=1200,
+        dry_run=True,
+        include_full_hourly_context=True,
+    )
+    trace = run_full_simulation(config)
+    records = trace["records"]
+
+    assert [record["previous_diary_entries_count"] for record in records] == [0, 1, 2]
+    assert all(record["state_assessment_enabled"] for record in records)
+    assert all(record["state_assessment_mode"] == "dry_run_mock" for record in records)
+    for day_index, record in enumerate(records):
+        history = record["previous_diary_entries_context_used"]
+        assert [entry["day_index"] for entry in history] == list(range(day_index))
+        assert all(entry["day_index"] < day_index for entry in history)
+        assert record["psychological_construct_values_before_state_assessment"] == record[
+            "psychological_construct_values_after_state_assessment"
+        ]
+
+    manifest = json.loads(
+        (config.output_dir / "simulation_run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["state_assessment"]["state_assessment_call_count"] == 3
+    assert manifest["state_assessment"]["state_assessment_dry_run_count"] == 3
+    assert manifest["state_assessment"][
+        "placeholder_next_day_activity_generation_disabled"
+    ] is True
 
 
 def test_full_pa_dry_run_outputs_valid_json_and_csv_rows(tmp_path: Path) -> None:
@@ -123,7 +169,7 @@ def test_existing_single_day_pa_decision_input_builder_still_accepts_contexts(tm
     pa_input = build_pa_decision_input(
         compact_context,
         record["behavior_policy"],
-        planned_activity=record["planned_activity_for_day"],
+        planned_activity=record["planned_physical_activity"],
     )
 
     assert pa_input["persona_id"] == compact_context["persona_id"]
@@ -291,7 +337,7 @@ def test_full_pa_llm2_input_still_excludes_raw_metadata_after_overrides(tmp_path
     pa_input = build_pa_decision_input(
         compact_context,
         trace["records"][0]["behavior_policy"],
-        planned_activity=trace["records"][0]["planned_activity_for_day"],
+        planned_activity=trace["records"][0]["planned_physical_activity"],
     )
 
     serialized_pa_input = json.dumps(pa_input)
