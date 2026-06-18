@@ -1111,9 +1111,9 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     persona_id=state.persona_id,
                     day_index=day_index,
                     previous_normalized_values=constructs_before,
-                    current_day_context=llm_context,
-                    planned_physical_activity=planned_activity_for_day,
-                    pa_decision=pipeline_record["pa_decision"],
+                    current_simulated_diary_entry=str(
+                        pipeline_record["pa_decision"]["diary_entry"]
+                    ),
                     previous_diary_entries=previous_diary_entries,
                     prompt_template=state_assessment_prompt,
                     dry_run=config.dry_run,
