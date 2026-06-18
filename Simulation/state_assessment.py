@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -133,6 +134,37 @@ def _validate_score(score: Any, construct: str) -> float | None:
     return value
 
 
+def _cap_numeric_item_scores(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Return a copy with numeric item scores capped to construct scale bounds."""
+    capped_payload = deepcopy(payload)
+    item_scores = capped_payload.get("item_scores")
+    if not isinstance(item_scores, Mapping):
+        return capped_payload
+
+    for construct, construct_payload in item_scores.items():
+        if construct not in BACKEND_CONSTRUCT_RANGES or not isinstance(
+            construct_payload, Mapping
+        ):
+            continue
+        items = construct_payload.get("items")
+        if not isinstance(items, list):
+            continue
+        low, high = BACKEND_CONSTRUCT_RANGES[construct]
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            score = item.get("score")
+            if score is None or isinstance(score, bool) or not isinstance(
+                score, (int, float)
+            ):
+                continue
+            if score < low:
+                item["score"] = float(low)
+            elif score > high:
+                item["score"] = float(high)
+    return capped_payload
+
+
 def _find_removed_construct_keys(value: Any) -> set[str]:
     found: set[str] = set()
     if isinstance(value, Mapping):
@@ -152,6 +184,7 @@ def validate_state_assessment_output(
     expected_persona_id: str,
     expected_day_index: int,
 ) -> dict[str, Any]:
+    payload = _cap_numeric_item_scores(payload)
     removed_anywhere = sorted(_find_removed_construct_keys(payload))
     if removed_anywhere:
         raise ValueError(
