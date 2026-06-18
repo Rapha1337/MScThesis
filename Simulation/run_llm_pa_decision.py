@@ -655,7 +655,6 @@ def update_psychological_constructs_simple(
     """Apply a small deterministic placeholder update to psychological constructs.
 
     Supportive constructs move up after successful PA and down after unsuccessful PA.
-    ``pressure_tension`` is inverted because higher values mean more pressure and tension.
     """
     if decision_label in SUCCESSFUL_PA_DECISION_LABELS:
         supportive_delta = delta_done
@@ -666,8 +665,7 @@ def update_psychological_constructs_simple(
 
     updated: dict[str, float] = {}
     for key, value in previous_constructs.items():
-        delta = -supportive_delta if key == "pressure_tension" else supportive_delta
-        updated[key] = min(1.0, max(0.0, float(value) + delta))
+        updated[key] = min(1.0, max(0.0, float(value) + supportive_delta))
     return updated
 
 

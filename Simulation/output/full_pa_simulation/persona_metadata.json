@@ -1,0 +1,39 @@
+{
+  "personas": [
+    {
+      "persona_id": "StudentPersona_01",
+      "seed": 478163327,
+      "psychological_seed": 488163346,
+      "input_parameters": {
+        "physical_activity_hours_per_week": 5.5,
+        "social_hours_per_week": 10.0,
+        "care_work_hours_per_week": 0.0,
+        "work_hours_per_week": 4.5
+      },
+      "poi_distances_km": {
+        "workplace": 3.0,
+        "indoor_activity": 1.2,
+        "outdoor_activity": 0.6
+      },
+      "selected_schedule_parameters": {
+        "name": "StudentPersona_01",
+        "schedule_rigidity": 0.5998522689455563,
+        "phase_variability": 0.52,
+        "university_load": 0.5697984454593814,
+        "employment_load": 0.19879801548376477,
+        "study_intensity": 0.5388550445173872,
+        "sport_frequency": 0.5688920760213425,
+        "sport_fixedness": 0.5184549365351806,
+        "evening_flexibility": 0.7640993674299605,
+        "day_fragmentation": 0.40916379333115704,
+        "random_event_rate": 0.18,
+        "commute_load": 0.2,
+        "location_switch_frequency": 0.22,
+        "weekend_structure": 0.34,
+        "weekend_social_intensity": 0.7542832037853617,
+        "social_hours_week": 10.0,
+        "carework_hours_week": 0.0
+      }
+    }
+  ]
+}

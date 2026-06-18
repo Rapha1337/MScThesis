@@ -1,0 +1,10 @@
+persona_id,day_index,calendar_date,construct,value_before,value_after,delta,decision_label,activity_done
+StudentPersona_01,0,2026-01-01,action_planning,0.187,0.207,0.01999999999999999,do_planned_activity,True
+StudentPersona_01,0,2026-01-01,attitude_toward_the_behavior,0.718,0.738,0.020000000000000018,do_planned_activity,True
+StudentPersona_01,0,2026-01-01,automaticity,0.464,0.484,0.019999999999999962,do_planned_activity,True
+StudentPersona_01,0,2026-01-01,intention,0.605,0.625,0.020000000000000018,do_planned_activity,True
+StudentPersona_01,0,2026-01-01,intrinsic_motivation,0.683,0.703,0.019999999999999907,do_planned_activity,True
+StudentPersona_01,0,2026-01-01,motivational_competence,0.718,0.738,0.020000000000000018,do_planned_activity,True
+StudentPersona_01,0,2026-01-01,pa_specific_self_control,0.295,0.315,0.020000000000000018,do_planned_activity,True
+StudentPersona_01,0,2026-01-01,perceived_behavioral_control,0.902,0.922,0.020000000000000018,do_planned_activity,True
+StudentPersona_01,0,2026-01-01,subjective_norm,0.43,0.45,0.020000000000000018,do_planned_activity,True

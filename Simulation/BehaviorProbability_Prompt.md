@@ -14,8 +14,6 @@ Du erhältst normalisierte psychosoziale Konstruktwerte zwischen 0 und 1.
 
 Höhere Werte bedeuten eine stärkere Ausprägung des Konstrukts.
 
-Ausnahme: Bei `pressure_tension` bedeuten höhere Werte mehr Druck und Anspannung.
-
 Die Eingabekonstrukte sind:
 
 * `automaticity`
@@ -25,10 +23,7 @@ Die Eingabekonstrukte sind:
 * `perceived_behavioral_control`
 * `attitude_toward_the_behavior`
 * `subjective_norm`
-* `interest_enjoyment`
-* `perceived_competence`
-* `perceived_choice`
-* `pressure_tension`
+* `intrinsic_motivation`
 * `motivational_competence`
 
 ## Auszugebende Handlungstendenzen
@@ -78,10 +73,7 @@ Legende:
 | perceived_behavioral_control |                 +++ |             ++ |            -- |              + |          -- |
 | attitude_toward_the_behavior |                  ++ |              + |            -- |              + |           - |
 | subjective_norm              |                   + |            0/+ |             - |            0/+ |           - |
-| interest_enjoyment           |                  ++ |              + |            -- |             ++ |          -- |
-| perceived_competence         |                  ++ |             ++ |            -- |              + |          -- |
-| perceived_choice             |                  ++ |              + |            -- |              + |          -- |
-| pressure_tension             |                  -- |              - |            ++ |             -- |          ++ |
+| intrinsic_motivation         |                  ++ |             ++ |            -- |             ++ |          -- |
 | motivational_competence      |                   + |             ++ |             - |              + |           - |
 
 ## Interaktionsregeln
@@ -100,17 +92,17 @@ Eine hohe `intention` kombiniert mit niedrigem `action_planning` sollte `adapt_a
 
 Hohes `action_planning` kombiniert mit hoher `pa_specific_self_control` oder hoher `perceived_behavioral_control` sollte `adapt_activity` erhöhen, insbesondere wenn der Agent motiviert ist, aber möglicherweise eine flexible Umsetzung benötigt.
 
-Hohe `automaticity` sollte die Abhängigkeit von hoher expliziter Absicht reduzieren. Sie sollte `do_planned_activity` erhöhen und, wenn sie mit hohem `interest_enjoyment` und hoher `perceived_competence` kombiniert ist, `extra_activity` erhöhen.
+Hohe `automaticity` sollte die Abhängigkeit von hoher expliziter Absicht reduzieren. Sie sollte `do_planned_activity` erhöhen und, wenn sie mit hoher `intrinsic_motivation` kombiniert ist, `extra_activity` erhöhen.
 
-Hohe `pressure_tension` kombiniert mit hoher `perceived_competence` oder hoher `perceived_behavioral_control` sollte die Wahrscheinlichkeit in Richtung `adapt_activity` verschieben.
+Hohe `intrinsic_motivation` bedeutet hohe Freude, wahrgenommene Kompetenz, Wahlfreiheit und geringe Anspannung. Sie sollte `do_planned_activity` und `extra_activity` erhöhen.
 
-Hohe `pressure_tension` kombiniert mit niedriger `perceived_competence`, niedriger `perceived_behavioral_control` oder niedriger `perceived_choice` sollte `skip_activity` und `app_ignored` erhöhen.
+Niedrige `intrinsic_motivation` bedeutet geringe Freude, wahrgenommene Kompetenz oder Wahlfreiheit oder hohe Anspannung. Sie sollte `skip_activity` und `app_ignored` erhöhen.
 
 `adapt_activity` sollte aktives Problemlösen und flexible Selbstregulation repräsentieren, nicht lediglich teilweises Scheitern.
 
-`extra_activity` sollte normalerweise niedrig bleiben, ausser `automaticity`, `interest_enjoyment`, `perceived_competence` und `perceived_choice` sind hoch.
+`extra_activity` sollte normalerweise niedrig bleiben, ausser `automaticity` und `intrinsic_motivation` sind hoch.
 
-`app_ignored` sollte zunehmen, wenn der Agent niedriges Interesse/geringe Freude, niedrige wahrgenommene Wahlfreiheit, niedrige Kompetenz/Kontrolle und hohen Druck/hohe Anspannung aufweist. Sie sollte abnehmen, wenn der Agent interessiert, kompetent, autonom und kontrolliert wirkt.
+`app_ignored` sollte zunehmen, wenn der Agent niedrige `intrinsic_motivation` und niedrige `perceived_behavioral_control` aufweist. Sie sollte abnehmen, wenn der Agent hohe `intrinsic_motivation` aufweist.
 
 ## Wahrscheinlichkeitsbeschränkungen
 

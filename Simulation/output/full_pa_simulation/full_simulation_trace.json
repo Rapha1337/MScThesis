@@ -1,0 +1,145 @@
+{
+  "metadata": {
+    "n_personas": 1,
+    "n_days": 1,
+    "n_records": 1,
+    "start_date": "2026-01-01",
+    "base_seed": 42,
+    "dry_run": true,
+    "persona_metadata_file": "C:\\Users\\rre00\\OneDrive - Universitaet Bern\\Universität\\Master\\FS_26\\Masterarbeit\\Github_MA\\MScThesis\\Simulation\\output\\full_pa_simulation\\persona_metadata.json"
+  },
+  "records": [
+    {
+      "persona_id": "StudentPersona_01",
+      "seed": 478163327,
+      "psychological_seed": 488163346,
+      "day_index": 0,
+      "calendar_date": "2026-01-01",
+      "phase": "high_stress",
+      "weekday": 0,
+      "psychological_constructs_before_update": {
+        "automaticity": 0.464,
+        "pa_specific_self_control": 0.295,
+        "action_planning": 0.187,
+        "intention": 0.605,
+        "perceived_behavioral_control": 0.902,
+        "attitude_toward_the_behavior": 0.718,
+        "subjective_norm": 0.43,
+        "intrinsic_motivation": 0.683,
+        "motivational_competence": 0.718
+      },
+      "behavior_policy": {
+        "do_planned_activity": 0.25,
+        "adapt_activity": 0.3,
+        "skip_activity": 0.2,
+        "extra_activity": 0.1,
+        "app_ignored": 0.15
+      },
+      "planned_activity_for_day": null,
+      "persona_metadata": {
+        "input_parameters": {
+          "physical_activity_hours_per_week": 5.5,
+          "social_hours_per_week": 10.0,
+          "care_work_hours_per_week": 0.0,
+          "work_hours_per_week": 4.5
+        },
+        "poi_distances_km": {
+          "workplace": 3.0,
+          "indoor_activity": 1.2,
+          "outdoor_activity": 0.6
+        },
+        "selected_schedule_parameters": {
+          "name": "StudentPersona_01",
+          "schedule_rigidity": 0.5998522689455563,
+          "phase_variability": 0.52,
+          "university_load": 0.5697984454593814,
+          "employment_load": 0.19879801548376477,
+          "study_intensity": 0.5388550445173872,
+          "sport_frequency": 0.5688920760213425,
+          "sport_fixedness": 0.5184549365351806,
+          "evening_flexibility": 0.7640993674299605,
+          "day_fragmentation": 0.40916379333115704,
+          "random_event_rate": 0.18,
+          "commute_load": 0.2,
+          "location_switch_frequency": 0.22,
+          "weekend_structure": 0.34,
+          "weekend_social_intensity": 0.7542832037853617,
+          "social_hours_week": 10.0,
+          "carework_hours_week": 0.0
+        }
+      },
+      "pa_decision": {
+        "persona_id": "StudentPersona_01",
+        "day_index": 0,
+        "decision_code": 1,
+        "decision_label": "do_planned_activity",
+        "rationale_short": "Dry-run day without a prior plan; simulated successful activity.",
+        "diary_entry": "Dry-run: I completed a simple movement activity today.",
+        "app_interaction_status": "engaged",
+        "activity_performed": true,
+        "diary_entry_generated_for_simulation": true
+      },
+      "closed_loop_update": {
+        "activity_done": true,
+        "activity_performed": true,
+        "app_interaction_status": "engaged",
+        "diary_entry_generated_for_simulation": true,
+        "previous_psychological_constructs": {
+          "automaticity": 0.464,
+          "pa_specific_self_control": 0.295,
+          "action_planning": 0.187,
+          "intention": 0.605,
+          "perceived_behavioral_control": 0.902,
+          "attitude_toward_the_behavior": 0.718,
+          "subjective_norm": 0.43,
+          "intrinsic_motivation": 0.683,
+          "motivational_competence": 0.718
+        },
+        "updated_psychological_constructs": {
+          "automaticity": 0.484,
+          "pa_specific_self_control": 0.315,
+          "action_planning": 0.207,
+          "intention": 0.625,
+          "perceived_behavioral_control": 0.922,
+          "attitude_toward_the_behavior": 0.738,
+          "subjective_norm": 0.45,
+          "intrinsic_motivation": 0.703,
+          "motivational_competence": 0.738
+        },
+        "planned_activity_next_day": {
+          "activity_type": "indoor_activity",
+          "duration_min": 20,
+          "intensity": "moderate",
+          "preferred_time_window": [
+            17,
+            20
+          ],
+          "description": "20 Minuten intensive Oberkörpereinheit im Gym"
+        }
+      },
+      "psychological_constructs_after_update": {
+        "automaticity": 0.484,
+        "pa_specific_self_control": 0.315,
+        "action_planning": 0.207,
+        "intention": 0.625,
+        "perceived_behavioral_control": 0.922,
+        "attitude_toward_the_behavior": 0.738,
+        "subjective_norm": 0.45,
+        "intrinsic_motivation": 0.703,
+        "motivational_competence": 0.738
+      },
+      "context_summary": {
+        "n_hourly_context_entries": 24,
+        "n_wet_hours": 9,
+        "n_downtime_hours": 3,
+        "n_daylight_hours": 9,
+        "mean_energy_level": 0.343
+      },
+      "output_files": {
+        "behavior_policy": "C:\\Users\\rre00\\OneDrive - Universitaet Bern\\Universität\\Master\\FS_26\\Masterarbeit\\Github_MA\\MScThesis\\Simulation\\output\\full_pa_simulation\\llm_outputs\\StudentPersona_01\\day_000\\llm_behavior_probability_StudentPersona_01.json",
+        "pa_decision": "C:\\Users\\rre00\\OneDrive - Universitaet Bern\\Universität\\Master\\FS_26\\Masterarbeit\\Github_MA\\MScThesis\\Simulation\\output\\full_pa_simulation\\llm_outputs\\StudentPersona_01\\day_000\\llm_pa_decision_StudentPersona_01.json",
+        "daily_decision_log": "C:\\Users\\rre00\\OneDrive - Universitaet Bern\\Universität\\Master\\FS_26\\Masterarbeit\\Github_MA\\MScThesis\\Simulation\\output\\full_pa_simulation\\pipeline_closed_loop_daily_log.csv"
+      }
+    }
+  ]
+}
