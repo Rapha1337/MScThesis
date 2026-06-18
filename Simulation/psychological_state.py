@@ -9,7 +9,22 @@ from typing import Any
 # current-state dynamics, update functions, app-feedback logic, or multi-day
 # adaptation. The Excel source data is not required at runtime; the reference
 # parameters below are embedded directly for deterministic seed-based sampling.
+
+# ACTIVE constructs: 9 constructs aligned with State Assessment model
 BACKEND_CONSTRUCT_RANGES: dict[str, tuple[float, float]] = {
+    "automaticity": (1, 7),
+    "pa_specific_self_control": (1, 5),
+    "action_planning": (1, 6),
+    "intention": (1, 7),
+    "perceived_behavioral_control": (1, 7),
+    "attitude_toward_the_behavior": (1, 7),
+    "subjective_norm": (1, 7),
+    "intrinsic_motivation": (0, 4),
+    "motivational_competence": (1, 5),
+}
+
+# Legacy 12-construct ranges: used internally for initial sampling to preserve correlation structure
+_LEGACY_BACKEND_CONSTRUCT_RANGES: dict[str, tuple[float, float]] = {
     "automaticity": (1, 7),
     "pa_specific_self_control": (1, 5),
     "action_planning": (1, 6),
@@ -25,6 +40,96 @@ BACKEND_CONSTRUCT_RANGES: dict[str, tuple[float, float]] = {
 }
 
 PSYCHOLOGICAL_STATE_REFERENCE: dict[str, Any] = {
+    "source": "T1_students_from_simulated_AIcoPA_dataset",
+    "reference_group": "T1_Studierend",
+    "n": 64,
+    "constructs": {
+        "automaticity": {
+            "backend_range": (1, 7),
+            "norm_mean": 0.337,
+            "norm_sd": 0.287,
+            "norm_var": 0.082,
+            "backend_raw_mean": 3.02,
+            "backend_raw_sd": 1.72,
+            "backend_raw_var": 2.967,
+        },
+        "pa_specific_self_control": {
+            "backend_range": (1, 5),
+            "norm_mean": 0.568,
+            "norm_sd": 0.200,
+            "norm_var": 0.040,
+            "backend_raw_mean": 3.27,
+            "backend_raw_sd": 0.80,
+            "backend_raw_var": 0.639,
+        },
+        "action_planning": {
+            "backend_range": (1, 6),
+            "norm_mean": 0.399,
+            "norm_sd": 0.269,
+            "norm_var": 0.072,
+            "backend_raw_mean": 2.99,
+            "backend_raw_sd": 1.34,
+            "backend_raw_var": 1.806,
+        },
+        "intention": {
+            "backend_range": (1, 7),
+            "norm_mean": 0.645,
+            "norm_sd": 0.188,
+            "norm_var": 0.035,
+            "backend_raw_mean": 4.87,
+            "backend_raw_sd": 1.13,
+            "backend_raw_var": 1.273,
+        },
+        "perceived_behavioral_control": {
+            "backend_range": (1, 7),
+            "norm_mean": 0.661,
+            "norm_sd": 0.181,
+            "norm_var": 0.033,
+            "backend_raw_mean": 4.97,
+            "backend_raw_sd": 1.09,
+            "backend_raw_var": 1.184,
+        },
+        "attitude_toward_the_behavior": {
+            "backend_range": (1, 7),
+            "norm_mean": 0.707,
+            "norm_sd": 0.195,
+            "norm_var": 0.038,
+            "backend_raw_mean": 5.24,
+            "backend_raw_sd": 1.17,
+            "backend_raw_var": 1.367,
+        },
+        "subjective_norm": {
+            "backend_range": (1, 7),
+            "norm_mean": 0.513,
+            "norm_sd": 0.156,
+            "norm_var": 0.024,
+            "backend_raw_mean": 4.08,
+            "backend_raw_sd": 0.94,
+            "backend_raw_var": 0.877,
+        },
+        "intrinsic_motivation": {
+            "backend_range": (0, 4),
+            "norm_mean": 0.720,
+            "norm_sd": 0.141,
+            "norm_var": 0.020,
+            "backend_raw_mean": 2.88,
+            "backend_raw_sd": 0.564,
+            "backend_raw_var": 0.318,
+        },
+        "motivational_competence": {
+            "backend_range": (1, 5),
+            "norm_mean": 0.826,
+            "norm_sd": 0.145,
+            "norm_var": 0.021,
+            "backend_raw_mean": 4.30,
+            "backend_raw_sd": 0.58,
+            "backend_raw_var": 0.335,
+        },
+    },
+}
+
+# Legacy 12-construct reference data: used internally for sampling to preserve correlation structure
+_LEGACY_PSYCHOLOGICAL_STATE_REFERENCE: dict[str, Any] = {
     "source": "T1_students_from_simulated_AIcoPA_dataset",
     "reference_group": "T1_Studierend",
     "n": 64,
@@ -141,6 +246,109 @@ PSYCHOLOGICAL_STATE_REFERENCE: dict[str, Any] = {
 }
 
 PSYCHOLOGICAL_STATE_CORRELATION_MATRIX: dict[str, dict[str, float]] = {
+    "automaticity": {
+        "automaticity": 1.000,
+        "pa_specific_self_control": 0.251,
+        "action_planning": 0.209,
+        "intention": 0.119,
+        "perceived_behavioral_control": 0.238,
+        "attitude_toward_the_behavior": 0.062,
+        "subjective_norm": 0.081,
+        "intrinsic_motivation": 0.145,
+        "motivational_competence": 0.199,
+    },
+    "pa_specific_self_control": {
+        "automaticity": 0.251,
+        "pa_specific_self_control": 1.000,
+        "action_planning": 0.163,
+        "intention": 0.325,
+        "perceived_behavioral_control": 0.152,
+        "attitude_toward_the_behavior": 0.134,
+        "subjective_norm": 0.186,
+        "intrinsic_motivation": 0.121,
+        "motivational_competence": -0.039,
+    },
+    "action_planning": {
+        "automaticity": 0.209,
+        "pa_specific_self_control": 0.163,
+        "action_planning": 1.000,
+        "intention": 0.432,
+        "perceived_behavioral_control": 0.172,
+        "attitude_toward_the_behavior": 0.027,
+        "subjective_norm": 0.104,
+        "intrinsic_motivation": 0.190,
+        "motivational_competence": 0.127,
+    },
+    "intention": {
+        "automaticity": 0.119,
+        "pa_specific_self_control": 0.325,
+        "action_planning": 0.432,
+        "intention": 1.000,
+        "perceived_behavioral_control": 0.178,
+        "attitude_toward_the_behavior": 0.429,
+        "subjective_norm": 0.135,
+        "intrinsic_motivation": 0.126,
+        "motivational_competence": 0.187,
+    },
+    "perceived_behavioral_control": {
+        "automaticity": 0.238,
+        "pa_specific_self_control": 0.152,
+        "action_planning": 0.172,
+        "intention": 0.178,
+        "perceived_behavioral_control": 1.000,
+        "attitude_toward_the_behavior": 0.179,
+        "subjective_norm": 0.206,
+        "intrinsic_motivation": 0.042,
+        "motivational_competence": 0.080,
+    },
+    "attitude_toward_the_behavior": {
+        "automaticity": 0.062,
+        "pa_specific_self_control": 0.134,
+        "action_planning": 0.027,
+        "intention": 0.429,
+        "perceived_behavioral_control": 0.179,
+        "attitude_toward_the_behavior": 1.000,
+        "subjective_norm": 0.288,
+        "intrinsic_motivation": -0.047,
+        "motivational_competence": -0.058,
+    },
+    "subjective_norm": {
+        "automaticity": 0.081,
+        "pa_specific_self_control": 0.186,
+        "action_planning": 0.104,
+        "intention": 0.135,
+        "perceived_behavioral_control": 0.206,
+        "attitude_toward_the_behavior": 0.288,
+        "subjective_norm": 1.000,
+        "intrinsic_motivation": 0.044,
+        "motivational_competence": -0.004,
+    },
+    "intrinsic_motivation": {
+        "automaticity": 0.145,
+        "pa_specific_self_control": 0.121,
+        "action_planning": 0.190,
+        "intention": 0.126,
+        "perceived_behavioral_control": 0.042,
+        "attitude_toward_the_behavior": -0.047,
+        "subjective_norm": 0.044,
+        "intrinsic_motivation": 1.000,
+        "motivational_competence": 0.535,
+    },
+    "motivational_competence": {
+        "automaticity": 0.199,
+        "pa_specific_self_control": -0.039,
+        "action_planning": 0.127,
+        "intention": 0.187,
+        "perceived_behavioral_control": 0.080,
+        "attitude_toward_the_behavior": -0.058,
+        "subjective_norm": -0.004,
+        "intrinsic_motivation": 0.535,
+        "motivational_competence": 1.000,
+    },
+}
+
+# Legacy 12-construct correlation matrix: used internally for sampling to preserve original correlations
+_LEGACY_PSYCHOLOGICAL_STATE_CORRELATION_MATRIX: dict[str, dict[str, float]] = {
     "automaticity": {
         "automaticity": 1.000,
         "pa_specific_self_control": 0.251,
@@ -313,6 +521,9 @@ PSYCHOLOGICAL_STATE_CORRELATION_MATRIX: dict[str, dict[str, float]] = {
 
 CONSTRUCT_NAMES: tuple[str, ...] = tuple(BACKEND_CONSTRUCT_RANGES)
 
+# Legacy construct names: used only for internal sampling
+_LEGACY_CONSTRUCT_NAMES: tuple[str, ...] = tuple(_LEGACY_BACKEND_CONSTRUCT_RANGES)
+
 
 def _clip_normalized(value: float) -> float:
     return min(1.0, max(0.0, value))
@@ -323,7 +534,14 @@ def _denormalize(normalized_value: float, construct_name: str) -> float:
     return min_value + normalized_value * (max_value - min_value)
 
 
+def _legacy_denormalize(normalized_value: float, construct_name: str) -> float:
+    """Denormalize using legacy 12-construct ranges."""
+    min_value, max_value = _LEGACY_BACKEND_CONSTRUCT_RANGES[construct_name]
+    return min_value + normalized_value * (max_value - min_value)
+
+
 def _covariance_matrix() -> list[list[float]]:
+    """Generate covariance matrix for 9 active constructs."""
     covariance: list[list[float]] = []
     constructs = PSYCHOLOGICAL_STATE_REFERENCE["constructs"]
     for row_name in CONSTRUCT_NAMES:
@@ -332,6 +550,21 @@ def _covariance_matrix() -> list[list[float]]:
         for column_name in CONSTRUCT_NAMES:
             column_sd = float(constructs[column_name]["norm_sd"])
             correlation = PSYCHOLOGICAL_STATE_CORRELATION_MATRIX[row_name][column_name]
+            covariance_row.append(row_sd * column_sd * correlation)
+        covariance.append(covariance_row)
+    return covariance
+
+
+def _legacy_covariance_matrix() -> list[list[float]]:
+    """Generate covariance matrix for legacy 12 constructs (used for internal sampling)."""
+    covariance: list[list[float]] = []
+    constructs = _LEGACY_PSYCHOLOGICAL_STATE_REFERENCE["constructs"]
+    for row_name in _LEGACY_CONSTRUCT_NAMES:
+        row_sd = float(constructs[row_name]["norm_sd"])
+        covariance_row: list[float] = []
+        for column_name in _LEGACY_CONSTRUCT_NAMES:
+            column_sd = float(constructs[column_name]["norm_sd"])
+            correlation = _LEGACY_PSYCHOLOGICAL_STATE_CORRELATION_MATRIX[row_name][column_name]
             covariance_row.append(row_sd * column_sd * correlation)
         covariance.append(covariance_row)
     return covariance
@@ -368,26 +601,48 @@ def _cholesky_decomposition(matrix: list[list[float]]) -> list[list[float]]:
 
 
 def _sample_multivariate_normal(seed: int) -> dict[str, float]:
+    """Sample from multivariate normal using legacy 12-construct structure, then collapse to 9."""
     rng = random.Random(seed)
-    means = [
-        float(PSYCHOLOGICAL_STATE_REFERENCE["constructs"][name]["norm_mean"])
-        for name in CONSTRUCT_NAMES
+    legacy_constructs = _LEGACY_PSYCHOLOGICAL_STATE_REFERENCE["constructs"]
+    
+    # Sample 12-construct values using legacy correlation structure
+    legacy_means = [
+        float(legacy_constructs[name]["norm_mean"])
+        for name in _LEGACY_CONSTRUCT_NAMES
     ]
-    lower = _cholesky_decomposition(_covariance_matrix())
-    standard_normals = [rng.gauss(0.0, 1.0) for _ in CONSTRUCT_NAMES]
+    lower = _cholesky_decomposition(_legacy_covariance_matrix())
+    standard_normals = [rng.gauss(0.0, 1.0) for _ in _LEGACY_CONSTRUCT_NAMES]
 
-    sampled_values: dict[str, float] = {}
-    for row_index, construct_name in enumerate(CONSTRUCT_NAMES):
+    legacy_values: dict[str, float] = {}
+    for row_index, construct_name in enumerate(_LEGACY_CONSTRUCT_NAMES):
         correlated_offset = sum(
             lower[row_index][column] * standard_normals[column]
             for column in range(row_index + 1)
         )
-        sampled_values[construct_name] = _clip_normalized(means[row_index] + correlated_offset)
+        legacy_values[construct_name] = _clip_normalized(legacy_means[row_index] + correlated_offset)
 
+    # Collapse 4 intrinsic motivation subscales into 1
+    intrinsic_subscales = [
+        legacy_values.get("interest_enjoyment", 0.5),
+        legacy_values.get("perceived_competence", 0.5),
+        legacy_values.get("perceived_choice", 0.5),
+        (1.0 - legacy_values.get("pressure_tension", 0.5)),  # Invert pressure_tension
+    ]
+    intrinsic_motivation = _clip_normalized(sum(intrinsic_subscales) / len(intrinsic_subscales))
+
+    # Return only 9 active constructs
+    sampled_values: dict[str, float] = {}
+    for name in CONSTRUCT_NAMES:
+        if name == "intrinsic_motivation":
+            sampled_values[name] = intrinsic_motivation
+        elif name in legacy_values:
+            sampled_values[name] = legacy_values[name]
+    
     return sampled_values
 
 
 def _mean_state_values() -> dict[str, float]:
+    """Return mean normalized values for 9 active constructs."""
     return {
         construct_name: float(PSYCHOLOGICAL_STATE_REFERENCE["constructs"][construct_name]["norm_mean"])
         for construct_name in CONSTRUCT_NAMES
