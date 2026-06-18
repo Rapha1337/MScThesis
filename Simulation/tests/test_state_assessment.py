@@ -175,7 +175,7 @@ def test_validation_allows_null_items_and_null_mean_keeps_previous_value() -> No
     assert normalized["automaticity"] == 0.5
 
 
-def test_validation_rejects_out_of_range_and_accepts_intrinsic_zero() -> None:
+def test_validation_caps_out_of_range_scores_and_accepts_intrinsic_zero() -> None:
     payload = _valid_payload()
     for item in payload["item_scores"]["intrinsic_motivation"]["items"]:
         item["score"] = 0
@@ -186,14 +186,63 @@ def test_validation_rejects_out_of_range_and_accepts_intrinsic_zero() -> None:
     )
     assert validated["mean_scores_raw"]["intrinsic_motivation"] == 0
 
-    invalid = _valid_payload()
-    invalid["item_scores"]["automaticity"]["items"][0]["score"] = 0
-    with pytest.raises(ValueError, match="outside expected range"):
+    payload = _valid_payload()
+    payload["item_scores"]["automaticity"]["items"][0]["score"] = 8.0
+    payload["item_scores"]["automaticity"]["items"][1]["score"] = 0.0
+    payload["item_scores"]["intrinsic_motivation"]["items"][0]["score"] = -1.0
+    payload["item_scores"]["pa_specific_self_control"]["items"][0]["score"] = 6.0
+    validated = validate_state_assessment_output(
+        payload,
+        expected_persona_id="Persona_01",
+        expected_day_index=2,
+    )
+    assert validated["item_scores"]["automaticity"]["items"][0]["score"] == 7.0
+    assert validated["item_scores"]["automaticity"]["items"][1]["score"] == 1.0
+    assert validated["item_scores"]["intrinsic_motivation"]["items"][0]["score"] == 0.0
+    assert (
+        validated["item_scores"]["pa_specific_self_control"]["items"][0]["score"] == 5.0
+    )
+
+
+def test_validation_keeps_null_scores_and_rejects_non_numeric_scores() -> None:
+    payload = _valid_payload()
+    payload["item_scores"]["automaticity"]["items"][0]["score"] = None
+    validated = validate_state_assessment_output(
+        payload,
+        expected_persona_id="Persona_01",
+        expected_day_index=2,
+    )
+    assert validated["item_scores"]["automaticity"]["items"][0]["score"] is None
+
+    payload = _valid_payload()
+    payload["item_scores"]["automaticity"]["items"][0]["score"] = "6"
+    with pytest.raises(ValueError, match="must be numeric or null"):
         validate_state_assessment_output(
-            invalid,
+            payload,
             expected_persona_id="Persona_01",
             expected_day_index=2,
         )
+
+
+def test_capped_scores_are_used_for_recomputed_means_and_normalization() -> None:
+    payload = _valid_payload()
+    self_control = payload["item_scores"]["pa_specific_self_control"]
+    self_control["mean_score"] = 99
+    for item, score in zip(self_control["items"], [6.0, 0.0, 3.0]):
+        item["score"] = score
+
+    validated = validate_state_assessment_output(
+        payload,
+        expected_persona_id="Persona_01",
+        expected_day_index=2,
+    )
+    normalized = normalize_mean_scores(validated["mean_scores_raw"], _previous_values())
+
+    assert validated["mean_scores_raw"]["pa_specific_self_control"] == pytest.approx(3.0)
+    assert validated["item_scores"]["pa_specific_self_control"]["mean_score"] == pytest.approx(
+        3.0
+    )
+    assert normalized["pa_specific_self_control"] == pytest.approx(0.5)
 
 
 def test_normalization_uses_each_construct_range() -> None:
