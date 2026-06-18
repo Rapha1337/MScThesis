@@ -43,13 +43,29 @@ Für jedes Item der psychologischen Konstrukte:
 
 * stelle `evidence_spans` bereit
 
-* gib eine kurze, präzise Begründung (max. 2 Sätze)
+* gib eine minimale Begründung in `reasoning_short` (maximal 8 Wörter)
+* `evidence_spans` enthält höchstens einen kurzen Beleg pro Item
 
 Wenn Evidenz unzureichend ist:
 
 * `score = null`
 * `evidence_spans = []`
-* leere Begründung
+* `reasoning_short = ""`
+
+## Strikte JSON- und Kompaktheitsregeln
+
+* Gib genau ein JSON-Objekt und keinerlei Text davor oder danach aus.
+* Verwende kein Markdown und keine Markdown-Codeblöcke.
+* Verwende keine Kommentare.
+* Verwende keine nachgestellten Kommas.
+* Alle JSON-Eigenschaftsnamen müssen in doppelten Anführungszeichen stehen.
+* Verwende keine Ellipsen wie `...` in `evidence_spans`.
+* `evidence_spans` enthält pro Item höchstens einen kurzen Textausschnitt.
+* `reasoning_short` enthält maximal 8 Wörter.
+* Bei schwacher Evidenz: `score: null`, `evidence_spans: []`, `reasoning_short: ""`.
+* Item-Evidenz und Begründung dürfen leer sein, wenn die Bewertung aus
+  konstruktübergreifender Evidenz eindeutig ableitbar ist.
+* Die Ausgabe muss direkt mit Python `json.loads` parsebar sein.
 
 ## Psychologische Interpretations-Regeln
 
@@ -109,7 +125,7 @@ Die JSON-Struktur muss folgendem Schema entsprechen:
 "score": <number or null>,
 "range": "1-7",
 "evidence_spans": ["<konkreter Beleg oder leer>"],
-"reasoning_short": "<max. 2 Sätze oder leer>"
+"reasoning_short": "<max. 8 Wörter oder leer>"
 }
 ],
 "mean_score": <number or null>

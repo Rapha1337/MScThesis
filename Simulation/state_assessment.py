@@ -12,7 +12,13 @@ from resource_usage import extract_token_usage
 SIMULATION_DIR = Path(__file__).resolve().parent
 DEFAULT_PROMPT_PATH = SIMULATION_DIR / "AssessmentModel_Prompt.md"
 DEFAULT_MODEL_NAME = "gpt-oss-120b"
-DEFAULT_MAX_TOKENS = 5000
+DEFAULT_MAX_TOKENS = 10000
+RETRY_MIN_MAX_TOKENS = 12000
+JSON_REPAIR_INSTRUCTION = (
+    "Your previous response was not valid JSON. Return only a complete valid JSON object. "
+    "All property names must be enclosed in double quotes. Do not use comments, markdown, "
+    "trailing commas, ellipses, or unquoted keys."
+)
 PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA = 0.20
 PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE = 0.10
 
@@ -352,6 +358,11 @@ def _extract_content(response: Any) -> str:
     return content
 
 
+def _response_finish_reason(response: Any) -> str | None:
+    choices = getattr(response, "choices", None)
+    return getattr(choices[0], "finish_reason", None) if choices else None
+
+
 def call_state_assessment_llm(
     rendered_prompt: str,
     *,
@@ -360,23 +371,80 @@ def call_state_assessment_llm(
     top_p: float = 1,
     llm_seed: int | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
+    repair_instruction: str | None = None,
 ) -> dict[str, Any]:
     started = time.perf_counter()
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "Return exactly one valid JSON object. Do not use markdown fences or "
+                "commentary outside the JSON object."
+            ),
+        },
+        {"role": "user", "content": rendered_prompt},
+    ]
+    if repair_instruction:
+        messages.append({"role": "user", "content": repair_instruction})
     response = _get_client().chat.completions.create(
         model=model,
-        messages=[{"role": "user", "content": rendered_prompt}],
+        messages=messages,
         temperature=temperature,
         top_p=top_p,
         max_tokens=max_tokens,
+        response_format={"type": "json_object"},
         **({"seed": int(llm_seed)} if llm_seed is not None else {}),
     )
     return {
-        "payload": parse_state_assessment_json(_extract_content(response)),
+        "raw_response": _extract_content(response),
+        "finish_reason": _response_finish_reason(response),
         "resource_usage": {
             **extract_token_usage(response),
             "paper_seconds": time.perf_counter() - started,
         },
     }
+
+
+def _save_invalid_state_assessment(
+    *,
+    output_dir: Path,
+    persona_id: str,
+    day_index: int,
+    raw_response: str,
+    parse_error: ValueError,
+    finish_reason: str | None,
+    max_tokens: int,
+    model: str,
+    retry: bool,
+) -> tuple[Path, Path]:
+    safe_persona_id = "".join(
+        character if character.isalnum() or character in "._-" else "_"
+        for character in persona_id
+    )
+    marker = "_retry" if retry else ""
+    raw_path = output_dir / f"state_assessment_{safe_persona_id}{marker}_raw_invalid.txt"
+    metadata_path = output_dir / f"state_assessment_{safe_persona_id}{marker}_parse_error.json"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    raw_path.write_text(raw_response, encoding="utf-8")
+    decode_error = parse_error.__cause__
+    metadata = {
+        "persona_id": persona_id,
+        "day_index": day_index,
+        "parse_error_message": str(parse_error),
+        "line_number": getattr(decode_error, "lineno", None),
+        "column_number": getattr(decode_error, "colno", None),
+        "character_position": getattr(decode_error, "pos", None),
+        "finish_reason": finish_reason,
+        "response_length": len(raw_response),
+        "state_assessment_max_tokens": max_tokens,
+        "model_name": model,
+        "raw_invalid_output_path": str(raw_path),
+    }
+    metadata_path.write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return raw_path, metadata_path
 
 
 def run_state_assessment(
@@ -396,6 +464,7 @@ def run_state_assessment(
     top_p: float = 1,
     llm_seed: int | None = None,
     max_tokens: int = DEFAULT_MAX_TOKENS,
+    output_dir: Path | None = None,
 ) -> dict[str, Any]:
     template = prompt_template if prompt_template is not None else load_state_assessment_prompt()
     rendered_prompt = render_state_assessment_prompt(
@@ -426,16 +495,36 @@ def run_state_assessment(
         }
         mode = "dry_run_mock"
     else:
-        llm_result = call_state_assessment_llm(
-            rendered_prompt,
-            model=model,
-            temperature=temperature,
-            top_p=top_p,
-            llm_seed=llm_seed,
-            max_tokens=max_tokens,
-        )
-        raw_payload = llm_result["payload"]
-        resource_usage = llm_result["resource_usage"]
+        invalid_output_dir = output_dir or SIMULATION_DIR / "output"
+        for attempt in range(2):
+            attempt_max_tokens = max_tokens if attempt == 0 else max(max_tokens, RETRY_MIN_MAX_TOKENS)
+            llm_result = call_state_assessment_llm(
+                rendered_prompt,
+                model=model,
+                temperature=temperature,
+                top_p=top_p,
+                llm_seed=llm_seed,
+                max_tokens=attempt_max_tokens,
+                repair_instruction=JSON_REPAIR_INSTRUCTION if attempt else None,
+            )
+            try:
+                raw_payload = parse_state_assessment_json(llm_result["raw_response"])
+                resource_usage = llm_result["resource_usage"]
+                break
+            except ValueError as exc:
+                _save_invalid_state_assessment(
+                    output_dir=invalid_output_dir,
+                    persona_id=persona_id,
+                    day_index=day_index,
+                    raw_response=llm_result["raw_response"],
+                    parse_error=exc,
+                    finish_reason=llm_result["finish_reason"],
+                    max_tokens=attempt_max_tokens,
+                    model=model,
+                    retry=bool(attempt),
+                )
+                if attempt == 1:
+                    raise
         mode = "llm"
 
     validated = validate_state_assessment_output(
