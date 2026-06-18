@@ -4,8 +4,10 @@ import argparse
 import copy
 import csv
 import json
+import math
 import os
 from pathlib import Path
+import random
 import sys
 import time
 import warnings
@@ -42,6 +44,7 @@ TEMPERATURE = 0
 TOP_P = 1
 LLM1_MAX_TOKENS = 2500
 LLM2_MAX_TOKENS = 2500
+DECISION_SAMPLING_SEED_OFFSET = 20_000_033
 
 PA_DECISION_CODEBOOK: dict[int, str] = {
     0: "skip_activity",
@@ -105,6 +108,13 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "diary_entry_generated_for_simulation",
     "planned_physical_activity",
     "was_physical_activity_planned_today",
+    "behavior_policy_raw",
+    "decision_context_has_planned_pa",
+    "active_decision_probabilities",
+    "sampled_decision_label",
+    "sampled_decision_probability",
+    "decision_sampling_seed",
+    "decision_sampling_random_value",
     "behavior_policy",
     "previous_psychological_constructs",
     "updated_psychological_constructs",
@@ -302,10 +312,77 @@ def validate_behavior_policy(behavior_policy: Mapping[str, Any]) -> dict[str, fl
     return dict(validated["probabilities"])
 
 
+def derive_active_decision_probabilities(
+    behavior_policy: Mapping[str, Any],
+    *,
+    has_planned_pa: bool,
+) -> dict[str, float]:
+    """Derive the context-valid PA outcome distribution from LLM1 tendencies."""
+    raw_policy = validate_behavior_policy(behavior_policy)
+    if not has_planned_pa:
+        extra_probability = raw_policy["extra_activity"]
+        return {
+            "extra_activity": extra_probability,
+            "skip_activity": 1.0 - extra_probability,
+        }
+
+    active = {
+        label: raw_policy[label]
+        for label in (
+            "do_planned_activity",
+            "adapt_activity",
+            "skip_activity",
+            "extra_activity",
+        )
+    }
+    probability_sum = sum(active.values())
+    if not math.isclose(probability_sum, 1.0, abs_tol=1e-12):
+        active = {label: probability / probability_sum for label, probability in active.items()}
+    return active
+
+
+def decision_sampling_seed(agent_context: Mapping[str, Any]) -> int:
+    """Return a stable per-persona, per-day seed for PA outcome sampling."""
+    seed = agent_context.get("seed")
+    day_index = agent_context.get("day_index")
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        raise ValueError("agent_context must contain seed as an integer for decision sampling.")
+    if isinstance(day_index, bool) or not isinstance(day_index, int):
+        raise ValueError("agent_context must contain day_index as an integer.")
+    return int(seed) + DECISION_SAMPLING_SEED_OFFSET + int(day_index)
+
+
+def sample_pa_decision(
+    active_probabilities: Mapping[str, float],
+    *,
+    sampling_seed: int,
+) -> dict[str, Any]:
+    """Sample one label from an ordered probability mapping using a local RNG."""
+    random_value = random.Random(sampling_seed).random()
+    cumulative_probability = 0.0
+    selected_label = ""
+    for label, probability in active_probabilities.items():
+        cumulative_probability += float(probability)
+        selected_label = str(label)
+        if random_value < cumulative_probability:
+            break
+
+    if not selected_label:
+        raise ValueError("active_decision_probabilities must not be empty.")
+    return {
+        "sampled_decision_label": selected_label,
+        "sampled_decision_probability": float(active_probabilities[selected_label]),
+        "decision_sampling_seed": int(sampling_seed),
+        "decision_sampling_random_value": random_value,
+    }
+
+
 def build_pa_decision_input(
     agent_context: Mapping[str, Any],
     behavior_policy: Mapping[str, Any],
     planned_activity: Any | None = None,
+    *,
+    sampling_seed: int | None = None,
 ) -> dict[str, Any]:
     """Build the exact JSON object passed to LLM2."""
     persona_id = agent_context.get("persona_id")
@@ -317,12 +394,26 @@ def build_pa_decision_input(
         raise ValueError("agent_context must contain day_index as an integer.")
 
     planned_physical_activity = _strip_raw_psychological_fields(planned_activity)
+    behavior_policy_raw = validate_behavior_policy(behavior_policy)
+    has_planned_pa = planned_physical_activity is not None
+    active_probabilities = derive_active_decision_probabilities(
+        behavior_policy_raw,
+        has_planned_pa=has_planned_pa,
+    )
+    actual_sampling_seed = (
+        decision_sampling_seed(agent_context) if sampling_seed is None else int(sampling_seed)
+    )
+    sampling = sample_pa_decision(active_probabilities, sampling_seed=actual_sampling_seed)
     return {
         "persona_id": persona_id,
         "day_index": int(day_index),
-        "behavior_policy": validate_behavior_policy(behavior_policy),
+        "behavior_policy": behavior_policy_raw,
+        "behavior_policy_raw": behavior_policy_raw,
+        "decision_context_has_planned_pa": has_planned_pa,
+        "active_decision_probabilities": active_probabilities,
+        **sampling,
         "planned_physical_activity": planned_physical_activity,
-        "was_physical_activity_planned_today": planned_physical_activity is not None,
+        "was_physical_activity_planned_today": has_planned_pa,
         "psychological_construct_values": extract_psychological_construct_values(agent_context),
         "daily_context": prepare_daily_context_for_pa_decision(agent_context),
     }
@@ -335,9 +426,10 @@ INPUT:
 {input_json}
 
 IMPORTANT:
-Use only the provided behavior_policy, psychological_construct_values, daily_context,
-planned_physical_activity, and was_physical_activity_planned_today. The planned physical
-activity is schedule-derived for this simulated day; do not propose a new activity.
+The PA outcome has already been selected by the simulation. Keep sampled_decision_label
+unchanged and use it as decision_label. Use the provided context only to write a coherent
+rationale and diary entry. The planned physical activity is schedule-derived for this
+simulated day; do not propose a new activity.
 Return exactly one valid JSON object in the required PA decision schema.
 """.strip()
 
@@ -378,6 +470,7 @@ def validate_pa_decision_output(
     payload: Mapping[str, Any],
     expected_persona_id: str,
     expected_day_index: int,
+    expected_decision_label: str | None = None,
 ) -> dict[str, Any]:
     core_payload = {
         key: value
@@ -415,6 +508,11 @@ def validate_pa_decision_output(
         raise ValueError(
             f"decision_label must be {expected_label!r} for decision_code {decision_code}."
         )
+    if expected_decision_label is not None and expected_label != expected_decision_label:
+        raise ValueError(
+            "LLM2 must not override sampled_decision_label "
+            f"{expected_decision_label!r}; got {expected_label!r}."
+        )
 
     rationale_short = _require_non_empty_string(core_payload, "rationale_short")
     diary_entry = _require_non_empty_string(core_payload, "diary_entry")
@@ -436,11 +534,13 @@ def parse_and_validate_pa_decision(
     *,
     expected_persona_id: str,
     expected_day_index: int,
+    expected_decision_label: str | None = None,
 ) -> dict[str, Any]:
     return validate_pa_decision_output(
         parse_pa_decision_json(raw),
         expected_persona_id=expected_persona_id,
         expected_day_index=expected_day_index,
+        expected_decision_label=expected_decision_label,
     )
 
 
@@ -565,6 +665,7 @@ def run_pa_decision_llm(
             content,
             expected_persona_id=persona_id,
             expected_day_index=day_index,
+            expected_decision_label=str(pa_decision_input["sampled_decision_label"]),
         )
         result["_resource_usage"] = {
             **extract_token_usage(response),
@@ -672,6 +773,7 @@ def write_daily_decision_log_row(
     planned_physical_activity: Any | None,
     was_physical_activity_planned_today: bool,
     behavior_policy: Mapping[str, Any],
+    decision_metadata: Mapping[str, Any],
     previous_psychological_constructs: Mapping[str, Any],
     updated_psychological_constructs: Mapping[str, Any],
 ) -> Path:
@@ -695,6 +797,21 @@ def write_daily_decision_log_row(
         "planned_physical_activity": _json_log_value(planned_physical_activity),
         "was_physical_activity_planned_today": bool(was_physical_activity_planned_today),
         "behavior_policy": _json_log_value(dict(behavior_policy)),
+        "behavior_policy_raw": _json_log_value(decision_metadata["behavior_policy_raw"]),
+        "decision_context_has_planned_pa": bool(
+            decision_metadata["decision_context_has_planned_pa"]
+        ),
+        "active_decision_probabilities": _json_log_value(
+            decision_metadata["active_decision_probabilities"]
+        ),
+        "sampled_decision_label": str(decision_metadata["sampled_decision_label"]),
+        "sampled_decision_probability": float(
+            decision_metadata["sampled_decision_probability"]
+        ),
+        "decision_sampling_seed": int(decision_metadata["decision_sampling_seed"]),
+        "decision_sampling_random_value": float(
+            decision_metadata["decision_sampling_random_value"]
+        ),
         "previous_psychological_constructs": _json_log_value(
             dict(previous_psychological_constructs)
         ),
@@ -717,6 +834,7 @@ def build_closed_loop_update(
     agent_context: Mapping[str, Any],
     pa_decision: Mapping[str, Any],
     behavior_policy: Mapping[str, Any],
+    decision_metadata: Mapping[str, Any],
     planned_activity_for_day: Any | None,
     log_path: Path,
 ) -> dict[str, Any]:
@@ -736,6 +854,7 @@ def build_closed_loop_update(
         planned_physical_activity=planned_activity_for_day,
         was_physical_activity_planned_today=planned_activity_for_day is not None,
         behavior_policy=behavior_policy,
+        decision_metadata=decision_metadata,
         previous_psychological_constructs=previous_constructs,
         updated_psychological_constructs=updated_constructs,
     )
@@ -882,6 +1001,7 @@ def run_pipeline_for_context(
         pa_decision,
         expected_persona_id=persona_id,
         expected_day_index=day_index,
+        expected_decision_label=str(pa_decision_input["sampled_decision_label"]),
     )
 
     pa_decision_output_path = save_agent_pa_decision(
@@ -895,6 +1015,7 @@ def run_pipeline_for_context(
         agent_context=agent_context,
         pa_decision=pa_decision,
         behavior_policy=behavior_policy,
+        decision_metadata=pa_decision_input,
         planned_activity_for_day=planned_activity,
         log_path=actual_daily_log_path,
     )
@@ -903,6 +1024,21 @@ def run_pipeline_for_context(
         "persona_id": persona_id,
         "day_index": day_index,
         "behavior_policy": behavior_policy,
+        "behavior_policy_raw": dict(pa_decision_input["behavior_policy_raw"]),
+        "decision_context_has_planned_pa": bool(
+            pa_decision_input["decision_context_has_planned_pa"]
+        ),
+        "active_decision_probabilities": dict(
+            pa_decision_input["active_decision_probabilities"]
+        ),
+        "sampled_decision_label": str(pa_decision_input["sampled_decision_label"]),
+        "sampled_decision_probability": float(
+            pa_decision_input["sampled_decision_probability"]
+        ),
+        "decision_sampling_seed": int(pa_decision_input["decision_sampling_seed"]),
+        "decision_sampling_random_value": float(
+            pa_decision_input["decision_sampling_random_value"]
+        ),
         "pa_decision": pa_decision,
         "closed_loop_update": closed_loop_update,
         "output_files": {
