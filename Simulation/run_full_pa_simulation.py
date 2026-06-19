@@ -204,7 +204,7 @@ class FullSimulationConfig:
     cli_overrides: dict[str, list[float | None]] | None = None
     daily_log_path: Path | None = None
     enable_resource_tracking: bool = True
-    enable_codecarbon: bool = False
+    enable_codecarbon: bool = True
     verbose_llm_debug: bool = False
     top_p: float = TOP_P
     llm_seed: int | None = None
