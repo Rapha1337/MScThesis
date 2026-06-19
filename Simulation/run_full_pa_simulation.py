@@ -263,8 +263,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--enable-codecarbon",
+        dest="enable_codecarbon",
         action="store_true",
-        help="Enable optional CodeCarbon tracking when codecarbon is installed.",
+        default=True,
+        help="Enable optional CodeCarbon tracking when codecarbon is installed (default).",
+    )
+    parser.add_argument(
+        "--disable-codecarbon",
+        dest="enable_codecarbon",
+        action="store_false",
+        help="Disable optional CodeCarbon tracking.",
     )
     parser.add_argument(
         "--verbose-llm-debug",
