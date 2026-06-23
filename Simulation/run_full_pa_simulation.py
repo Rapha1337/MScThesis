@@ -40,6 +40,7 @@ from run_llm_pa_decision import (  # noqa: E402
     TEMPERATURE,
     TOP_P,
     DIARY_ENTRY_GENERATED_FOR_SIMULATION,
+    DECISION_SOURCE_LLM2_CONTEXTUAL,
     SUCCESSFUL_PA_DECISION_LABELS,
     UNSUCCESSFUL_PA_DECISION_LABELS,
     activity_performed_for_decision_label,
@@ -161,11 +162,8 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "psychological_construct_values_after_state_assessment",
     "behavior_policy_raw",
     "decision_context_has_planned_pa",
-    "active_decision_probabilities",
-    "sampled_decision_label",
-    "sampled_decision_probability",
-    "decision_sampling_seed",
-    "decision_sampling_random_value",
+    "valid_decision_categories",
+    "decision_source",
     "behavior_policy",
     "previous_psychological_constructs",
     "updated_psychological_constructs",
@@ -720,29 +718,57 @@ def _dry_behavior_runner(agent_context: Mapping[str, Any], **kwargs: Any) -> dic
 def _dry_pa_decision_runner(pa_decision_input: Mapping[str, Any], **kwargs: Any) -> dict[str, Any]:
     del kwargs
     planned_activity = pa_decision_input.get("planned_physical_activity")
-    decision_label = str(pa_decision_input["sampled_decision_label"])
+    valid_categories = [str(label) for label in pa_decision_input.get("valid_decision_categories", [])]
+    if not valid_categories:
+        raise ValueError("Dry-run LLM2 requires valid_decision_categories.")
+
+    hourly_context = list(pa_decision_input.get("daily_context", {}).get("hourly_context_24h", []))
+    wet_hours = sum(1 for entry in hourly_context if entry.get("is_wet"))
+    low_energy_hours = sum(1 for entry in hourly_context if entry.get("energy_category") == "low")
+    daylight_free_hours = sum(
+        1
+        for entry in hourly_context
+        if entry.get("is_daylight") and entry.get("activity_type") == "downtime"
+    )
+    behavior_policy = dict(pa_decision_input.get("behavior_policy", {}))
+
+    if planned_activity is None:
+        if "extra_activity" in valid_categories and daylight_free_hours >= 2 and wet_hours <= 4:
+            decision_label = "extra_activity"
+        else:
+            decision_label = "skip_activity"
+    elif wet_hours >= 10 or low_energy_hours >= 8:
+        decision_label = "adapt_activity" if "adapt_activity" in valid_categories else "skip_activity"
+    elif behavior_policy.get("skip_activity", 0.0) >= 0.60:
+        decision_label = "skip_activity"
+    else:
+        decision_label = "do_planned_activity"
+
+    if decision_label not in valid_categories:
+        decision_label = valid_categories[0]
+
     decision_code = next(
         code for code, codebook_label in PA_DECISION_CODEBOOK.items()
         if codebook_label == decision_label
     )
     if planned_activity is None and decision_label == "skip_activity":
-        rationale = "Dry-run day without scheduled PA; no spontaneous activity occurred."
-        diary = "Dry-run: I rested instead and did no additional movement today."
+        rationale = "Dry-run LLM2 selected no spontaneous PA because no PA was planned and context did not strongly support extra activity."
+        diary = "Dry-run: I rested today and did not add any spontaneous movement."
     elif planned_activity is None:
-        rationale = "Dry-run day without scheduled PA; simulated spontaneous activity."
-        diary = "Dry-run: I added some spontaneous movement today."
+        rationale = "Dry-run LLM2 selected extra activity because available daylight/free time made spontaneous movement plausible."
+        diary = "Dry-run: I used an open part of the day for some extra movement."
     elif decision_label == "skip_activity":
-        rationale = "Dry-run day with scheduled PA; the planned activity was not performed."
-        diary = "Dry-run: I did not do today's scheduled activity."
-    elif decision_label == "extra_activity":
-        rationale = "Dry-run day with scheduled PA; simulated additional spontaneous activity."
-        diary = "Dry-run: I added spontaneous movement beyond today's plan."
+        rationale = "Dry-run LLM2 selected skipping the planned PA because psychological tendencies and context made follow-through unlikely."
+        diary = "Dry-run: I did not do today's planned activity."
     elif decision_label == "adapt_activity":
-        rationale = "Dry-run day with scheduled PA; simulated adjusted completion."
-        diary = "Dry-run: I adjusted today's scheduled activity and still moved."
+        rationale = "Dry-run LLM2 selected an adapted activity because the plan existed but contextual barriers favored a reduced version."
+        diary = "Dry-run: I adjusted today's planned activity and still moved a bit."
+    elif decision_label == "extra_activity":
+        rationale = "Dry-run LLM2 selected extra activity because the context allowed movement beyond the plan."
+        diary = "Dry-run: I added spontaneous movement beyond today's plan."
     else:
-        rationale = "Dry-run day with scheduled PA; simulated completion as planned."
-        diary = "Dry-run: I completed today's scheduled activity as planned."
+        rationale = "Dry-run LLM2 selected doing the planned activity because psychological tendencies and context supported it."
+        diary = "Dry-run: I completed today's planned activity as planned."
 
     return {
         "persona_id": str(pa_decision_input["persona_id"]),
@@ -759,7 +785,6 @@ def _dry_pa_decision_runner(pa_decision_input: Mapping[str, Any], **kwargs: Any)
             "paper_seconds": 0.0,
         },
     }
-
 
 def _context_summary(llm_context: Mapping[str, Any]) -> dict[str, Any]:
     hourly = list(llm_context.get("hourly_context_24h", []))
@@ -854,13 +879,10 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         "decision_context_has_planned_pa": bool(
             record.get("decision_context_has_planned_pa")
         ),
-        "active_decision_probabilities": _json_log_value(
-            record.get("active_decision_probabilities")
+        "valid_decision_categories": _json_log_value(
+            record.get("valid_decision_categories")
         ),
-        "sampled_decision_label": str(record.get("sampled_decision_label")),
-        "sampled_decision_probability": float(record["sampled_decision_probability"]),
-        "decision_sampling_seed": int(record["decision_sampling_seed"]),
-        "decision_sampling_random_value": float(record["decision_sampling_random_value"]),
+        "decision_source": str(record.get("decision_source")),
         "previous_psychological_constructs": _json_log_value(
             record.get("psychological_constructs_before_update")
         ),
@@ -1033,6 +1055,9 @@ def _build_simulation_run_manifest(
             "deprecated_categories": list(DEPRECATED_DECISION_CATEGORIES),
             "app_ignored_active": False,
             "app_specific_output_fields_active": False,
+            "decision_source": DECISION_SOURCE_LLM2_CONTEXTUAL,
+            "llm2_makes_final_contextual_decision": True,
+            "pre_llm2_seeded_sampling_active": False,
         },
         "prompt_files": {
             "llm1": str((SIMULATION_DIR / "BehaviorProbability_Prompt.md").relative_to(ROOT_DIR)),
@@ -1315,17 +1340,10 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     "decision_context_has_planned_pa": bool(
                         pipeline_record["decision_context_has_planned_pa"]
                     ),
-                    "active_decision_probabilities": dict(
-                        pipeline_record["active_decision_probabilities"]
+                    "valid_decision_categories": list(
+                        pipeline_record["valid_decision_categories"]
                     ),
-                    "sampled_decision_label": pipeline_record["sampled_decision_label"],
-                    "sampled_decision_probability": pipeline_record[
-                        "sampled_decision_probability"
-                    ],
-                    "decision_sampling_seed": pipeline_record["decision_sampling_seed"],
-                    "decision_sampling_random_value": pipeline_record[
-                        "decision_sampling_random_value"
-                    ],
+                    "decision_source": pipeline_record["decision_source"],
                     "planned_physical_activity": planned_activity_for_day,
                     "was_physical_activity_planned_today": planned_activity_for_day is not None,
                     "persona_metadata": {
