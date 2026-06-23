@@ -44,7 +44,8 @@ TEMPERATURE = 0
 TOP_P = 1
 LLM1_MAX_TOKENS = 10000
 LLM2_MAX_TOKENS = 10000
-DECISION_SAMPLING_SEED_OFFSET = 20_000_033
+DECISION_SAMPLING_SEED_OFFSET = 20_000_033  # Deprecated: no longer used by the active LLM2 decision flow.
+DECISION_SOURCE_LLM2_CONTEXTUAL = "llm2_contextual_decision"
 
 PA_DECISION_CODEBOOK: dict[int, str] = {
     0: "skip_activity",
@@ -110,11 +111,8 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "was_physical_activity_planned_today",
     "behavior_policy_raw",
     "decision_context_has_planned_pa",
-    "active_decision_probabilities",
-    "sampled_decision_label",
-    "sampled_decision_probability",
-    "decision_sampling_seed",
-    "decision_sampling_random_value",
+    "valid_decision_categories",
+    "decision_source",
     "behavior_policy",
     "previous_psychological_constructs",
     "updated_psychological_constructs",
@@ -312,37 +310,50 @@ def validate_behavior_policy(behavior_policy: Mapping[str, Any]) -> dict[str, fl
     return dict(validated["probabilities"])
 
 
+def derive_valid_decision_categories(*, has_planned_pa: bool) -> list[str]:
+    """Return labels that LLM2 may choose for the current PA-planning context."""
+    if has_planned_pa:
+        return [
+            "do_planned_activity",
+            "adapt_activity",
+            "skip_activity",
+            "extra_activity",
+        ]
+    return ["skip_activity", "extra_activity"]
+
+
 def derive_active_decision_probabilities(
     behavior_policy: Mapping[str, Any],
     *,
     has_planned_pa: bool,
 ) -> dict[str, float]:
-    """Derive the context-valid PA outcome distribution from LLM1 tendencies."""
-    raw_policy = validate_behavior_policy(behavior_policy)
-    if not has_planned_pa:
-        extra_probability = raw_policy["extra_activity"]
-        return {
-            "extra_activity": extra_probability,
-            "skip_activity": 1.0 - extra_probability,
-        }
+    """Deprecated compatibility helper returning valid-category priors, not a sampling distribution.
 
-    active = {
-        label: raw_policy[label]
-        for label in (
-            "do_planned_activity",
-            "adapt_activity",
-            "skip_activity",
-            "extra_activity",
-        )
-    }
+    The active full simulation no longer samples a PA decision before LLM2.
+    This helper is retained for older callers/tests that inspect context-valid
+    psychological priors. LLM2 receives these values as tendencies only.
+    """
+    warnings.warn(
+        "derive_active_decision_probabilities() is deprecated for decision sampling; "
+        "use derive_valid_decision_categories() and let LLM2 select the final decision.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    raw_policy = validate_behavior_policy(behavior_policy)
+    valid_categories = derive_valid_decision_categories(has_planned_pa=has_planned_pa)
+    active = {label: raw_policy[label] for label in valid_categories}
     probability_sum = sum(active.values())
-    if not math.isclose(probability_sum, 1.0, abs_tol=1e-12):
+    if probability_sum > 0 and not math.isclose(probability_sum, 1.0, abs_tol=1e-12):
         active = {label: probability / probability_sum for label, probability in active.items()}
     return active
 
-
 def decision_sampling_seed(agent_context: Mapping[str, Any]) -> int:
-    """Return a stable per-persona, per-day seed for PA outcome sampling."""
+    """Deprecated legacy helper; active workflow no longer samples before LLM2."""
+    warnings.warn(
+        "decision_sampling_seed() is deprecated; LLM2 now makes the final contextual decision.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     seed = agent_context.get("seed")
     day_index = agent_context.get("day_index")
     if isinstance(seed, bool) or not isinstance(seed, int):
@@ -357,7 +368,12 @@ def sample_pa_decision(
     *,
     sampling_seed: int,
 ) -> dict[str, Any]:
-    """Sample one label from an ordered probability mapping using a local RNG."""
+    """Deprecated legacy helper; active workflow no longer samples before LLM2."""
+    warnings.warn(
+        "sample_pa_decision() is deprecated; LLM2 now makes the final contextual decision.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     random_value = random.Random(sampling_seed).random()
     cumulative_probability = 0.0
     selected_label = ""
@@ -384,7 +400,13 @@ def build_pa_decision_input(
     *,
     sampling_seed: int | None = None,
 ) -> dict[str, Any]:
-    """Build the exact JSON object passed to LLM2."""
+    """Build the exact JSON object passed to LLM2.
+
+    ``sampling_seed`` is accepted only for backward-compatible call sites and is
+    intentionally ignored: the active workflow no longer samples a decision
+    before LLM2.
+    """
+    del sampling_seed
     persona_id = agent_context.get("persona_id")
     if not isinstance(persona_id, str) or not persona_id.strip():
         raise ValueError("agent_context must contain a non-empty string persona_id.")
@@ -396,28 +418,20 @@ def build_pa_decision_input(
     planned_physical_activity = _strip_raw_psychological_fields(planned_activity)
     behavior_policy_raw = validate_behavior_policy(behavior_policy)
     has_planned_pa = planned_physical_activity is not None
-    active_probabilities = derive_active_decision_probabilities(
-        behavior_policy_raw,
-        has_planned_pa=has_planned_pa,
-    )
-    actual_sampling_seed = (
-        decision_sampling_seed(agent_context) if sampling_seed is None else int(sampling_seed)
-    )
-    sampling = sample_pa_decision(active_probabilities, sampling_seed=actual_sampling_seed)
+    valid_categories = derive_valid_decision_categories(has_planned_pa=has_planned_pa)
     return {
         "persona_id": persona_id,
         "day_index": int(day_index),
         "behavior_policy": behavior_policy_raw,
         "behavior_policy_raw": behavior_policy_raw,
         "decision_context_has_planned_pa": has_planned_pa,
-        "active_decision_probabilities": active_probabilities,
-        **sampling,
+        "valid_decision_categories": valid_categories,
+        "decision_source": DECISION_SOURCE_LLM2_CONTEXTUAL,
         "planned_physical_activity": planned_physical_activity,
         "was_physical_activity_planned_today": has_planned_pa,
         "psychological_construct_values": extract_psychological_construct_values(agent_context),
         "daily_context": prepare_daily_context_for_pa_decision(agent_context),
     }
-
 
 def build_pa_decision_user_prompt(pa_decision_input: Mapping[str, Any]) -> str:
     input_json = json.dumps(pa_decision_input, ensure_ascii=False, separators=(",", ":"))
@@ -426,11 +440,12 @@ INPUT:
 {input_json}
 
 IMPORTANT:
-The PA outcome has already been selected by the simulation. Keep sampled_decision_label
-unchanged and use it as decision_label. Use the provided context only to write a coherent
-rationale and diary entry. The planned physical activity is schedule-derived for this
-simulated day; do not propose a new activity.
-Return exactly one valid JSON object in the required PA decision schema.
+You must make the final PA decision yourself from valid_decision_categories. Treat
+behavior_policy as psychological tendencies, not as a predetermined outcome. Use the
+daily context and planned_physical_activity to decide whether context reinforces or
+overrides those tendencies. The planned physical activity is schedule-derived for this
+simulated day; do not propose a new activity or future activity. Return exactly one
+valid JSON object in the required PA decision schema.
 """.strip()
 
 
@@ -471,6 +486,8 @@ def validate_pa_decision_output(
     expected_persona_id: str,
     expected_day_index: int,
     expected_decision_label: str | None = None,
+    valid_decision_categories: Sequence[str] | None = None,
+    has_planned_pa: bool | None = None,
 ) -> dict[str, Any]:
     core_payload = {
         key: value
@@ -509,9 +526,23 @@ def validate_pa_decision_output(
             f"decision_label must be {expected_label!r} for decision_code {decision_code}."
         )
     if expected_decision_label is not None and expected_label != expected_decision_label:
+        warnings.warn(
+            "expected_decision_label is deprecated and ignored by the active LLM2 contextual decision flow.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+    if valid_decision_categories is not None:
+        valid_category_set = {str(label) for label in valid_decision_categories}
+        if expected_label not in valid_category_set:
+            raise ValueError(
+                f"decision_label {expected_label!r} is not valid for this day; "
+                f"valid categories are {sorted(valid_category_set)}."
+            )
+
+    if has_planned_pa is False and expected_label in {"do_planned_activity", "adapt_activity"}:
         raise ValueError(
-            "LLM2 must not override sampled_decision_label "
-            f"{expected_decision_label!r}; got {expected_label!r}."
+            f"decision_label {expected_label!r} is inconsistent with no planned PA today."
         )
 
     rationale_short = _require_non_empty_string(core_payload, "rationale_short")
@@ -535,12 +566,16 @@ def parse_and_validate_pa_decision(
     expected_persona_id: str,
     expected_day_index: int,
     expected_decision_label: str | None = None,
+    valid_decision_categories: Sequence[str] | None = None,
+    has_planned_pa: bool | None = None,
 ) -> dict[str, Any]:
     return validate_pa_decision_output(
         parse_pa_decision_json(raw),
         expected_persona_id=expected_persona_id,
         expected_day_index=expected_day_index,
         expected_decision_label=expected_decision_label,
+        valid_decision_categories=valid_decision_categories,
+        has_planned_pa=has_planned_pa,
     )
 
 
@@ -665,7 +700,8 @@ def run_pa_decision_llm(
             content,
             expected_persona_id=persona_id,
             expected_day_index=day_index,
-            expected_decision_label=str(pa_decision_input["sampled_decision_label"]),
+            valid_decision_categories=pa_decision_input.get("valid_decision_categories"),
+            has_planned_pa=bool(pa_decision_input.get("was_physical_activity_planned_today")),
         )
         result["_resource_usage"] = {
             **extract_token_usage(response),
@@ -801,17 +837,10 @@ def write_daily_decision_log_row(
         "decision_context_has_planned_pa": bool(
             decision_metadata["decision_context_has_planned_pa"]
         ),
-        "active_decision_probabilities": _json_log_value(
-            decision_metadata["active_decision_probabilities"]
+        "valid_decision_categories": _json_log_value(
+            decision_metadata["valid_decision_categories"]
         ),
-        "sampled_decision_label": str(decision_metadata["sampled_decision_label"]),
-        "sampled_decision_probability": float(
-            decision_metadata["sampled_decision_probability"]
-        ),
-        "decision_sampling_seed": int(decision_metadata["decision_sampling_seed"]),
-        "decision_sampling_random_value": float(
-            decision_metadata["decision_sampling_random_value"]
-        ),
+        "decision_source": str(decision_metadata["decision_source"]),
         "previous_psychological_constructs": _json_log_value(
             dict(previous_psychological_constructs)
         ),
@@ -1001,7 +1030,8 @@ def run_pipeline_for_context(
         pa_decision,
         expected_persona_id=persona_id,
         expected_day_index=day_index,
-        expected_decision_label=str(pa_decision_input["sampled_decision_label"]),
+        valid_decision_categories=pa_decision_input.get("valid_decision_categories"),
+        has_planned_pa=bool(pa_decision_input.get("was_physical_activity_planned_today")),
     )
 
     pa_decision_output_path = save_agent_pa_decision(
@@ -1028,17 +1058,8 @@ def run_pipeline_for_context(
         "decision_context_has_planned_pa": bool(
             pa_decision_input["decision_context_has_planned_pa"]
         ),
-        "active_decision_probabilities": dict(
-            pa_decision_input["active_decision_probabilities"]
-        ),
-        "sampled_decision_label": str(pa_decision_input["sampled_decision_label"]),
-        "sampled_decision_probability": float(
-            pa_decision_input["sampled_decision_probability"]
-        ),
-        "decision_sampling_seed": int(pa_decision_input["decision_sampling_seed"]),
-        "decision_sampling_random_value": float(
-            pa_decision_input["decision_sampling_random_value"]
-        ),
+        "valid_decision_categories": list(pa_decision_input["valid_decision_categories"]),
+        "decision_source": str(pa_decision_input["decision_source"]),
         "pa_decision": pa_decision,
         "closed_loop_update": closed_loop_update,
         "output_files": {

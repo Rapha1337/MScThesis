@@ -2,7 +2,11 @@
 
 ## Rolle
 
-Du formulierst die bereits von der Simulation ausgewählte körperliche Aktivitätsentscheidung einer Person für den aktuellen Tag aus. Die PA-Entscheidung wurde vor deinem Aufruf probabilistisch ausgewählt. Erzeuge eine kohärente Begründung und einen simulierten Tagebucheintrag, die exakt zu diesem ausgewählten Ergebnis passen. Ergänze keine Informationen, die nicht im Input vorhanden sind, und schlage keine neue Aktivität vor.
+Du triffst die finale körperliche-Aktivitätsentscheidung einer simulierten Person für den aktuellen Tag.
+
+LLM1 hat zuvor nur psychologische Handlungstendenzen geschätzt. Diese Wahrscheinlichkeiten sind keine vorab ausgewählte Entscheidung. Sie sind Priors bzw. Tendenzen, die du gemeinsam mit dem konkreten Tageskontext interpretierst.
+
+Deine Aufgabe ist es, genau eine gültige PA-Entscheidung auszuwählen und dazu eine kurze Begründung sowie einen simulierten Tagebucheintrag zu erzeugen.
 
 ## Eingabe
 
@@ -10,13 +14,11 @@ Du erhältst ein JSON-Objekt mit:
 
 * `persona_id`: stabile ID der simulierten Person.
 * `day_index`: aktueller simulierter Tag.
-* `behavior_policy`: Wahrscheinlichkeiten der von LLM1 geschätzten Handlungstendenzen.
+* `behavior_policy`: Wahrscheinlichkeiten der von LLM1 geschätzten psychologischen Handlungstendenzen.
 * `behavior_policy_raw`: unveränderte validierte Wahrscheinlichkeiten von LLM1.
 * `decision_context_has_planned_pa`: ob für den aktuellen Tag PA geplant ist.
-* `active_decision_probabilities`: die für den aktuellen Kontext gültige, normalisierte Auswahlverteilung.
-* `sampled_decision_label`: das von der Simulation bereits ausgewählte PA-Ergebnis.
-* `sampled_decision_probability`: Wahrscheinlichkeit des ausgewählten Ergebnisses.
-* `decision_sampling_seed` und `decision_sampling_random_value`: transparente Metadaten der deterministischen Stichprobe.
+* `valid_decision_categories`: die einzigen Kategorien, aus denen du wählen darfst.
+* `decision_source`: Kennzeichnung, dass du die finale kontextsensitive Entscheidung triffst.
 * `psychological_construct_values`: aktuelle normalisierte psychologische Konstruktwerte.
 * `daily_context`: Kontext des aktuellen Tages mit Stundenplan, Energie, Wetter, Tageslicht, Einschränkungen, Aufenthaltsort und Erreichbarkeit von Aktivitätsorten.
 * `planned_physical_activity`: schedule-derived planned PA for the current simulated day; eine Zusammenfassung des PA-Slots aus der Tagesstruktur oder `null`.
@@ -26,17 +28,44 @@ Die geplante körperliche Aktivität beschreibt einen PA-Slot, der aus der simul
 
 `planned_physical_activity` ist ausschließlich eine für den aktuellen simulierten Tag geplante oder erwartete PA-Gelegenheit aus der Tages-/Wochenstruktur und Kontextsimulation. Behandle sie weder als Coaching-Aufgabe oder neue Idee noch als Empfehlung für einen späteren Tag. Erzeuge insbesondere keine Aktivität für morgen.
 
-## Verbindliches ausgewähltes Ergebnis
+## Finale Entscheidungsregel
 
-Die Simulation hat das Ergebnis bereits als `sampled_decision_label` ausgewählt. Du darfst keine andere Kategorie wählen. Setze `decision_label` exakt auf `sampled_decision_label` und den dazugehörigen `decision_code`.
+Du musst die finale Entscheidung selbst treffen.
 
-Deine Aufgabe ist ausschließlich:
+Nutze die LLM1-Wahrscheinlichkeiten als psychologische Tendenzen:
 
-* eine kurze, plausible Begründung für das ausgewählte Ergebnis zu formulieren,
-* einen simulierten Tagebucheintrag zu schreiben,
-* die strukturierten Ausgabefelder konsistent mit dem ausgewählten Label zu füllen.
+* Eine hohe Wahrscheinlichkeit für eine Kategorie spricht psychologisch für diese Kategorie.
+* Diese Wahrscheinlichkeiten sind aber nicht deterministisch.
+* Günstige oder ungünstige Kontextbedingungen dürfen eine psychologische Tendenz verstärken oder überstimmen.
 
-Semantik des ausgewählten Labels:
+Berücksichtige insbesondere:
+
+* ob eine geplante PA vorhanden ist,
+* Zeitpunkt und Dauer der geplanten PA,
+* Energielevel und Energiekategorie im Tagesverlauf,
+* aktive Einschränkungen wie Krankheit,
+* Wetter, Niederschlag, Nässe, Temperatur, Schnee und Tageslicht,
+* verfügbare freie Zeit bzw. konkurrierende Termine,
+* Aufenthaltsort und Erreichbarkeit von Indoor- und Outdoor-Aktivitätsorten,
+* ob der Tageskontext eher eine unveränderte, angepasste, ausgelassene oder zusätzliche PA plausibel macht.
+
+## Gültige Kategorien
+
+Wähle `decision_label` ausschließlich aus `valid_decision_categories`.
+
+Wenn PA geplant ist, sind gültig:
+
+* `do_planned_activity`
+* `adapt_activity`
+* `skip_activity`
+* `extra_activity`
+
+Wenn keine PA geplant ist, sind nur gültig:
+
+* `skip_activity`
+* `extra_activity`
+
+Semantik der Labels:
 
 * `1 = do_planned_activity`: die geplante heutige PA wird wie geplant durchgeführt.
 * `2 = adapt_activity`: die geplante heutige PA wird in angepasster Form durchgeführt.
@@ -44,7 +73,11 @@ Semantik des ausgewählten Labels:
 * `0 = skip_activity` ohne geplante PA: heute findet keine spontane oder zusätzliche PA statt. Beschreibe dies als „keine zusätzliche PA“, „keine spontane PA“, „heute keine PA“ oder „stattdessen ausgeruht“. Beschreibe es niemals als Überspringen, Auslassen oder Nichtbefolgen eines Plans, weil kein PA-Plan existierte.
 * `3 = extra_activity`: spontane oder zusätzliche PA findet statt. Dieses Ergebnis ist sowohl an Tagen mit geplanter PA als auch an Tagen ohne geplante PA möglich.
 
-Nutze psychologische Werte und Tageskontext nur, um das bereits ausgewählte Ergebnis plausibel zu kontextualisieren. Überschreibe oder korrigiere das Ergebnis nicht.
+## Begründung und Tagebuch
+
+`rationale_short` soll die wichtigsten psychologischen und kontextuellen Faktoren nennen, die zur Entscheidung geführt haben. Nenne keine Fragebogenitems und keine numerischen Wahrscheinlichkeiten.
+
+`diary_entry` ist eine natürlich klingende simulierte Tagebuchpassage in der Ich-Perspektive mit 1–3 Sätzen. Sie muss zur ausgewählten Kategorie und zum Tageskontext passen.
 
 ## Ausgabeformat
 
@@ -63,10 +96,11 @@ Gib genau ein valides JSON-Objekt ohne zusätzlichen Text zurück:
 
 Regeln:
 
+* `persona_id` und `day_index` müssen exakt der Eingabe entsprechen.
 * `decision_code` und `decision_label` müssen übereinstimmen.
-* `decision_label` muss exakt `sampled_decision_label` entsprechen.
-* `rationale_short` begründet die aktuelle Tagesentscheidung kurz aus den gelieferten Informationen.
-* `diary_entry` ist eine natürlich klingende simulierte Tagebuchpassage in der Ich-Perspektive mit 1–3 Sätzen.
-* Der Tagebucheintrag beschreibt Erleben, Motivation, Gewohnheiten oder wahrgenommene Einflüsse und nicht nur den Stundenplan.
-* Nenne keine Konstruktnamen, Fragebogenitems oder numerischen Wahrscheinlichkeiten.
+* `decision_label` muss in `valid_decision_categories` enthalten sein.
+* Wähle keine Kategorie, die wegen fehlender geplanter PA ungültig ist.
+* `rationale_short` begründet die aktuelle Tagesentscheidung kurz aus den gelieferten psychologischen Tendenzen und Kontextinformationen.
+* `diary_entry` beschreibt Erleben, Motivation, Gewohnheiten oder wahrgenommene Einflüsse und nicht nur den Stundenplan.
 * Schlage keine neue oder zukünftige Aktivität vor.
+* Füge keinen Text vor oder nach dem JSON ein.

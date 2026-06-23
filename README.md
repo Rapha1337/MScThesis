@@ -139,3 +139,15 @@ Raphael Reinalter
 MSc Thesis Project  
 Institute of Sport Science  
 University of Bern, Switzerland
+
+---
+
+## Current PA Decision Pipeline Note
+
+The current full PA simulation workflow (`Simulation/run_full_pa_simulation.py`) uses a two-stage LLM decision pipeline:
+
+1. LLM1 receives only the current normalized psychological constructs and returns psychological tendency probabilities for `do_planned_activity`, `adapt_activity`, `skip_activity`, and `extra_activity`.
+2. The simulation constrains only which decision labels are valid based on whether the generated day contains planned PA.
+3. LLM2 receives the generated daily context, planned PA summary, LLM1 tendency probabilities, and valid decision categories, then makes the final context-sensitive PA decision.
+
+The active workflow no longer performs seeded categorical PA-decision sampling before LLM2. Seeded sampling helpers in the code are retained only as deprecated legacy compatibility helpers.
