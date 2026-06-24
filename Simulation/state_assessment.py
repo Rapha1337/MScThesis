@@ -130,17 +130,18 @@ def parse_state_assessment_json(raw: str) -> dict[str, Any]:
 
 
 
-EVIDENCE_DIRECTIONS = frozenset({"positive", "negative"})
-EVIDENCE_STRENGTHS = frozenset({"weak", "moderate", "strong"})
-EVIDENCE_TARGET_OFFSETS = {"weak": 0.05, "moderate": 0.15, "strong": 0.25}
 AUTOMATICITY_PRIOR_SIMILAR_EPISODES_REQUIRED = 2
+FORBIDDEN_LLM3_EVIDENCE_FIELDS = frozenset({
+    "direction", "strength", "evidence_strength", "deterministic_target_offset",
+    "delta", "update_amount", "fixed_offset", "offset", "item_scores", "items",
+    "scale_mean", "mean_score",
+})
 
 
 def _no_evidence() -> dict[str, Any]:
     return {
         "evidence_present": False,
-        "direction": None,
-        "strength": None,
+        "target_value_normalized": None,
         "evidence_span": None,
         "reasoning_short": "",
     }
@@ -162,9 +163,10 @@ def _find_removed_construct_keys(value: Any) -> set[str]:
 def _find_forbidden_numeric_assessment_keys(value: Any, path: str = "") -> list[str]:
     forbidden = {
         "item_scores", "items", "mean_score", "mean_scores", "mean_scores_raw",
-        "mean_scores_normalized", "target_values", "target_values_normalized",
-        "construct_updates", "updates", "score", "raw_scale_construct_means",
-        "normalized_construct_targets",
+        "mean_scores_normalized", "target_values", "construct_updates", "updates",
+        "score", "raw_scale_construct_means", "normalized_construct_targets",
+        "evidence_strength", "deterministic_target_offset",
+        "delta", "update_amount", "fixed_offset", "offset", "scale_mean",
     }
     found: list[str] = []
     if isinstance(value, Mapping):
@@ -177,6 +179,22 @@ def _find_forbidden_numeric_assessment_keys(value: Any, path: str = "") -> list[
         for index, item in enumerate(value):
             found.extend(_find_forbidden_numeric_assessment_keys(item, f"{path}[{index}]"))
     return found
+
+
+def _span_has_construct_support(construct: str, span: str) -> bool:
+    text = span.lower()
+    checks = {
+        "automaticity": ["without thinking", "automatically", "as usual", "routine", "like every", "found myself"],
+        "pa_specific_self_control": ["wanted to stay", "temptation", "resisted", "overcome", "overcame", "wanted to skip", "but went", "but I went".lower()],
+        "action_planning": ["planned", "plan", "packed", "prepared", "at ", "after work", "in the morning", "where", "when", "how"],
+        "intention": ["determined", "decided", "intended", "committed", "would go", "would exercise", "was going to"],
+        "perceived_behavioral_control": ["capable", "able to", "under my control", "beyond my control", "not feel capable", "could manage", "could not manage"],
+        "attitude_toward_the_behavior": ["worthwhile", "beneficial", "pleasant", "unpleasant", "boring", "valuable", "harmful", "good for me"],
+        "subjective_norm": ["encouraged", "expected me", "pressure", "pressured", "approved", "disapproved", "training partner"],
+        "intrinsic_motivation": ["enjoyed", "fun", "pleasure", "interesting", "satisfying", "liked"],
+        "motivational_competence": ["motivate myself", "motivation", "get started effectively", "mobilize myself", "managed to get started"],
+    }
+    return any(marker in text for marker in checks[construct])
 
 
 def validate_state_assessment_output(
@@ -198,7 +216,7 @@ def validate_state_assessment_output(
     if isinstance(day_index, bool) or not isinstance(day_index, int) or day_index != expected_day_index:
         raise ValueError("State Assessment day_index does not match the request.")
 
-    evidence_root = payload.get("construct_evidence", payload.get("evidence"))
+    evidence_root = payload.get("construct_evidence")
     if not isinstance(evidence_root, Mapping):
         raise ValueError("State Assessment construct_evidence must be an object.")
 
@@ -214,23 +232,25 @@ def validate_state_assessment_output(
             rejected[construct].append({"reason": "missing_or_non_object", "raw": raw})
             continue
         present = raw.get("evidence_present")
-        direction = raw.get("direction")
-        strength = raw.get("strength")
+        target = raw.get("target_value_normalized")
         span = raw.get("evidence_span")
         reasoning = raw.get("reasoning_short")
         reasons: list[str] = []
+        forbidden_present = sorted(str(k) for k in raw if str(k) in FORBIDDEN_LLM3_EVIDENCE_FIELDS)
+        if forbidden_present:
+            reasons.append("forbidden_evidence_fields:" + ",".join(forbidden_present))
         if not isinstance(present, bool):
             reasons.append("evidence_present_not_boolean")
         if present is False:
-            if direction is not None or strength is not None or span is not None or reasoning != "":
-                reasons.append("absent_evidence_must_use_nulls_and_empty_reasoning")
+            if target is not None or span is not None or reasoning != "":
+                reasons.append("absent_evidence_must_use_null_span_target_and_empty_reasoning")
         elif present is True:
-            if direction not in EVIDENCE_DIRECTIONS:
-                reasons.append("invalid_or_missing_direction")
-            if strength not in EVIDENCE_STRENGTHS:
-                reasons.append("invalid_or_missing_strength")
+            if isinstance(target, bool) or not isinstance(target, (int, float)) or not 0 <= float(target) <= 1:
+                reasons.append("target_value_normalized_not_in_0_1")
             if not isinstance(span, str) or not span or span not in current_simulated_diary_entry:
                 reasons.append("span_not_exact_current_diary_substring")
+            elif not _span_has_construct_support(construct, span):
+                reasons.append("span_lacks_construct_specific_support")
             if not isinstance(reasoning, str) or not reasoning.strip():
                 reasons.append("missing_reasoning")
         else:
@@ -243,8 +263,7 @@ def validate_state_assessment_output(
         if present:
             entry = {
                 "evidence_present": True,
-                "direction": direction,
-                "strength": strength,
+                "target_value_normalized": float(target),
                 "evidence_span": span,
                 "reasoning_short": reasoning.strip(),
             }
@@ -258,11 +277,10 @@ def validate_state_assessment_output(
         if len(constructs) < 2:
             continue
         reasonings = [accepted[c]["reasoning_short"].strip().lower() for c in constructs]
-        # Conservative deterministic proxy: duplicate spans must have different non-trivial explanations
-        # and the quoted span must contain punctuation or conjunctions suggesting separate clauses.
         has_distinct_explanations = len(set(reasonings)) == len(reasonings) and all(len(r) >= 12 for r in reasonings)
         has_distinct_clauses = any(marker in span.lower() for marker in [" but ", " and ", ";", ","])
-        if not (has_distinct_explanations and has_distinct_clauses):
+        all_constructs_supported = all(_span_has_construct_support(c, span) for c in constructs)
+        if not (has_distinct_explanations and has_distinct_clauses and all_constructs_supported):
             conflict = {"evidence_span": span, "constructs": constructs, "reason": "ambiguous_duplicate_span"}
             duplicate_conflicts.append(conflict)
             for construct in constructs:
@@ -279,24 +297,13 @@ def validate_state_assessment_output(
     }
 
 
-def _context_signature(*, current_decision_label: str | None, was_physical_activity_planned_today: bool | None, planned_physical_activity_summary: Mapping[str, Any] | None) -> dict[str, Any]:
-    summary = planned_physical_activity_summary or {}
-    return {
-        "planned_vs_extra": "planned" if was_physical_activity_planned_today else "extra_or_unplanned",
-        "decision_category": current_decision_label or "unknown",
-        "target_location": summary.get("location") or summary.get("target_location") or summary.get("place"),
-        "time_of_day": summary.get("time_of_day") or summary.get("coarse_time_of_day") or summary.get("time"),
-    }
+def _extract_diary_text(entry: Mapping[str, Any]) -> str:
+    text = entry.get("diary_entry") or entry.get("current_simulated_diary_entry") or ""
+    return str(text)
 
 
-def _matching_prior_automaticity_occurrences(previous_diary_entries: Sequence[Mapping[str, Any]], signature: Mapping[str, Any]) -> list[Mapping[str, Any]]:
-    matches = []
-    for entry in previous_diary_entries:
-        entry_sig = entry.get("state_assessment_automaticity_context_signature") or entry.get("automaticity_context_signature")
-        if isinstance(entry_sig, Mapping) and dict(entry_sig) == dict(signature):
-            matches.append(entry)
-    return matches
-
+def _matching_prior_automaticity_occurrences(previous_diary_entries: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
+    return [entry for entry in previous_diary_entries if _span_has_construct_support("automaticity", _extract_diary_text(entry))]
 
 def evidence_to_deterministic_construct_update(
     previous_values: Mapping[str, float],
@@ -310,28 +317,29 @@ def evidence_to_deterministic_construct_update(
     max_daily_change: float = PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE,
     automaticity_prior_threshold: int = AUTOMATICITY_PRIOR_SIMILAR_EPISODES_REQUIRED,
 ) -> dict[str, Any]:
+    del current_decision_label, was_physical_activity_planned_today, planned_physical_activity_summary
     targets: dict[str, float | None] = {}
     proposed: dict[str, float] = {}
     applied: dict[str, float] = {}
     updated: dict[str, float] = {}
     details: dict[str, Any] = {}
-    signature = _context_signature(current_decision_label=current_decision_label, was_physical_activity_planned_today=was_physical_activity_planned_today, planned_physical_activity_summary=planned_physical_activity_summary)
-    prior_matches = _matching_prior_automaticity_occurrences(previous_diary_entries, signature)
-    auto_gate_passed = len(prior_matches) >= automaticity_prior_threshold
+    prior_matches = _matching_prior_automaticity_occurrences(previous_diary_entries)
+
+    current_auto = accepted_evidence.get("automaticity", _no_evidence())
+    auto_gate_passed = bool(current_auto.get("evidence_present")) and len(prior_matches) >= automaticity_prior_threshold
 
     for construct in ACTIVE_CONSTRUCTS:
         current = float(previous_values[construct])
         ev = accepted_evidence.get(construct, _no_evidence())
+        effective_target = ev.get("target_value_normalized") if ev.get("evidence_present") else None
         if construct == "automaticity" and ev.get("evidence_present") and not auto_gate_passed:
-            effective = _no_evidence()
+            effective_target = None
+        if effective_target is None or isinstance(effective_target, bool) or not isinstance(effective_target, (int, float)) or not 0 <= float(effective_target) <= 1:
+            target = None
+            proposed_delta = 0.0
+            applied_delta = 0.0
         else:
-            effective = ev
-        if not effective.get("evidence_present"):
-            target = None; proposed_delta = 0.0; applied_delta = 0.0; offset = None
-        else:
-            offset = EVIDENCE_TARGET_OFFSETS[str(effective["strength"])]
-            signed = offset if effective["direction"] == "positive" else -offset
-            target = min(1.0, max(0.0, current + signed))
+            target = float(effective_target)
             proposed_delta = alpha * (target - current)
             applied_delta = max(-max_daily_change, min(max_daily_change, proposed_delta))
         targets[construct] = target
@@ -340,17 +348,20 @@ def evidence_to_deterministic_construct_update(
         updated[construct] = min(1.0, max(0.0, current + applied_delta))
         details[construct] = {
             "current_value": current,
-            "evidence_direction": ev.get("direction"),
-            "evidence_strength": ev.get("strength"),
-            "deterministic_target_offset": offset,
-            "evidence_derived_target_value": target,
+            "target_value_normalized": target,
             "proposed_delta": proposed_delta,
             "applied_delta": applied_delta,
             "updated_value": updated[construct],
         }
-    gate = {"automaticity_update_gate_passed": auto_gate_passed, "qualifying_prior_occurrences": len(prior_matches), "current_context_signature": signature, "repetition_threshold_prior_occurrences": automaticity_prior_threshold}
+    gate = {
+        "current_automaticity_evidence_span": current_auto.get("evidence_span") if current_auto.get("evidence_present") else None,
+        "qualifying_previous_diary_evidence_spans": [_extract_diary_text(entry) for entry in prior_matches],
+        "qualifying_prior_occurrences": len(prior_matches),
+        "repetition_threshold_prior_occurrences": automaticity_prior_threshold,
+        "automaticity_update_gate_passed": auto_gate_passed,
+        "gate_basis": "diary_only_explicit_routine_or_automaticity_wording",
+    }
     return {"targets_normalized": targets, "delta_proposed": proposed, "delta_applied": applied, "updated_values": updated, "details": details, "automaticity_repetition_gate": gate}
-
 
 def build_dry_run_state_assessment(*, persona_id: str, day_index: int, previous_normalized_values: Mapping[str, Any]) -> dict[str, Any]:
     return {"persona_id": persona_id, "day_index": day_index, "construct_evidence": {construct: _no_evidence() for construct in ACTIVE_CONSTRUCTS}, "metadata": {"mode": "dry_run_mock"}}
@@ -576,11 +587,11 @@ def run_state_assessment(
             "rejection_reasons": validated["rejection_reasons"],
             "duplicate_span_conflicts": validated["duplicate_span_conflicts"],
         },
-        "state_assessment_evidence_targets_normalized": visible_targets,
+        "state_assessment_target_values_normalized": visible_targets,
         "psychological_construct_values_before_state_assessment": dict(
             previous_normalized_values
         ),
-        "psychological_construct_update_strategy": "evidence_offset_smoothed_bounded",
+        "psychological_construct_update_strategy": "continuous_target_smoothed_bounded",
         "psychological_construct_update_alpha": PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA,
         "psychological_construct_update_max_daily_change": (
             PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE
