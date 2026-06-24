@@ -53,6 +53,9 @@ def test_prompt_loads_and_contains_only_allowed_assessment_context() -> None:
         current_simulated_diary_entry="I went for a short walk.",
         previous_diary_entries=[{"day_index": 0, "diary_entry": "Earlier entry"}],
         previous_diary_entries_summary=None,
+        current_decision_label="skip_activity",
+        was_physical_activity_planned_today=False,
+        planned_physical_activity_summary=None,
     )
     assert "{recommendation_data}" not in prompt
     assert "{recommendation_data}" not in rendered
@@ -62,6 +65,9 @@ def test_prompt_loads_and_contains_only_allowed_assessment_context() -> None:
         "persona_id",
         "day_index",
         "previous_psychological_construct_values",
+        "current_decision_label",
+        "was_physical_activity_planned_today",
+        "planned_physical_activity_summary",
         "current_simulated_diary_entry",
         "previous_diary_entries",
         "previous_diary_entries_summary",
@@ -70,6 +76,9 @@ def test_prompt_loads_and_contains_only_allowed_assessment_context() -> None:
         "persona_id",
         "day_index",
         "previous_psychological_construct_values",
+        "current_decision_label",
+        "was_physical_activity_planned_today",
+        "planned_physical_activity_summary",
         "current_simulated_diary_entry",
         "previous_diary_entries",
         "previous_diary_entries_summary",
@@ -93,6 +102,9 @@ def test_rendered_prompt_excludes_decision_context_and_sampling_metadata() -> No
         current_simulated_diary_entry="Today I rested.",
         previous_diary_entries=[],
         previous_diary_entries_summary=None,
+        current_decision_label="skip_activity",
+        was_physical_activity_planned_today=False,
+        planned_physical_activity_summary=None,
     )
     forbidden_values = (
         "behavior_policy",

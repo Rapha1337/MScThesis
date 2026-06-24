@@ -10,6 +10,8 @@ def _as_hourly_list(name: str, entries) -> list[dict[str, object]]:
 
 POI_ACCESSIBILITY_TARGETS = ("workplace", "indoor_activity", "outdoor_activity")
 TRANSPORT_MODES = ("walk", "bike", "car")
+WEEKDAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+PHASE_LLM_LABELS = {"holiday": "vacation_period", "normal": "normal", "high_stress": "high_stress"}
 
 
 def _compact_active_constraints(constraints) -> list[dict[str, object]]:
@@ -138,7 +140,10 @@ def build_agent_context(
             "data": None,
         },
         "phase": getattr(phase, "value", str(phase)),
+        "phase_llm": PHASE_LLM_LABELS.get(getattr(phase, "value", str(phase)), getattr(phase, "value", str(phase))),
         "weekday": int(weekday),
+        "weekday_name": WEEKDAY_NAMES[int(weekday)],
+        "weekday_convention": "0=Monday, 1=Tuesday, ..., 6=Sunday",
         "world_info": dict(world_info or {}),
         "active_constraints": list(active_constraints or []),
         "normal_schedule": list(normal_schedule or []),

@@ -19,12 +19,13 @@ Du erhältst ein JSON-Objekt mit:
 * `decision_context_has_planned_pa`: ob für den aktuellen Tag PA geplant ist.
 * `valid_decision_categories`: die einzigen Kategorien, aus denen du wählen darfst.
 * `decision_source`: Kennzeichnung, dass du die finale kontextsensitive Entscheidung triffst.
-* `psychological_construct_values`: aktuelle normalisierte psychologische Konstruktwerte.
 * `daily_context`: Kontext des aktuellen Tages mit Stundenplan, Energie, Wetter, Tageslicht, Einschränkungen, Aufenthaltsort und Erreichbarkeit von Aktivitätsorten.
-* `planned_physical_activity`: schedule-derived planned PA for the current simulated day; eine Zusammenfassung des PA-Slots aus der Tagesstruktur oder `null`.
+* `planned_physical_activity`: schedule-derived planned PA for the current simulated day; eine Zusammenfassung des geplanten PA-Slots aus der Tagesstruktur oder `null`.
 * `was_physical_activity_planned_today`: boolean indicating whether the simulated day structure contains a planned PA slot.
 
 Die geplante körperliche Aktivität beschreibt einen PA-Slot, der aus der simulierten Tagesstruktur der Person für den aktuellen Tag stammt. Es handelt sich nicht um eine App-Empfehlung oder einen neu generierten Aktivitätsvorschlag. Entscheide, ob diese geplante körperliche Aktivität im aktuellen Tageskontext durchgeführt, angepasst oder ausgelassen wird. Wenn für den aktuellen Tag keine PA geplant ist, entscheide, ob trotzdem zusätzliche PA stattfindet oder ob keine PA stattfindet.
+
+LLM1 ist die einzige Stufe, die rohe psychologische Konstruktwerte vor dieser Entscheidung verarbeitet. LLM2 erhält nur die vier `behavior_policy`-Tendenzen (`do_planned_activity`, `adapt_activity`, `skip_activity`, `extra_activity`) und darf keine rohen Konstrukte rekonstruieren.
 
 `planned_physical_activity` ist ausschließlich eine für den aktuellen simulierten Tag geplante oder erwartete PA-Gelegenheit aus der Tages-/Wochenstruktur und Kontextsimulation. Behandle sie weder als Coaching-Aufgabe oder neue Idee noch als Empfehlung für einen späteren Tag. Erzeuge insbesondere keine Aktivität für morgen.
 
@@ -104,3 +105,8 @@ Regeln:
 * `diary_entry` beschreibt Erleben, Motivation, Gewohnheiten oder wahrgenommene Einflüsse und nicht nur den Stundenplan.
 * Schlage keine neue oder zukünftige Aktivität vor.
 * Füge keinen Text vor oder nach dem JSON ein.
+
+
+Kalenderhinweis: `weekday` nutzt intern 0=Monday bis 6=Sunday; verwende bevorzugt `weekday_name`. Die interne Phase `holiday` wird LLM-seitig als `vacation_period` verstanden, nicht als öffentlicher Feiertag.
+
+Pre-decision context: Für geplante PA-Stunden beschreibt `daily_context.hourly_context_24h` den Zustand vor der finalen Entscheidung. Felder wie `scheduled_activity_type`, `planned_pa_target_location`, `pre_decision_origin_location` und `planned_activity_not_yet_realized` markieren geplante, noch nicht realisierte PA.

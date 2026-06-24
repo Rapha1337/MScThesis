@@ -540,3 +540,87 @@ def test_full_pa_llm2_input_still_excludes_raw_metadata_after_overrides(tmp_path
     assert "task_description" not in serialized_pa_input
     assert "input_parameters" not in serialized_pa_input
     assert "selected_schedule_parameters" not in serialized_pa_input
+
+
+def test_full_simulation_passes_current_decision_and_planned_pa_to_state_assessment(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import state_assessment
+    import run_full_pa_simulation as module
+    from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
+
+    captured: list[dict] = []
+    original = state_assessment.run_state_assessment
+
+    def capturing_state_assessment(**kwargs):
+        captured.append(dict(kwargs))
+        return original(**kwargs)
+
+    monkeypatch.setattr(module, "run_state_assessment", capturing_state_assessment)
+    config = FullSimulationConfig(
+        n_personas=1,
+        n_days=2,
+        start_date=date(2026, 1, 1),
+        base_seed=137,
+        output_dir=tmp_path / "state_assessment_wiring",
+        model="gpt-oss-120b",
+        temperature=0,
+        llm1_max_tokens=2000,
+        llm2_max_tokens=1200,
+        dry_run=True,
+        include_full_hourly_context=False,
+    )
+
+    trace = run_full_simulation(config)
+
+    assert len(captured) == len(trace["records"])
+    for call, record in zip(captured, trace["records"], strict=True):
+        assert call["current_decision_label"] == record["pa_decision"]["decision_label"]
+        assert call["was_physical_activity_planned_today"] is (
+            record["planned_physical_activity"] is not None
+        )
+        assert call["planned_physical_activity_summary"] == record["planned_physical_activity"]
+
+
+def test_planned_physical_activity_summary_preserves_contiguous_block() -> None:
+    from run_full_pa_simulation import planned_physical_activity_from_schedule
+
+    hourly = [{"hour": hour, "activity_type": "downtime", "current_location": "home"} for hour in range(24)]
+    for hour in (10, 11):
+        hourly[hour].update({"activity_type": "physical_activity", "subtype": "gym", "current_location": "indoor_activity"})
+
+    planned = planned_physical_activity_from_schedule(hourly)
+
+    assert planned["is_contiguous"] is True
+    assert planned["scheduled_hours"] == [10, 11]
+    assert len(planned["blocks"]) == 1
+    assert planned["blocks"][0]["scheduled_hours"] == [10, 11]
+
+
+def test_planned_physical_activity_summary_preserves_non_contiguous_blocks() -> None:
+    from run_full_pa_simulation import planned_physical_activity_from_schedule
+
+    hourly = [{"hour": hour, "activity_type": "downtime", "current_location": "home"} for hour in range(24)]
+    hourly[8].update({"activity_type": "physical_activity", "subtype": "run", "current_location": "outdoor_activity"})
+    hourly[18].update({"activity_type": "physical_activity", "subtype": "gym", "current_location": "indoor_activity"})
+
+    planned = planned_physical_activity_from_schedule(hourly)
+
+    assert planned["is_contiguous"] is False
+    assert planned["scheduled_hours"] == [8, 18]
+    assert [block["scheduled_hours"] for block in planned["blocks"]] == [[8], [18]]
+    assert planned["planned_target_locations"] == ["indoor_activity", "outdoor_activity"]
+
+
+def test_planned_physical_activity_summary_preserves_mixed_targets_in_one_block() -> None:
+    from run_full_pa_simulation import planned_physical_activity_from_schedule
+
+    hourly = [{"hour": hour, "activity_type": "downtime", "current_location": "home"} for hour in range(24)]
+    hourly[14].update({"activity_type": "physical_activity", "subtype": "run", "current_location": "outdoor_activity"})
+    hourly[15].update({"activity_type": "physical_activity", "subtype": "gym", "current_location": "indoor_activity"})
+
+    planned = planned_physical_activity_from_schedule(hourly)
+
+    assert planned["is_contiguous"] is True
+    assert planned["planned_target_locations"] == ["indoor_activity", "outdoor_activity"]
+    assert planned["blocks"][0]["planned_target_locations"] == ["indoor_activity", "outdoor_activity"]
