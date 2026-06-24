@@ -151,7 +151,7 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "psychological_construct_values_before_state_assessment",
     "state_assessment_construct_evidence",
     "state_assessment_validation",
-    "state_assessment_evidence_targets_normalized",
+    "state_assessment_target_values_normalized",
     "psychological_construct_update_details",
     "psychological_construct_update_strategy",
     "psychological_construct_update_alpha",
@@ -901,8 +901,8 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         "state_assessment_validation": _json_log_value(
             record.get("state_assessment_validation")
         ),
-        "state_assessment_evidence_targets_normalized": _json_log_value(
-            record.get("state_assessment_evidence_targets_normalized")
+        "state_assessment_target_values_normalized": _json_log_value(
+            record.get("state_assessment_target_values_normalized")
         ),
         "psychological_construct_update_details": _json_log_value(
             record.get("psychological_construct_update_details")
@@ -1116,7 +1116,7 @@ def _build_simulation_run_manifest(
             "llm2_raw_psychological_construct_values": "not provided; LLM1 is the sole processor of raw normalized constructs before LLM2 and passes four behavior_policy probabilities.",
             "weekday_convention": "Internal weekday is 0=Monday through 6=Sunday; LLM-facing context also includes weekday_name.",
             "phase_representation": "Internal phase may be holiday for lower-structure vacation blocks; LLM-facing phase_llm translates this as vacation_period. Public holidays require separate event variables.",
-            "llm3_assessment_policy": "construct-specific evidence extraction only; no questionnaire responses are simulated; Python maps validated evidence strength and direction to bounded deterministic updates; automaticity requires repeated similar behavior; absent or invalid evidence preserves previous values.",
+            "llm3_assessment_policy": "LLM2 generates subjective diary entries; diary entries are the sole source of psychological-update evidence; LLM3 estimates continuous normalized construct targets; questionnaire responses are not simulated; Python applies smoothing and bounded daily updates; invalid or absent diary evidence preserves the previous value; automaticity uses diary-only explicit routine evidence.",
         },
         "prompt_files": {
             "llm1": str((SIMULATION_DIR / "BehaviorProbability_Prompt.md").relative_to(ROOT_DIR)),
@@ -1342,8 +1342,8 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     ].items()
                 }
                 closed_loop_update["updated_psychological_constructs"] = dict(constructs_after)
-                closed_loop_update["state_assessment_evidence_targets_normalized"] = dict(
-                    assessment["state_assessment_evidence_targets_normalized"]
+                closed_loop_update["state_assessment_target_values_normalized"] = dict(
+                    assessment["state_assessment_target_values_normalized"]
                 )
                 activity_done = bool(closed_loop_update.get("activity_done"))
                 decision_label = str(pipeline_record["pa_decision"]["decision_label"])
@@ -1370,8 +1370,8 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     "state_assessment_validation": assessment[
                         "state_assessment_validation"
                     ],
-                    "state_assessment_evidence_targets_normalized": assessment[
-                        "state_assessment_evidence_targets_normalized"
+                    "state_assessment_target_values_normalized": assessment[
+                        "state_assessment_target_values_normalized"
                     ],
                     "psychological_construct_update_details": assessment[
                         "psychological_construct_update_details"
