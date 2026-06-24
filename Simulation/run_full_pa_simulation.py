@@ -659,7 +659,10 @@ def build_llm_ready_context_for_day(
         "day_index": int(day_index),
         "calendar_date": calendar_date.isoformat(),
         "phase": diagnostic_context.get("phase"),
+        "phase_llm": diagnostic_context.get("phase_llm"),
         "weekday": diagnostic_context.get("weekday"),
+        "weekday_name": diagnostic_context.get("weekday_name"),
+        "weekday_convention": diagnostic_context.get("weekday_convention"),
         "psychological_state": dict(state.psychological_state),
         "hourly_context_24h": [
             _compact_hourly_entry(entry) for entry in shared_hourly_context
@@ -668,10 +671,30 @@ def build_llm_ready_context_for_day(
     return _json_ready(llm_context), _json_ready(diagnostic_context)
 
 
+def _compact_planned_pa_schedule_entry(entry: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: entry.get(key)
+        for key in ("hour", "activity_type", "subtype", "current_location", "active_constraints")
+    }
+
+
+def _group_contiguous_planned_pa_slots(
+    slots: Sequence[Mapping[str, Any]],
+) -> list[list[Mapping[str, Any]]]:
+    ordered_slots = sorted(slots, key=lambda entry: int(entry["hour"]))
+    groups: list[list[Mapping[str, Any]]] = []
+    for slot in ordered_slots:
+        if not groups or int(slot["hour"]) != int(groups[-1][-1]["hour"]) + 1:
+            groups.append([slot])
+        else:
+            groups[-1].append(slot)
+    return groups
+
+
 def planned_physical_activity_from_schedule(
     hourly_context: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any] | None:
-    """Summarize the current day's schedule-derived physical-activity slot."""
+    """Summarize the current day's schedule-derived physical-activity slot(s)."""
     slots = [
         entry
         for entry in hourly_context
@@ -680,20 +703,51 @@ def planned_physical_activity_from_schedule(
     ]
     if not slots:
         return None
-    hours = sorted(int(entry["hour"]) for entry in slots)
+    blocks = []
+    for block_index, block_slots in enumerate(_group_contiguous_planned_pa_slots(slots)):
+        block_hours = [int(entry["hour"]) for entry in block_slots]
+        target_locations = [
+            entry.get("current_location")
+            for entry in block_slots
+            if entry.get("current_location") is not None
+        ]
+        blocks.append(
+            {
+                "block_index": block_index,
+                "scheduled_hours": block_hours,
+                "start_hour": block_hours[0],
+                "end_hour": block_hours[-1] + 1,
+                "duration_min": len(block_hours) * 60,
+                "planned_target_location": target_locations[0] if target_locations else None,
+                "planned_target_locations": sorted({str(location) for location in target_locations}),
+                "schedule_entries": [
+                    _compact_planned_pa_schedule_entry(entry) for entry in block_slots
+                ],
+            }
+        )
+    hours = [hour for block in blocks for hour in block["scheduled_hours"]]
+    target_locations_all = sorted(
+        {
+            location
+            for block in blocks
+            for location in block["planned_target_locations"]
+        }
+    )
     return {
         "source": "current_day_schedule",
         "activity_type": "physical_activity",
+        "planned_target_location": blocks[0].get("planned_target_location"),
+        "planned_target_locations": target_locations_all,
         "scheduled_hours": hours,
         "start_hour": hours[0],
         "end_hour": hours[-1] + 1,
         "duration_min": len(hours) * 60,
+        "is_contiguous": len(blocks) == 1,
+        "blocks": blocks,
         "schedule_entries": [
-            {
-                key: entry.get(key)
-                for key in ("hour", "activity_type", "subtype", "current_location", "active_constraints")
-            }
-            for entry in slots
+            entry
+            for block in blocks
+            for entry in block["schedule_entries"]
         ],
     }
 
@@ -1058,6 +1112,11 @@ def _build_simulation_run_manifest(
             "decision_source": DECISION_SOURCE_LLM2_CONTEXTUAL,
             "llm2_makes_final_contextual_decision": True,
             "pre_llm2_seeded_sampling_active": False,
+            "planned_vs_realized_context": "planned_physical_activity records schedule intent; LLM2 daily_context rewrites planned PA hours as pre_decision_context with origin-based accessibility until LLM2 decides.",
+            "llm2_raw_psychological_construct_values": "not provided; LLM1 is the sole processor of raw normalized constructs before LLM2 and passes four behavior_policy probabilities.",
+            "weekday_convention": "Internal weekday is 0=Monday through 6=Sunday; LLM-facing context also includes weekday_name.",
+            "phase_representation": "Internal phase may be holiday for lower-structure vacation blocks; LLM-facing phase_llm translates this as vacation_period. Public holidays require separate event variables.",
+            "llm3_assessment_policy": "conservative evidence-based scoring with null preserving previous construct values when current diary evidence is insufficient; full-simulation runtime passes the current LLM2 decision label, planned-PA status, and planned PA summary into LLM3.",
         },
         "prompt_files": {
             "llm1": str((SIMULATION_DIR / "BehaviorProbability_Prompt.md").relative_to(ROOT_DIR)),
@@ -1233,6 +1292,11 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                         pipeline_record["pa_decision"]["diary_entry"]
                     ),
                     previous_diary_entries=previous_diary_entries,
+                    current_decision_label=str(
+                        pipeline_record["pa_decision"]["decision_label"]
+                    ),
+                    was_physical_activity_planned_today=planned_activity_for_day is not None,
+                    planned_physical_activity_summary=planned_activity_for_day,
                     prompt_template=state_assessment_prompt,
                     dry_run=config.dry_run,
                     model=config.model,
