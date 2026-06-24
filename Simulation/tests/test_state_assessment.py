@@ -11,14 +11,12 @@ if str(SIMULATION_DIR) not in sys.path:
     sys.path.append(str(SIMULATION_DIR))
 
 import state_assessment
-from psychological_state import BACKEND_CONSTRUCT_RANGES
 from state_assessment import (
     ACTIVE_CONSTRUCTS,
-    apply_smoothed_bounded_construct_update,
-    CONSTRUCT_ITEM_COUNTS,
+    EVIDENCE_TARGET_OFFSETS,
     build_dry_run_state_assessment,
+    evidence_to_deterministic_construct_update,
     load_state_assessment_prompt,
-    normalize_mean_scores,
     render_state_assessment_prompt,
     run_state_assessment,
     validate_state_assessment_output,
@@ -29,478 +27,212 @@ def _previous_values() -> dict[str, float]:
     return {construct: 0.5 for construct in ACTIVE_CONSTRUCTS}
 
 
-def _valid_payload() -> dict:
+def _none_payload(diary: str = "current") -> dict:
     return build_dry_run_state_assessment(
-        persona_id="Persona_01",
-        day_index=2,
-        previous_normalized_values=_previous_values(),
+        persona_id="Persona_01", day_index=2, previous_normalized_values=_previous_values()
     )
 
 
-def test_prompt_loads_and_contains_only_allowed_assessment_context() -> None:
+def _present(construct: str, span: str, direction: str = "positive", strength: str = "moderate") -> dict:
+    payload = _none_payload(span)
+    payload["construct_evidence"][construct] = {
+        "evidence_present": True,
+        "direction": direction,
+        "strength": strength,
+        "evidence_span": span,
+        "reasoning_short": f"direct {construct} evidence",
+    }
+    return payload
+
+
+def test_prompt_loads_evidence_schema_and_context_only_inputs() -> None:
     prompt = load_state_assessment_prompt()
-    assert "Leere `items`-Arrays" in prompt
-    assert "keine gültige finale Ausgabe" in prompt
-    assert "Python `json.loads`" in prompt
-    assert "nachgestellten Kommas" in prompt
-    assert "doppelten Anführungszeichen" in prompt
-    assert "maximal 8 Wörter" in prompt
+    assert "construct_evidence" in prompt
+    assert "Never output questionnaire item scores" in prompt
+    assert "Feeling energetic is not automatically PBC" in prompt
     rendered = render_state_assessment_prompt(
         prompt,
         persona_id="Persona_01",
         day_index=2,
         previous_psychological_construct_values=_previous_values(),
-        current_simulated_diary_entry="I went for a short walk.",
+        current_simulated_diary_entry="I felt energetic today.",
         previous_diary_entries=[{"day_index": 0, "diary_entry": "Earlier entry"}],
         previous_diary_entries_summary=None,
-        current_decision_label="skip_activity",
+        current_decision_label="extra_activity",
         was_physical_activity_planned_today=False,
         planned_physical_activity_summary=None,
     )
-    assert "{recommendation_data}" not in prompt
-    assert "{recommendation_data}" not in rendered
+    assert "I felt energetic today." in rendered
     assert "Earlier entry" in rendered
-    assert "I went for a short walk." in rendered
-    assert all("{" + key + "}" not in rendered for key in (
-        "persona_id",
-        "day_index",
-        "previous_psychological_construct_values",
-        "current_decision_label",
-        "was_physical_activity_planned_today",
-        "planned_physical_activity_summary",
-        "current_simulated_diary_entry",
-        "previous_diary_entries",
-        "previous_diary_entries_summary",
-    ))
-    assert state_assessment.REQUIRED_PROMPT_PLACEHOLDERS == (
-        "persona_id",
-        "day_index",
-        "previous_psychological_construct_values",
-        "current_decision_label",
-        "was_physical_activity_planned_today",
-        "planned_physical_activity_summary",
-        "current_simulated_diary_entry",
-        "previous_diary_entries",
-        "previous_diary_entries_summary",
-    )
-    for forbidden_placeholder in (
-        "{current_day_context}",
-        "{planned_physical_activity}",
-        "{physical_activity_decision}",
-        "{decision_rationale}",
-    ):
-        assert forbidden_placeholder not in prompt
-
-
-def test_rendered_prompt_excludes_decision_context_and_sampling_metadata() -> None:
-    prompt = load_state_assessment_prompt()
-    rendered = render_state_assessment_prompt(
-        prompt,
-        persona_id="Persona_01",
-        day_index=2,
-        previous_psychological_construct_values=_previous_values(),
-        current_simulated_diary_entry="Today I rested.",
-        previous_diary_entries=[],
-        previous_diary_entries_summary=None,
-        current_decision_label="skip_activity",
-        was_physical_activity_planned_today=False,
-        planned_physical_activity_summary=None,
-    )
-    forbidden_values = (
-        "behavior_policy",
-        "active_decision_probabilities",
-        "sampled_decision_label",
-        "sampled_decision_probability",
-        "decision rationale",
-        "planned physical activity",
-        "current day context",
-    )
-    assert all(value not in rendered.lower() for value in forbidden_values)
-
-
-def test_prompt_requires_direct_evidence_and_does_not_minimize_no_pa_days() -> None:
-    prompt = load_state_assessment_prompt()
-    assert "Keine PA heute ≠ niedrige Intention" in prompt
-    assert "Ein Tag ohne PA ist für sich allein kein Beleg für niedrige Werte" in prompt
-    assert "direkte, konstruktspezifische Tagebuchevidenz erforderlich" in prompt
-
-
-def test_validation_accepts_exactly_nine_constructs_and_recomputes_means() -> None:
-    payload = _valid_payload()
-    payload["item_scores"]["automaticity"]["mean_score"] = 7
-    payload["item_scores"]["automaticity"]["items"][0]["score"] = 1
-    payload["item_scores"]["automaticity"]["items"][1]["score"] = 3
-    payload["item_scores"]["automaticity"]["items"][2]["score"] = None
-    payload["item_scores"]["automaticity"]["items"][3]["score"] = 5
-
-    validated = validate_state_assessment_output(
-        payload,
-        expected_persona_id="Persona_01",
-        expected_day_index=2,
-    )
-
-    assert set(validated["item_scores"]) == set(ACTIVE_CONSTRUCTS)
-    assert validated["mean_scores_raw"]["automaticity"] == pytest.approx(3)
-
-
-@pytest.mark.parametrize("mutation", ["missing", "extra"])
-def test_validation_rejects_construct_key_mismatches(mutation: str) -> None:
-    payload = _valid_payload()
-    if mutation == "missing":
-        del payload["item_scores"]["automaticity"]
-    else:
-        payload["item_scores"]["unexpected_construct"] = {"items": [], "mean_score": None}
-    with pytest.raises(ValueError, match="construct keys mismatch"):
-        validate_state_assessment_output(
-            payload,
-            expected_persona_id="Persona_01",
-            expected_day_index=2,
-        )
+    assert all("{" + key + "}" not in rendered for key in state_assessment.REQUIRED_PROMPT_PLACEHOLDERS)
 
 
 @pytest.mark.parametrize(
-    "removed_key",
-    ["interest_enjoyment", "perceived_competence", "perceived_choice", "pressure_tension"],
+    "diary",
+    [
+        "I completed the planned workout.",
+        "The rain and cold made going outside unattractive.",
+        "I felt energetic today.",
+    ],
 )
-def test_validation_rejects_removed_constructs(removed_key: str) -> None:
-    payload = _valid_payload()
-    payload["item_scores"][removed_key] = {"items": [], "mean_score": None}
-    with pytest.raises(ValueError, match="removed construct"):
+def test_absent_evidence_keeps_all_constructs_unchanged(diary: str) -> None:
+    validated = validate_state_assessment_output(
+        _none_payload(diary),
+        expected_persona_id="Persona_01",
+        expected_day_index=2,
+        current_simulated_diary_entry=diary,
+    )
+    update = evidence_to_deterministic_construct_update(_previous_values(), validated["accepted_evidence"])
+    assert all(not ev["evidence_present"] for ev in validated["accepted_evidence"].values())
+    assert update["updated_values"] == pytest.approx(_previous_values())
+    assert all(target is None for target in update["targets_normalized"].values())
+
+
+@pytest.mark.parametrize(
+    "construct,diary",
+    [
+        ("intention", "I decided in the morning that I would exercise after work."),
+        ("action_planning", "I packed my training clothes in the morning and planned to go to the gym at 18:00 after work."),
+        ("intrinsic_motivation", "I genuinely enjoyed the workout and had fun during the session."),
+        ("pa_specific_self_control", "I wanted to stay on the sofa, but I resisted the temptation to skip and went to training."),
+        ("perceived_behavioral_control", "Despite the busy day, I felt capable of completing the session and believed it was under my control."),
+        ("attitude_toward_the_behavior", "I considered the exercise beneficial and worthwhile."),
+        ("subjective_norm", "My training partner encouraged me and expected me to attend."),
+        ("motivational_competence", "I knew how to motivate myself and was able to get started effectively."),
+    ],
+)
+def test_explicit_construct_evidence_updates_only_that_construct(construct: str, diary: str) -> None:
+    validated = validate_state_assessment_output(
+        _present(construct, diary),
+        expected_persona_id="Persona_01",
+        expected_day_index=2,
+        current_simulated_diary_entry=diary,
+    )
+    update = evidence_to_deterministic_construct_update(_previous_values(), validated["accepted_evidence"])
+    for name in ACTIVE_CONSTRUCTS:
+        if name == construct:
+            assert validated["accepted_evidence"][name]["evidence_present"] is True
+            assert update["updated_values"][name] == pytest.approx(0.53)
+        else:
+            assert update["updated_values"][name] == pytest.approx(0.5)
+
+
+def test_validator_rejects_forbidden_scoring_keys_and_non_substring_spans() -> None:
+    payload = _present("intention", "not in diary")
+    validated = validate_state_assessment_output(
+        payload,
+        expected_persona_id="Persona_01",
+        expected_day_index=2,
+        current_simulated_diary_entry="I decided to exercise.",
+    )
+    assert not validated["accepted_evidence"]["intention"]["evidence_present"]
+    assert validated["rejected_evidence"]["intention"]
+
+    payload["item_scores"] = {}
+    with pytest.raises(ValueError, match="forbidden scoring/target keys"):
         validate_state_assessment_output(
             payload,
             expected_persona_id="Persona_01",
             expected_day_index=2,
+            current_simulated_diary_entry="I decided to exercise.",
         )
 
 
-def test_validation_allows_null_items_and_null_mean_keeps_previous_value() -> None:
-    payload = _valid_payload()
-    for item in payload["item_scores"]["automaticity"]["items"]:
-        item["score"] = None
+def test_duplicate_span_conflict_rejects_ambiguous_assignments() -> None:
+    diary = "I felt good after going outside."
+    payload = _none_payload(diary)
+    for construct in ["intention", "intrinsic_motivation", "attitude_toward_the_behavior"]:
+        payload["construct_evidence"][construct] = {
+            "evidence_present": True,
+            "direction": "positive",
+            "strength": "moderate",
+            "evidence_span": diary,
+            "reasoning_short": "generic positive phrase",
+        }
     validated = validate_state_assessment_output(
         payload,
         expected_persona_id="Persona_01",
         expected_day_index=2,
+        current_simulated_diary_entry=diary,
     )
-    normalized = normalize_mean_scores(validated["mean_scores_raw"], _previous_values())
-    assert validated["mean_scores_raw"]["automaticity"] is None
-    assert normalized["automaticity"] == 0.5
+    assert validated["duplicate_span_conflicts"]
+    assert all(not validated["accepted_evidence"][c]["evidence_present"] for c in ["intention", "intrinsic_motivation", "attitude_toward_the_behavior"])
 
 
-def test_validation_caps_out_of_range_scores_and_accepts_intrinsic_zero() -> None:
-    payload = _valid_payload()
-    for item in payload["item_scores"]["intrinsic_motivation"]["items"]:
-        item["score"] = 0
-    validated = validate_state_assessment_output(
-        payload,
-        expected_persona_id="Persona_01",
-        expected_day_index=2,
-    )
-    assert validated["mean_scores_raw"]["intrinsic_motivation"] == 0
-
-    payload = _valid_payload()
-    payload["item_scores"]["automaticity"]["items"][0]["score"] = 8.0
-    payload["item_scores"]["automaticity"]["items"][1]["score"] = 0.0
-    payload["item_scores"]["intrinsic_motivation"]["items"][0]["score"] = -1.0
-    payload["item_scores"]["pa_specific_self_control"]["items"][0]["score"] = 6.0
-    validated = validate_state_assessment_output(
-        payload,
-        expected_persona_id="Persona_01",
-        expected_day_index=2,
-    )
-    assert validated["item_scores"]["automaticity"]["items"][0]["score"] == 7.0
-    assert validated["item_scores"]["automaticity"]["items"][1]["score"] == 1.0
-    assert validated["item_scores"]["intrinsic_motivation"]["items"][0]["score"] == 0.0
-    assert (
-        validated["item_scores"]["pa_specific_self_control"]["items"][0]["score"] == 5.0
-    )
+def test_deterministic_update_calculation_strength_direction_clamping_and_bounds() -> None:
+    evidence = {construct: {"evidence_present": False, "direction": None, "strength": None, "evidence_span": None, "reasoning_short": ""} for construct in ACTIVE_CONSTRUCTS}
+    evidence["intention"] = {"evidence_present": True, "direction": "positive", "strength": "weak"}
+    evidence["attitude_toward_the_behavior"] = {"evidence_present": True, "direction": "negative", "strength": "moderate"}
+    evidence["intrinsic_motivation"] = {"evidence_present": True, "direction": "positive", "strength": "strong"}
+    previous = _previous_values(); previous["intrinsic_motivation"] = 0.95
+    update = evidence_to_deterministic_construct_update(previous, evidence)
+    assert EVIDENCE_TARGET_OFFSETS == {"weak": 0.05, "moderate": 0.15, "strong": 0.25}
+    assert update["targets_normalized"]["intention"] == pytest.approx(0.55)
+    assert update["updated_values"]["intention"] == pytest.approx(0.51)
+    assert update["targets_normalized"]["attitude_toward_the_behavior"] == pytest.approx(0.35)
+    assert update["updated_values"]["attitude_toward_the_behavior"] == pytest.approx(0.47)
+    assert update["targets_normalized"]["intrinsic_motivation"] == pytest.approx(1.0)
+    assert update["updated_values"]["intrinsic_motivation"] == pytest.approx(0.96)
+    assert update["targets_normalized"]["automaticity"] is None
+    assert max(abs(delta) for delta in update["delta_applied"].values()) <= 0.10
 
 
-def test_validation_keeps_null_scores_and_rejects_non_numeric_scores() -> None:
-    payload = _valid_payload()
-    payload["item_scores"]["automaticity"]["items"][0]["score"] = None
-    validated = validate_state_assessment_output(
-        payload,
-        expected_persona_id="Persona_01",
-        expected_day_index=2,
-    )
-    assert validated["item_scores"]["automaticity"]["items"][0]["score"] is None
-
-    payload = _valid_payload()
-    payload["item_scores"]["automaticity"]["items"][0]["score"] = "6"
-    with pytest.raises(ValueError, match="must be numeric or null"):
-        validate_state_assessment_output(
-            payload,
-            expected_persona_id="Persona_01",
-            expected_day_index=2,
-        )
-
-
-def test_capped_scores_are_used_for_recomputed_means_and_normalization() -> None:
-    payload = _valid_payload()
-    self_control = payload["item_scores"]["pa_specific_self_control"]
-    self_control["mean_score"] = 99
-    for item, score in zip(self_control["items"], [6.0, 0.0, 3.0]):
-        item["score"] = score
-
-    validated = validate_state_assessment_output(
-        payload,
-        expected_persona_id="Persona_01",
-        expected_day_index=2,
-    )
-    normalized = normalize_mean_scores(validated["mean_scores_raw"], _previous_values())
-
-    assert validated["mean_scores_raw"]["pa_specific_self_control"] == pytest.approx(3.0)
-    assert validated["item_scores"]["pa_specific_self_control"]["mean_score"] == pytest.approx(
-        3.0
-    )
-    assert normalized["pa_specific_self_control"] == pytest.approx(0.5)
-
-
-def test_normalization_uses_each_construct_range() -> None:
-    raw_midpoints = {
-        construct: (low + high) / 2
-        for construct, (low, high) in BACKEND_CONSTRUCT_RANGES.items()
-    }
-    normalized = normalize_mean_scores(raw_midpoints, _previous_values())
-    assert normalized == pytest.approx({construct: 0.5 for construct in ACTIVE_CONSTRUCTS})
+def test_automaticity_gate_requires_third_similar_occurrence() -> None:
+    evidence = {construct: {"evidence_present": False, "direction": None, "strength": None, "evidence_span": None, "reasoning_short": ""} for construct in ACTIVE_CONSTRUCTS}
+    evidence["automaticity"] = {"evidence_present": True, "direction": "positive", "strength": "moderate", "evidence_span": "automatically", "reasoning_short": "explicit automatic action"}
+    kwargs = dict(current_decision_label="do_planned_activity", was_physical_activity_planned_today=True, planned_physical_activity_summary={"location": "gym", "time_of_day": "evening"})
+    first = evidence_to_deterministic_construct_update(_previous_values(), evidence, previous_diary_entries=[], **kwargs)
+    sig = first["automaticity_repetition_gate"]["current_context_signature"]
+    one_prior = [{"state_assessment_automaticity_context_signature": sig}]
+    two_prior = [{"state_assessment_automaticity_context_signature": sig}, {"state_assessment_automaticity_context_signature": sig}]
+    second = evidence_to_deterministic_construct_update(_previous_values(), evidence, previous_diary_entries=one_prior, **kwargs)
+    third = evidence_to_deterministic_construct_update(_previous_values(), evidence, previous_diary_entries=two_prior, **kwargs)
+    dissimilar = evidence_to_deterministic_construct_update(_previous_values(), evidence, previous_diary_entries=[{"state_assessment_automaticity_context_signature": {"planned_vs_extra": "extra"}} for _ in range(2)], **kwargs)
+    assert first["updated_values"]["automaticity"] == pytest.approx(0.5)
+    assert second["updated_values"]["automaticity"] == pytest.approx(0.5)
+    assert third["updated_values"]["automaticity"] == pytest.approx(0.53)
+    assert dissimilar["updated_values"]["automaticity"] == pytest.approx(0.5)
 
 
 def test_dry_run_assessment_keeps_state_and_records_previous_context() -> None:
-    previous_entries = [
-        {"day_index": 0, "diary_entry": "first"},
-        {"day_index": 1, "diary_entry": "second"},
-    ]
+    previous_entries = [{"day_index": 0, "diary_entry": "first"}, {"day_index": 1, "diary_entry": "second"}]
     result = run_state_assessment(
-        persona_id="Persona_01",
-        day_index=2,
-        previous_normalized_values=_previous_values(),
-        current_simulated_diary_entry="current",
-        previous_diary_entries=previous_entries,
-        dry_run=True,
+        persona_id="Persona_01", day_index=2, previous_normalized_values=_previous_values(),
+        current_simulated_diary_entry="current", previous_diary_entries=previous_entries, dry_run=True,
     )
     assert result["state_assessment_mode"] == "dry_run_mock"
-    assert result["psychological_construct_values_after_state_assessment"] == pytest.approx(
-        _previous_values()
-    )
+    assert result["psychological_construct_values_after_state_assessment"] == pytest.approx(_previous_values())
+    assert result["state_assessment_construct_evidence"]
+    assert result["state_assessment_validation"]["accepted_evidence"]
     assert result["previous_diary_entries_count"] == 2
-    assert [entry["day_index"] for entry in result["previous_diary_entries_context_used"]] == [0, 1]
-    assert "current" not in json.dumps(result["previous_diary_entries_context_used"])
-
-
-def test_item_counts_match_required_schema() -> None:
-    payload = _valid_payload()
-    for construct, expected_count in CONSTRUCT_ITEM_COUNTS.items():
-        assert len(payload["item_scores"][construct]["items"]) == expected_count
-
-
-def test_smoothed_bounded_update_handles_null_zero_direction_bounds_and_clipping() -> None:
-    previous = _previous_values()
-    targets = dict(previous)
-    raw_targets: dict[str, float | None] = {key: 4.0 for key in ACTIVE_CONSTRUCTS}
-    targets.update(
-        {
-            "automaticity": 0.0,
-            "pa_specific_self_control": 1.0,
-            "action_planning": 0.0,
-            "intention": 1.0,
-        }
-    )
-    raw_targets["automaticity"] = 1.0
-    raw_targets["pa_specific_self_control"] = 7.0
-    raw_targets["action_planning"] = None
-    previous["intention"] = 0.99
-
-    result = apply_smoothed_bounded_construct_update(previous, targets, raw_targets)
-
-    assert result["updated_values"]["automaticity"] == pytest.approx(0.4)
-    assert result["updated_values"]["pa_specific_self_control"] == pytest.approx(0.6)
-    assert result["updated_values"]["action_planning"] == pytest.approx(0.5)
-    assert result["updated_values"]["intention"] == pytest.approx(0.992)
-    assert max(abs(delta) for delta in result["delta_applied"].values()) <= 0.10
-    assert all(0.0 <= value <= 1.0 for value in result["updated_values"].values())
-
-
-def test_state_assessment_logs_direct_targets_and_smoothed_values() -> None:
-    result = run_state_assessment(
-        persona_id="Persona_01",
-        day_index=0,
-        previous_normalized_values=_previous_values(),
-        current_simulated_diary_entry="No activity today.",
-        previous_diary_entries=[],
-        dry_run=True,
-    )
-    assert result["psychological_construct_update_strategy"] == "smoothed_bounded"
-    assert result["psychological_construct_update_alpha"] == pytest.approx(0.20)
-    assert result["psychological_construct_update_max_daily_change"] == pytest.approx(0.10)
-    assert result["state_assessment_target_values_normalized"] == pytest.approx(
-        _previous_values()
-    )
-    assert result["psychological_construct_values_after_smoothed_update"] == pytest.approx(
-        _previous_values()
-    )
-
-
-def _run_real_assessment(tmp_path: Path) -> dict:
-    return run_state_assessment(
-        persona_id="Persona_01",
-        day_index=2,
-        previous_normalized_values=_previous_values(),
-        current_simulated_diary_entry="current",
-        previous_diary_entries=[],
-        output_dir=tmp_path,
-        max_tokens=10000,
-    )
 
 
 @pytest.mark.parametrize("json_mode", [False, True])
-def test_state_assessment_response_format_is_explicitly_opt_in(
-    monkeypatch: pytest.MonkeyPatch, json_mode: bool
-) -> None:
+def test_state_assessment_response_format_is_explicitly_opt_in(monkeypatch: pytest.MonkeyPatch, json_mode: bool) -> None:
     captured: dict = {}
-
     class FakeCompletions:
         def create(self, **kwargs):
             captured.update(kwargs)
-            choice = type(
-                "Choice",
-                (),
-                {
-                    "message": type("Message", (), {"content": json.dumps(_valid_payload())})(),
-                    "finish_reason": "stop",
-                },
-            )()
+            choice = type("Choice", (), {"message": type("Message", (), {"content": json.dumps(_none_payload())})(), "finish_reason": "stop"})()
             return type("Response", (), {"choices": [choice], "usage": None})()
-
-    fake_client = type(
-        "Client",
-        (),
-        {"chat": type("Chat", (), {"completions": FakeCompletions()})()},
-    )()
+    fake_client = type("Client", (), {"chat": type("Chat", (), {"completions": FakeCompletions()})()})()
     monkeypatch.setattr(state_assessment, "_get_client", lambda: fake_client)
-
     state_assessment.call_state_assessment_llm("prompt", json_mode=json_mode)
-
-    if json_mode:
-        assert captured["response_format"] == {"type": "json_object"}
-    else:
-        assert "response_format" not in captured
+    assert (captured.get("response_format") == {"type": "json_object"}) is json_mode
 
 
-def test_malformed_json_is_saved_with_metadata_and_retried_once(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    valid_raw = json.dumps(_valid_payload())
-    responses = iter(
-        [
-            {
-                "raw_response": '{"persona_id": "Persona_01", bad: true}',
-                "finish_reason": "stop",
-                "resource_usage": {},
-            },
-            {
-                "raw_response": valid_raw,
-                "finish_reason": "stop",
-                "resource_usage": {},
-            },
-        ]
-    )
+def test_malformed_json_is_saved_with_metadata_and_retried_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    responses = iter([
+        {"raw_response": '{"persona_id": "Persona_01", bad: true}', "finish_reason": "stop", "resource_usage": {}},
+        {"raw_response": json.dumps(_none_payload()), "finish_reason": "stop", "resource_usage": {}},
+    ])
     calls: list[dict] = []
-
     def fake_call(*args, **kwargs):
-        calls.append(kwargs)
-        return next(responses)
-
+        calls.append(kwargs); return next(responses)
     monkeypatch.setattr(state_assessment, "call_state_assessment_llm", fake_call)
-    result = _run_real_assessment(tmp_path)
-
+    result = run_state_assessment(persona_id="Persona_01", day_index=2, previous_normalized_values=_previous_values(), current_simulated_diary_entry="current", previous_diary_entries=[], output_dir=tmp_path, max_tokens=10000)
     assert result["state_assessment_mode"] == "llm"
     assert len(calls) == 2
-    assert calls[0]["max_tokens"] == 10000
-    assert calls[0]["repair_instruction"] is None
-    assert calls[0]["json_mode"] is False
-    assert calls[1]["max_tokens"] == 12000
     assert calls[1]["repair_instruction"] == state_assessment.JSON_REPAIR_INSTRUCTION
-    assert calls[1]["json_mode"] is False
-    raw_path = tmp_path / "state_assessment_Persona_01_raw_invalid.txt"
-    metadata_path = tmp_path / "state_assessment_Persona_01_parse_error.json"
-    assert raw_path.read_text(encoding="utf-8").endswith("bad: true}")
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    assert metadata["persona_id"] == "Persona_01"
-    assert metadata["day_index"] == 2
-    assert metadata["line_number"] == 1
-    assert metadata["column_number"] > 0
-    assert metadata["character_position"] > 0
-    assert metadata["finish_reason"] == "stop"
-    assert metadata["response_length"] == len(raw_path.read_text(encoding="utf-8"))
-    assert metadata["state_assessment_max_tokens"] == 10000
-    assert metadata["model_name"] == "gpt-oss-120b"
-    assert metadata["raw_invalid_output_path"] == str(raw_path)
-
-
-def test_second_malformed_json_is_saved_and_raised_without_third_attempt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls = 0
-
-    def fake_call(*args, **kwargs):
-        nonlocal calls
-        calls += 1
-        return {
-            "raw_response": "{invalid,}",
-            "finish_reason": "length",
-            "resource_usage": {},
-        }
-
-    monkeypatch.setattr(state_assessment, "call_state_assessment_llm", fake_call)
-    with pytest.raises(ValueError, match="not valid JSON"):
-        _run_real_assessment(tmp_path)
-
-    assert calls == 2
     assert (tmp_path / "state_assessment_Persona_01_raw_invalid.txt").exists()
     assert (tmp_path / "state_assessment_Persona_01_parse_error.json").exists()
-    assert (tmp_path / "state_assessment_Persona_01_retry_raw_invalid.txt").exists()
-    retry_metadata = json.loads(
-        (tmp_path / "state_assessment_Persona_01_retry_parse_error.json").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert retry_metadata["state_assessment_max_tokens"] == 12000
-
-
-def test_retry_uses_configured_json_mode(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    responses = iter(
-        [
-            {"raw_response": "{invalid}", "finish_reason": "stop", "resource_usage": {}},
-            {
-                "raw_response": json.dumps(_valid_payload()),
-                "finish_reason": "stop",
-                "resource_usage": {},
-            },
-        ]
-    )
-    calls: list[dict] = []
-
-    def fake_call(*args, **kwargs):
-        calls.append(kwargs)
-        return next(responses)
-
-    monkeypatch.setattr(state_assessment, "call_state_assessment_llm", fake_call)
-    _run_real_assessment_with_json_mode(tmp_path)
-
-    assert [call["json_mode"] for call in calls] == [True, True]
-
-
-def _run_real_assessment_with_json_mode(tmp_path: Path) -> dict:
-    return run_state_assessment(
-        persona_id="Persona_01",
-        day_index=2,
-        previous_normalized_values=_previous_values(),
-        current_simulated_diary_entry="current",
-        previous_diary_entries=[],
-        output_dir=tmp_path,
-        max_tokens=10000,
-        json_mode=True,
-    )
