@@ -56,14 +56,6 @@ Input:
     ]
   },
   "was_physical_activity_planned_today": true,
-  "psychological_construct_values": {
-    "intention": 0.86,
-    "planning": 0.82,
-    "perceived_behavioral_control": 0.84,
-    "motivation": 0.88,
-    "self_control": 0.8,
-    "automaticity": 0.76
-  },
   "daily_context": {
     "persona_id": "ExamplePersona_01",
     "seed": 101,
@@ -71,6 +63,7 @@ Input:
     "calendar_date": "2026-04-06",
     "phase": "normal",
     "weekday": 0,
+    "weekday_name": "Monday",
     "hourly_context_24h": [
       {
         "hour": 0,
@@ -1052,14 +1045,6 @@ Input:
     ]
   },
   "was_physical_activity_planned_today": true,
-  "psychological_construct_values": {
-    "intention": 0.22,
-    "planning": 0.25,
-    "perceived_behavioral_control": 0.18,
-    "motivation": 0.2,
-    "self_control": 0.24,
-    "automaticity": 0.16
-  },
   "daily_context": {
     "persona_id": "ExamplePersona_02",
     "seed": 102,
@@ -1067,6 +1052,7 @@ Input:
     "calendar_date": "2026-04-07",
     "phase": "high_stress",
     "weekday": 1,
+    "weekday_name": "Tuesday",
     "hourly_context_24h": [
       {
         "hour": 0,
@@ -2048,14 +2034,6 @@ Input:
     ]
   },
   "was_physical_activity_planned_today": true,
-  "psychological_construct_values": {
-    "intention": 0.58,
-    "planning": 0.55,
-    "perceived_behavioral_control": 0.57,
-    "motivation": 0.56,
-    "self_control": 0.52,
-    "automaticity": 0.49
-  },
   "daily_context": {
     "persona_id": "ExamplePersona_03",
     "seed": 103,
@@ -2063,6 +2041,7 @@ Input:
     "calendar_date": "2026-04-08",
     "phase": "normal",
     "weekday": 2,
+    "weekday_name": "Wednesday",
     "hourly_context_24h": [
       {
         "hour": 0,
@@ -3044,14 +3023,6 @@ Input:
     ]
   },
   "was_physical_activity_planned_today": true,
-  "psychological_construct_values": {
-    "intention": 0.55,
-    "planning": 0.53,
-    "perceived_behavioral_control": 0.5,
-    "motivation": 0.52,
-    "self_control": 0.49,
-    "automaticity": 0.47
-  },
   "daily_context": {
     "persona_id": "ExamplePersona_04",
     "seed": 104,
@@ -3059,6 +3030,7 @@ Input:
     "calendar_date": "2026-04-09",
     "phase": "normal",
     "weekday": 3,
+    "weekday_name": "Thursday",
     "hourly_context_24h": [
       {
         "hour": 0,

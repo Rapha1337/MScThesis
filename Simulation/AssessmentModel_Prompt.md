@@ -189,6 +189,23 @@ Die JSON-Struktur muss folgendem Schema entsprechen:
 
 ### Aktueller simulierter Tagebucheintrag
 
+
+
+Conservative evidence rules for LLM3:
+1. Score a construct only with direct current-diary evidence for that construct; otherwise return null.
+2. Null preserves the previous construct value in the update pipeline.
+3. Absence of planned PA is not evidence of low action planning, intention, perceived behavioral control, or motivation.
+4. No PA on a day without planned PA is not failed intention.
+5. Distance, weather, workload, and lack of time are contextual barriers, not automatic low PBC.
+6. PA performance alone does not justify maximum intention, attitude, automaticity, or intrinsic motivation.
+7. Do not assign identical extreme scores to all items from one generic phrase.
+8. Distinguish behavior, contextual conditions, and psychological evidence.
+9. Previous diary entries are continuity context only; they must not replace current-day direct evidence.
+
+Current decision label: {current_decision_label}
+Was PA planned today: {was_physical_activity_planned_today}
+Planned PA summary: {planned_physical_activity_summary}
+
 {current_simulated_diary_entry}
 
 ### Vorherige simulierte Tagebucheinträge dieses Simulation Runs
