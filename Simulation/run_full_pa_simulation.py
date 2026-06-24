@@ -149,16 +149,16 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "state_assessment_mode",
     "previous_diary_entries_count",
     "psychological_construct_values_before_state_assessment",
-    "state_assessment_item_scores",
-    "state_assessment_mean_scores_raw",
-    "state_assessment_mean_scores_normalized",
-    "state_assessment_target_values_normalized",
+    "state_assessment_construct_evidence",
+    "state_assessment_validation",
+    "state_assessment_evidence_targets_normalized",
+    "psychological_construct_update_details",
     "psychological_construct_update_strategy",
     "psychological_construct_update_alpha",
     "psychological_construct_update_max_daily_change",
     "psychological_construct_update_delta_proposed",
     "psychological_construct_update_delta_applied",
-    "psychological_construct_values_after_smoothed_update",
+    "state_assessment_automaticity_repetition_gate",
     "psychological_construct_values_after_state_assessment",
     "behavior_policy_raw",
     "decision_context_has_planned_pa",
@@ -895,17 +895,17 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         "psychological_construct_values_before_state_assessment": _json_log_value(
             record.get("psychological_construct_values_before_state_assessment")
         ),
-        "state_assessment_item_scores": _json_log_value(
-            record.get("state_assessment_item_scores")
+        "state_assessment_construct_evidence": _json_log_value(
+            record.get("state_assessment_construct_evidence")
         ),
-        "state_assessment_mean_scores_raw": _json_log_value(
-            record.get("state_assessment_mean_scores_raw")
+        "state_assessment_validation": _json_log_value(
+            record.get("state_assessment_validation")
         ),
-        "state_assessment_mean_scores_normalized": _json_log_value(
-            record.get("state_assessment_mean_scores_normalized")
+        "state_assessment_evidence_targets_normalized": _json_log_value(
+            record.get("state_assessment_evidence_targets_normalized")
         ),
-        "state_assessment_target_values_normalized": _json_log_value(
-            record.get("state_assessment_target_values_normalized")
+        "psychological_construct_update_details": _json_log_value(
+            record.get("psychological_construct_update_details")
         ),
         "psychological_construct_update_strategy": record.get(
             "psychological_construct_update_strategy"
@@ -922,8 +922,8 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         "psychological_construct_update_delta_applied": _json_log_value(
             record.get("psychological_construct_update_delta_applied")
         ),
-        "psychological_construct_values_after_smoothed_update": _json_log_value(
-            record.get("psychological_construct_values_after_smoothed_update")
+        "state_assessment_automaticity_repetition_gate": _json_log_value(
+            record.get("state_assessment_automaticity_repetition_gate")
         ),
         "psychological_construct_values_after_state_assessment": _json_log_value(
             record.get("psychological_construct_values_after_state_assessment")
@@ -1079,7 +1079,7 @@ def _build_simulation_run_manifest(
             "llm2": config.model,
             "state_assessment": config.model,
         },
-        "psychological_construct_update_strategy": "smoothed_bounded",
+        "psychological_construct_update_strategy": "evidence_offset_smoothed_bounded",
         "psychological_construct_update_alpha": 0.20,
         "psychological_construct_update_max_daily_change": 0.10,
         "psychological_construct_update_null_handling": "keep_previous",
@@ -1097,7 +1097,7 @@ def _build_simulation_run_manifest(
             "previous_diary_entry_context_strategy": "all_previous_entries_for_run",
             "active_constructs": list(ACTIVE_CONSTRUCTS),
             "placeholder_next_day_activity_generation_disabled": True,
-            "psychological_construct_update_strategy": "smoothed_bounded",
+            "psychological_construct_update_strategy": "evidence_offset_smoothed_bounded",
             "psychological_construct_update_alpha": 0.20,
             "psychological_construct_update_max_daily_change": 0.10,
             "psychological_construct_update_null_handling": "keep_previous",
@@ -1116,7 +1116,7 @@ def _build_simulation_run_manifest(
             "llm2_raw_psychological_construct_values": "not provided; LLM1 is the sole processor of raw normalized constructs before LLM2 and passes four behavior_policy probabilities.",
             "weekday_convention": "Internal weekday is 0=Monday through 6=Sunday; LLM-facing context also includes weekday_name.",
             "phase_representation": "Internal phase may be holiday for lower-structure vacation blocks; LLM-facing phase_llm translates this as vacation_period. Public holidays require separate event variables.",
-            "llm3_assessment_policy": "conservative evidence-based scoring with null preserving previous construct values when current diary evidence is insufficient; full-simulation runtime passes the current LLM2 decision label, planned-PA status, and planned PA summary into LLM3.",
+            "llm3_assessment_policy": "construct-specific evidence extraction only; no questionnaire responses are simulated; Python maps validated evidence strength and direction to bounded deterministic updates; automaticity requires repeated similar behavior; absent or invalid evidence preserves previous values.",
         },
         "prompt_files": {
             "llm1": str((SIMULATION_DIR / "BehaviorProbability_Prompt.md").relative_to(ROOT_DIR)),
@@ -1342,8 +1342,8 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     ].items()
                 }
                 closed_loop_update["updated_psychological_constructs"] = dict(constructs_after)
-                closed_loop_update["state_assessment_target_constructs"] = dict(
-                    assessment["state_assessment_target_values_normalized"]
+                closed_loop_update["state_assessment_evidence_targets_normalized"] = dict(
+                    assessment["state_assessment_evidence_targets_normalized"]
                 )
                 activity_done = bool(closed_loop_update.get("activity_done"))
                 decision_label = str(pipeline_record["pa_decision"]["decision_label"])
@@ -1364,17 +1364,17 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     "psychological_construct_values_before_state_assessment": assessment[
                         "psychological_construct_values_before_state_assessment"
                     ],
-                    "state_assessment_item_scores": assessment[
-                        "state_assessment_item_scores"
+                    "state_assessment_construct_evidence": assessment[
+                        "state_assessment_construct_evidence"
                     ],
-                    "state_assessment_mean_scores_raw": assessment[
-                        "state_assessment_mean_scores_raw"
+                    "state_assessment_validation": assessment[
+                        "state_assessment_validation"
                     ],
-                    "state_assessment_mean_scores_normalized": assessment[
-                        "state_assessment_mean_scores_normalized"
+                    "state_assessment_evidence_targets_normalized": assessment[
+                        "state_assessment_evidence_targets_normalized"
                     ],
-                    "state_assessment_target_values_normalized": assessment[
-                        "state_assessment_target_values_normalized"
+                    "psychological_construct_update_details": assessment[
+                        "psychological_construct_update_details"
                     ],
                     "psychological_construct_update_strategy": assessment[
                         "psychological_construct_update_strategy"
@@ -1391,7 +1391,9 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     "psychological_construct_update_delta_applied": assessment[
                         "psychological_construct_update_delta_applied"
                     ],
-                    "psychological_construct_values_after_smoothed_update": constructs_after,
+                    "state_assessment_automaticity_repetition_gate": assessment[
+                        "state_assessment_automaticity_repetition_gate"
+                    ],
                     "psychological_construct_values_after_state_assessment": constructs_after,
                     "previous_diary_entries_count": assessment[
                         "previous_diary_entries_count"
