@@ -202,7 +202,6 @@ def test_build_pa_decision_input_has_expected_structure_and_planned_activity() -
         "decision_source",
         "planned_physical_activity",
         "was_physical_activity_planned_today",
-        "psychological_construct_values",
         "daily_context",
     }
     assert result["persona_id"] == "ScenarioPersona_01_favourable_pa_context"
@@ -219,7 +218,7 @@ def test_build_pa_decision_input_has_expected_structure_and_planned_activity() -
     assert result["decision_source"] == "llm2_contextual_decision"
     assert result["planned_physical_activity"] == planned_activity
     assert result["was_physical_activity_planned_today"] is True
-    assert result["psychological_construct_values"] == {"automaticity": 0.5}
+    assert "psychological_construct_values" not in result
     assert result["daily_context"]["persona_id"] == "ScenarioPersona_01_favourable_pa_context"
     assert result["daily_context"]["seed"] == 123
     assert result["daily_context"]["day_index"] == 21
@@ -775,3 +774,160 @@ def test_llm_pa_decision_cli_generation_defaults_and_overrides() -> None:
     assert custom.temperature == 0.2
     assert custom.top_p == 0.8
     assert custom.llm_seed == 123
+
+
+def test_pre_decision_context_keeps_planned_pa_but_not_realized_location() -> None:
+    from run_llm_pa_decision import build_pa_decision_input
+
+    context = _agent_context()
+    context["hourly_context_24h"] = [
+        {"hour": h, "activity_type": "downtime", "subtype": None, "current_location": "home",
+         "poi_accessibility": {"indoor_activity": {"distance_km": 4.0, "travel_times_min": {"walk": 50}}}}
+        for h in range(24)
+    ]
+    context["hourly_context_24h"][10].update({
+        "activity_type": "physical_activity", "current_location": "indoor_activity",
+        "poi_accessibility": {"indoor_activity": {"distance_km": 0.0, "travel_times_min": {"walk": 0}}},
+    })
+    planned = {"activity_type": "physical_activity", "scheduled_hours": [10], "start_hour": 10}
+
+    result = build_pa_decision_input(context, BEHAVIOR_POLICY, planned)
+    hour10 = result["daily_context"]["hourly_context_24h"][10]
+
+    assert result["planned_physical_activity"] == planned
+    assert hour10["activity_type"] == "pre_decision_context"
+    assert hour10["current_location"] == "home"
+    assert hour10["planned_pa_target_location"] == "indoor_activity"
+    assert hour10["poi_accessibility"]["indoor_activity"]["distance_km"] == 4.0
+    assert set(result["valid_decision_categories"]) == {"do_planned_activity", "adapt_activity", "skip_activity", "extra_activity"}
+
+
+def test_llm2_receives_behavior_policy_but_not_raw_constructs() -> None:
+    from run_llm_pa_decision import build_pa_decision_input
+    result = build_pa_decision_input(_agent_context(), BEHAVIOR_POLICY)
+    assert result["behavior_policy"] == BEHAVIOR_POLICY
+    assert set(result["behavior_policy"]) == {"do_planned_activity", "adapt_activity", "skip_activity", "extra_activity"}
+    assert "psychological_construct_values" not in result
+
+
+def _predecision_context_for_hour(entries: list[dict], planned: dict, hour: int) -> dict:
+    from run_llm_pa_decision import build_pre_decision_hourly_context
+
+    return build_pre_decision_hourly_context(entries, planned)[hour]
+
+
+def _base_origin_edge_entries() -> list[dict]:
+    entries = _hourly_context()
+    for entry in entries:
+        entry["poi_accessibility"] = {
+            "indoor_activity": {"distance_km": 3.0, "travel_times_min": {"walk": 37.5}},
+            "outdoor_activity": {"distance_km": 5.0, "travel_times_min": {"walk": 62.5}},
+        }
+    return entries
+
+
+def test_pre_decision_origin_fallback_hour_zero_does_not_use_pa_target() -> None:
+    entries = _base_origin_edge_entries()
+    entries[0].update({
+        "activity_type": "physical_activity",
+        "subtype": "gym",
+        "current_location": "indoor_activity",
+        "poi_accessibility": {"indoor_activity": {"distance_km": 0.0, "travel_times_min": {"walk": 0.0}}},
+    })
+    planned = {"activity_type": "physical_activity", "scheduled_hours": [0], "start_hour": 0}
+
+    hour0 = _predecision_context_for_hour(entries, planned, 0)
+
+    assert hour0["current_location"] != "indoor_activity"
+    assert hour0["pre_decision_origin_location"] == "home"
+    assert hour0["poi_accessibility_origin_location"] == "home"
+    assert hour0["planned_activity_not_yet_realized"] is True
+
+
+def test_pre_decision_origin_fallback_all_preceding_entries_pa() -> None:
+    entries = _base_origin_edge_entries()
+    for hour in (0, 1, 2):
+        entries[hour].update({
+            "activity_type": "physical_activity",
+            "subtype": "gym",
+            "current_location": "indoor_activity",
+            "poi_accessibility": {"indoor_activity": {"distance_km": 0.0, "travel_times_min": {"walk": 0.0}}},
+        })
+    planned = {"activity_type": "physical_activity", "scheduled_hours": [2], "start_hour": 2}
+
+    hour2 = _predecision_context_for_hour(entries, planned, 2)
+
+    assert hour2["current_location"] == "home"
+    assert hour2["pre_decision_origin_location"] == "home"
+    assert hour2["planned_pa_target_location"] == "indoor_activity"
+
+
+def test_pre_decision_origin_skips_unknown_preceding_location_when_stable_exists() -> None:
+    entries = _base_origin_edge_entries()
+    entries[8]["current_location"] = "home"
+    entries[9]["current_location"] = "unknown"
+    entries[10].update({"activity_type": "physical_activity", "current_location": "indoor_activity"})
+    planned = {"activity_type": "physical_activity", "scheduled_hours": [10], "start_hour": 10}
+
+    hour10 = _predecision_context_for_hour(entries, planned, 10)
+
+    assert hour10["pre_decision_origin_location"] == "home"
+
+
+def test_pre_decision_origin_skips_travel_transition_preceding_entry() -> None:
+    entries = _base_origin_edge_entries()
+    entries[8]["current_location"] = "workplace"
+    entries[9].update({"activity_type": "travel", "subtype": "commute", "current_location": "unknown"})
+    entries[10].update({"activity_type": "physical_activity", "current_location": "outdoor_activity"})
+    planned = {"activity_type": "physical_activity", "scheduled_hours": [10], "start_hour": 10}
+
+    hour10 = _predecision_context_for_hour(entries, planned, 10)
+
+    assert hour10["pre_decision_origin_location"] == "workplace"
+    assert hour10["planned_pa_target_location"] == "outdoor_activity"
+
+
+def test_pre_decision_origin_missing_accessibility_is_explicitly_unavailable() -> None:
+    entries = _base_origin_edge_entries()
+    entries[9].pop("poi_accessibility")
+    entries[10].update({
+        "activity_type": "physical_activity",
+        "current_location": "indoor_activity",
+        "poi_accessibility": {"indoor_activity": {"distance_km": 0.0, "travel_times_min": {"walk": 0.0}}},
+    })
+    planned = {"activity_type": "physical_activity", "scheduled_hours": [10], "start_hour": 10}
+
+    hour10 = _predecision_context_for_hour(entries, planned, 10)
+
+    assert hour10["poi_accessibility"]["_accessibility_unavailable"] is True
+    assert hour10["poi_accessibility_validation_issue"] == "missing_origin_poi_accessibility"
+
+
+def test_pre_decision_accessibility_invalidates_zero_distance_to_distinct_target() -> None:
+    entries = _base_origin_edge_entries()
+    entries[9]["poi_accessibility"] = {
+        "indoor_activity": {"distance_km": 0.0, "travel_times_min": {"walk": 0.0}, "source": "bad_fixture"},
+    }
+    entries[10].update({"activity_type": "physical_activity", "current_location": "indoor_activity"})
+    planned = {"activity_type": "physical_activity", "scheduled_hours": [10], "start_hour": 10}
+
+    hour10 = _predecision_context_for_hour(entries, planned, 10)
+
+    assert hour10["pre_decision_origin_location"] == "home"
+    assert hour10["poi_accessibility"]["indoor_activity"]["distance_km"] is None
+    assert hour10["poi_accessibility_validation_issue"] == "zero_distance_to_distinct_planned_target"
+
+
+def test_pre_decision_accessibility_missing_planned_target_key_is_unavailable() -> None:
+    entries = _base_origin_edge_entries()
+    entries[9]["poi_accessibility"] = {
+        "outdoor_activity": {"distance_km": 2.0, "travel_times_min": {"walk": 25.0}},
+    }
+    entries[10].update({"activity_type": "physical_activity", "current_location": "indoor_activity"})
+    planned = {"activity_type": "physical_activity", "scheduled_hours": [10], "start_hour": 10}
+
+    hour10 = _predecision_context_for_hour(entries, planned, 10)
+
+    assert hour10["poi_accessibility"]["_accessibility_unavailable"] is True
+    assert hour10["poi_accessibility_validation_issue"] == "planned_target_missing_from_origin_accessibility"
+    assert "indoor_activity" in hour10["poi_accessibility"]

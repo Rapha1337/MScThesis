@@ -87,7 +87,10 @@ DAILY_CONTEXT_FIELDS: tuple[str, ...] = (
     "day_index",
     "calendar_date",
     "phase",
+    "phase_llm",
     "weekday",
+    "weekday_name",
+    "weekday_convention",
     "hourly_context_24h",
 )
 
@@ -280,7 +283,151 @@ def _contains_raw_psychological_field(value: Any) -> bool:
     return False
 
 
-def prepare_daily_context_for_pa_decision(agent_context: Mapping[str, Any]) -> dict[str, Any]:
+STABLE_LOCATION_ANCHORS = frozenset({"home", "workplace", "indoor_activity", "outdoor_activity"})
+TRAVEL_OR_TRANSITION_ACTIVITY_TYPES = frozenset({"travel", "transition", "transport"})
+TRAVEL_OR_TRANSITION_SUBTYPES = frozenset({"travel", "transition", "commute", "in_transit"})
+
+
+def _is_pa_context_entry(entry: Mapping[str, Any]) -> bool:
+    return entry.get("activity_type") == "physical_activity" or entry.get("subtype") == "physical_activity"
+
+
+def _is_travel_or_transition_entry(entry: Mapping[str, Any]) -> bool:
+    activity_type = str(entry.get("activity_type") or "").lower()
+    subtype = str(entry.get("subtype") or "").lower()
+    return activity_type in TRAVEL_OR_TRANSITION_ACTIVITY_TYPES or subtype in TRAVEL_OR_TRANSITION_SUBTYPES
+
+
+def _is_stable_known_origin_entry(entry: Mapping[str, Any]) -> bool:
+    return (
+        not _is_pa_context_entry(entry)
+        and not _is_travel_or_transition_entry(entry)
+        and entry.get("current_location") in STABLE_LOCATION_ANCHORS
+    )
+
+
+def _pre_decision_origin_hour(hourly_context: list[Any], start_hour: int) -> Mapping[str, Any] | None:
+    """Return the safest pre-decision origin without falling back to the PA target itself."""
+    preceding_entries = [
+        entry
+        for index in range(max(0, start_hour - 1), -1, -1)
+        if isinstance((entry := hourly_context[index]), Mapping)
+    ]
+
+    for entry in preceding_entries:
+        if _is_stable_known_origin_entry(entry):
+            return entry
+
+    for entry in preceding_entries:
+        if not _is_pa_context_entry(entry) and not _is_travel_or_transition_entry(entry):
+            return entry
+
+    for entry in reversed(hourly_context):
+        if isinstance(entry, Mapping) and _is_stable_known_origin_entry(entry):
+            return entry
+
+    return {
+        "hour": None,
+        "activity_type": "fallback_origin",
+        "subtype": "home_assumption",
+        "current_location": "home",
+        "poi_accessibility": None,
+        "origin_fallback_reason": "no_preceding_non_pa_stable_origin",
+    }
+
+
+def _unavailable_poi_accessibility(planned_target: Any, reason: str) -> dict[str, Any]:
+    target = str(planned_target) if planned_target is not None else "unknown"
+    return {
+        "_accessibility_unavailable": True,
+        "reason": reason,
+        target: {
+            "distance_km": None,
+            "travel_times_min": {},
+            "source": "unavailable_pre_decision_origin_accessibility",
+        },
+    }
+
+
+def _validated_origin_accessibility(
+    origin_entry: Mapping[str, Any] | None,
+    *,
+    origin_location: Any,
+    planned_target: Any,
+) -> tuple[dict[str, Any], str | None]:
+    if not isinstance(origin_entry, Mapping):
+        return _unavailable_poi_accessibility(planned_target, "missing_origin_entry"), "missing_origin_entry"
+    accessibility = origin_entry.get("poi_accessibility")
+    if not isinstance(accessibility, Mapping):
+        return _unavailable_poi_accessibility(planned_target, "missing_origin_poi_accessibility"), "missing_origin_poi_accessibility"
+    if planned_target not in accessibility:
+        return _unavailable_poi_accessibility(planned_target, "planned_target_missing_from_origin_accessibility"), "planned_target_missing_from_origin_accessibility"
+
+    copied = copy.deepcopy(dict(accessibility))
+    target_accessibility = copied.get(planned_target)
+    if (
+        origin_location != planned_target
+        and isinstance(target_accessibility, Mapping)
+        and target_accessibility.get("distance_km") == 0
+    ):
+        copied[planned_target] = {
+            **dict(target_accessibility),
+            "distance_km": None,
+            "travel_times_min": {},
+            "source": "unavailable_pre_decision_origin_accessibility",
+            "invalidated_reason": "zero_distance_to_distinct_planned_target",
+        }
+        return copied, "zero_distance_to_distinct_planned_target"
+    return copied, None
+
+
+def build_pre_decision_hourly_context(
+    hourly_context: list[Any],
+    planned_physical_activity: Mapping[str, Any] | None,
+) -> list[Any]:
+    """Return an LLM2-facing context where planned PA is not treated as realized behavior."""
+    context = _strip_raw_psychological_fields(hourly_context)
+    if not isinstance(planned_physical_activity, Mapping):
+        return context
+    hours = planned_physical_activity.get("scheduled_hours")
+    if not isinstance(hours, list) or not hours:
+        return context
+    pa_hours = {int(hour) for hour in hours if isinstance(hour, int) and 0 <= hour <= 23}
+    if not pa_hours:
+        return context
+    start_hour = min(pa_hours)
+    origin_entry = _pre_decision_origin_hour(context, start_hour)
+    origin_location = origin_entry.get("current_location") if isinstance(origin_entry, Mapping) else "unknown"
+    for entry in context:
+        if not isinstance(entry, dict) or entry.get("hour") not in pa_hours:
+            continue
+        planned_target = entry.get("current_location")
+        entry["scheduled_activity_type"] = entry.get("activity_type")
+        entry["scheduled_subtype"] = entry.get("subtype")
+        entry["planned_pa_target_location"] = planned_target
+        entry["pre_decision_origin_location"] = origin_location
+        entry["activity_type"] = "pre_decision_context"
+        entry["subtype"] = "planned_physical_activity_pending_decision"
+        entry["current_location"] = origin_location
+        origin_accessibility, accessibility_issue = _validated_origin_accessibility(
+            origin_entry,
+            origin_location=origin_location,
+            planned_target=planned_target,
+        )
+        entry["poi_accessibility"] = origin_accessibility
+        entry["poi_accessibility_origin_location"] = origin_location
+        if accessibility_issue is not None:
+            entry["poi_accessibility_validation_issue"] = accessibility_issue
+        if isinstance(origin_entry, Mapping) and origin_entry.get("origin_fallback_reason") is not None:
+            entry["pre_decision_origin_fallback_reason"] = origin_entry.get("origin_fallback_reason")
+        entry["planned_activity_not_yet_realized"] = True
+    return context
+
+
+def prepare_daily_context_for_pa_decision(
+    agent_context: Mapping[str, Any],
+    planned_physical_activity: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     """Build LLM2 daily_context without raw psychological construct data."""
     hourly_context = agent_context.get("hourly_context_24h")
     if not isinstance(hourly_context, list):
@@ -292,6 +439,9 @@ def prepare_daily_context_for_pa_decision(agent_context: Mapping[str, Any]) -> d
     for field_name in DAILY_CONTEXT_FIELDS:
         if field_name in agent_context:
             daily_context[field_name] = _strip_raw_psychological_fields(agent_context[field_name])
+    daily_context["hourly_context_24h"] = build_pre_decision_hourly_context(
+        hourly_context, planned_physical_activity
+    )
 
     # Preserve scenario labels for traceability when controlled test contexts are used,
     # without exposing raw psychological constructs to LLM2.
@@ -429,8 +579,7 @@ def build_pa_decision_input(
         "decision_source": DECISION_SOURCE_LLM2_CONTEXTUAL,
         "planned_physical_activity": planned_physical_activity,
         "was_physical_activity_planned_today": has_planned_pa,
-        "psychological_construct_values": extract_psychological_construct_values(agent_context),
-        "daily_context": prepare_daily_context_for_pa_decision(agent_context),
+        "daily_context": prepare_daily_context_for_pa_decision(agent_context, planned_physical_activity),
     }
 
 def build_pa_decision_user_prompt(pa_decision_input: Mapping[str, Any]) -> str:
