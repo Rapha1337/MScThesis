@@ -20,8 +20,8 @@ JSON_REPAIR_INSTRUCTION = (
     "parseable by Python json.loads. All property names must be enclosed in double quotes. "
     "Do not use markdown, comments, trailing commas, ellipses, or unquoted keys."
 )
-PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA = 0.20
-PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE = 0.10
+PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA = 0.10
+PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE = 0.05
 
 CONSTRUCT_ITEM_COUNTS: dict[str, int] = {
     "automaticity": 4,
