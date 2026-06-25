@@ -53,6 +53,8 @@ from simulation_runner import SimulationRunner  # noqa: E402
 from state_assessment import (  # noqa: E402
     ACTIVE_CONSTRUCTS,
     DEFAULT_MAX_TOKENS as STATE_ASSESSMENT_MAX_TOKENS,
+    PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA,
+    PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE,
     load_state_assessment_prompt,
     run_state_assessment,
 )
@@ -1084,8 +1086,8 @@ def _build_simulation_run_manifest(
             "state_assessment": config.model,
         },
         "psychological_construct_update_strategy": "questionnaire_scale_target_smoothed_bounded",
-        "psychological_construct_update_alpha": 0.20,
-        "psychological_construct_update_max_daily_change": 0.10,
+        "psychological_construct_update_alpha": PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA,
+        "psychological_construct_update_max_daily_change": PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE,
         "psychological_construct_update_null_handling": "keep_previous",
         "state_assessment": {
             "state_assessment_enabled": True,
@@ -1102,8 +1104,8 @@ def _build_simulation_run_manifest(
             "active_constructs": list(ACTIVE_CONSTRUCTS),
             "placeholder_next_day_activity_generation_disabled": True,
             "psychological_construct_update_strategy": "questionnaire_scale_target_smoothed_bounded",
-            "psychological_construct_update_alpha": 0.20,
-            "psychological_construct_update_max_daily_change": 0.10,
+            "psychological_construct_update_alpha": PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA,
+            "psychological_construct_update_max_daily_change": PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE,
             "psychological_construct_update_null_handling": "keep_previous",
         },
         "decision_schema": {
@@ -1194,6 +1196,10 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
         "simulation_run_manifest_path": str(manifest_path),
         "enable_resource_tracking": config.enable_resource_tracking,
         "enable_codecarbon": config.enable_codecarbon,
+        "psychological_construct_update_strategy": "questionnaire_scale_target_smoothed_bounded",
+        "psychological_construct_update_alpha": PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA,
+        "psychological_construct_update_max_daily_change": PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE,
+        "psychological_construct_update_null_handling": "keep_previous",
     }
     _write_json(config.output_dir / "run_config.json", run_config_payload)
 
@@ -1281,7 +1287,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     planned_activity_for_day=planned_activity_for_day,
                     config=config,
                     output_dir=per_day_output_dir,
-                    pipeline_daily_log_path=pipeline_daily_log_path,
+                    pipeline_daily_log_path=per_day_output_dir / "pre_state_assessment_closed_loop_placeholder.csv",
                     behavior_system_prompt=behavior_system_prompt,
                     pa_decision_system_prompt=pa_decision_system_prompt,
                     resource_tracker=resource_tracker,
@@ -1437,6 +1443,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 record = _json_ready(record)
                 records.append(record)
                 _write_daily_log_row(daily_log_path, record)
+                _write_daily_log_row(pipeline_daily_log_path, record)
                 _write_longitudinal_construct_rows(longitudinal_path, record)
 
                 state.psychological_state = _psychological_state_with_updated_constructs(
