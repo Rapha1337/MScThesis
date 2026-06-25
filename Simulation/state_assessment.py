@@ -31,7 +31,7 @@ CONSTRUCT_ITEM_COUNTS: dict[str, int] = {
     "perceived_behavioral_control": 4,
     "attitude_toward_the_behavior": 5,
     "subjective_norm": 6,
-    "intrinsic_motivation": 12,
+    "intrinsic_motivation": 3,
     "motivational_competence": 4,
 }
 ACTIVE_CONSTRUCTS: tuple[str, ...] = tuple(CONSTRUCT_ITEM_COUNTS)
@@ -184,6 +184,15 @@ def _item_scores_for_construct(raw: Any) -> tuple[list[Mapping[str, Any]], float
     return [item for item in items if isinstance(item, Mapping)], (float(mean) if mean is not None else None), reasons
 
 
+def _expected_question_ids(construct: str) -> list[str]:
+    return [f"{construct}_q{index}" for index in range(1, CONSTRUCT_ITEM_COUNTS[construct] + 1)]
+
+
+def _range_label(construct: str) -> str:
+    low, high = _scale_range(construct)
+    return f"{low:g}-{high:g}"
+
+
 def validate_state_assessment_output(
     payload: Mapping[str, Any],
     *,
@@ -210,53 +219,116 @@ def validate_state_assessment_output(
 
     for construct in ACTIVE_CONSTRUCTS:
         raw = item_scores_root.get(construct)
-        items, mean_score, reasons = _item_scores_for_construct(raw)
+        items, llm_mean_score, reasons = _item_scores_for_construct(raw)
         low, high = _scale_range(construct)
         expected_count = CONSTRUCT_ITEM_COUNTS[construct]
-        valid_item_scores: list[float] = []
+        expected_ids = _expected_question_ids(construct)
+        expected_range = _range_label(construct)
+        numeric_scores: list[float] = []
         sanitized_items: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        diagnostics: list[dict[str, Any]] = []
 
         if len(items) != expected_count:
             reasons.append(f"item_count_not_{expected_count}")
         for index, item in enumerate(items):
+            question_id = item.get("question_id")
             score = item.get("score")
             spans = item.get("evidence_spans")
             reasoning = item.get("reasoning_short")
+            item_range = item.get("range")
             item_reasons: list[str] = []
+            status = "malformed"
+            if not isinstance(question_id, str) or not question_id:
+                item_reasons.append("missing_question_id")
+            elif question_id not in expected_ids:
+                item_reasons.append("unexpected_question_id")
+            elif question_id in seen_ids:
+                item_reasons.append("duplicate_question_id")
+            else:
+                seen_ids.add(question_id)
+            if item_range != expected_range:
+                item_reasons.append("incorrect_range")
             if score is None:
-                pass
+                if spans != []:
+                    item_reasons.append("null_score_requires_empty_evidence_spans")
+                if reasoning != "":
+                    item_reasons.append("null_score_requires_empty_reasoning")
+                if not item_reasons:
+                    status = "valid_null_insufficient_evidence"
             elif isinstance(score, bool) or not isinstance(score, (int, float)) or not low <= float(score) <= high:
                 item_reasons.append("score_outside_original_scale_or_bad_type")
             else:
-                valid_item_scores.append(float(score))
-            if not isinstance(spans, list) or any(not isinstance(span, str) or span not in current_simulated_diary_entry for span in spans):
-                item_reasons.append("evidence_spans_must_be_current_diary_substrings")
-            if score is None and spans not in ([], None):
-                item_reasons.append("null_score_requires_empty_evidence_spans")
-            if score is not None and (not isinstance(reasoning, str) or not reasoning.strip()):
-                item_reasons.append("scored_item_requires_reasoning")
+                if (
+                    not isinstance(spans, list)
+                    or not spans
+                    or any(
+                        not isinstance(span, str)
+                        or not span
+                        or span not in current_simulated_diary_entry
+                        for span in spans
+                    )
+                ):
+                    item_reasons.append("evidence_spans_must_be_non_empty_current_diary_substrings")
+                if not isinstance(reasoning, str) or not reasoning.strip():
+                    item_reasons.append("scored_item_requires_reasoning")
+                if not item_reasons:
+                    numeric_scores.append(float(score))
+                    status = "valid_numeric"
             sanitized_items.append({
-                "question_id": item.get("question_id") or f"{construct}_q{index + 1}",
+                "question_id": question_id if isinstance(question_id, str) else f"{construct}_q{index + 1}",
                 "score": (float(score) if isinstance(score, (int, float)) and not isinstance(score, bool) else None),
-                "range": item.get("range") or f"{low:g}-{high:g}",
+                "range": item_range if isinstance(item_range, str) else expected_range,
                 "evidence_spans": spans if isinstance(spans, list) else [],
                 "reasoning_short": reasoning.strip() if isinstance(reasoning, str) else "",
+                "validation_status": status,
+                "validation_reasons": item_reasons,
+            })
+            diagnostics.append({
+                "question_id": question_id if isinstance(question_id, str) else f"{construct}_q{index + 1}",
+                "status": status,
+                "reasons": item_reasons,
             })
             reasons.extend(item_reasons)
 
-        calculated_mean = (sum(valid_item_scores) / len(valid_item_scores)) if valid_item_scores else None
-        if mean_score is not None and (mean_score < low or mean_score > high):
-            reasons.append("mean_score_outside_original_scale")
-        if mean_score is not None and calculated_mean is not None and abs(mean_score - calculated_mean) > 0.05:
-            reasons.append("mean_score_does_not_match_item_scores")
-        effective_mean = mean_score if mean_score is not None else calculated_mean
-        normalized = normalize_construct_scale_score(construct, effective_mean)
-        if reasons or normalized is None:
+        missing_ids = sorted(set(expected_ids) - seen_ids)
+        if missing_ids:
+            reasons.append("missing_expected_question_ids:" + ",".join(missing_ids))
+
+        recalculated_mean = (sum(numeric_scores) / len(numeric_scores)) if numeric_scores else None
+        mean_outside_scale = llm_mean_score is not None and (llm_mean_score < low or llm_mean_score > high)
+        mean_discrepancy = (
+            llm_mean_score is not None
+            and recalculated_mean is not None
+            and abs(llm_mean_score - recalculated_mean) > 0.05
+        )
+        normalized = normalize_construct_scale_score(construct, recalculated_mean)
+        if reasons:
             accepted[construct] = _no_item_assessment()
             rejected[construct].append({"reason": ";".join(reasons or ["null_or_malformed_assessment"]), "raw": raw})
             validation_errors.append({"construct": construct, "reason": ";".join(reasons or ["null_or_malformed_assessment"])})
         else:
-            accepted[construct] = {"items": sanitized_items, "mean_score": effective_mean}
+            construct_diagnostics: dict[str, Any] = {
+                "item_statuses": diagnostics,
+                "numeric_item_count": len(numeric_scores),
+                "null_item_count": expected_count - len(numeric_scores),
+                "raw_llm_mean_score": llm_mean_score,
+                "python_recalculated_mean_score": recalculated_mean,
+                "mean_score_source": "python_recalculated_non_null_items",
+            }
+            if mean_discrepancy:
+                construct_diagnostics["mean_score_discrepancy"] = {
+                    "raw_llm_mean_score": llm_mean_score,
+                    "python_recalculated_mean_score": recalculated_mean,
+                }
+            if mean_outside_scale:
+                construct_diagnostics["raw_llm_mean_score_outside_original_scale"] = True
+            accepted[construct] = {
+                "items": sanitized_items,
+                "mean_score": recalculated_mean,
+                "raw_llm_mean_score": llm_mean_score,
+                "validation_diagnostics": construct_diagnostics,
+            }
 
     return {
         "persona_id": expected_persona_id,
