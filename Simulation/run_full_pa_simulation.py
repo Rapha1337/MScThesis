@@ -149,8 +149,9 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "state_assessment_mode",
     "previous_diary_entries_count",
     "psychological_construct_values_before_state_assessment",
-    "state_assessment_construct_evidence",
+    "state_assessment_raw_item_or_scale_assessment",
     "state_assessment_validation",
+    "state_assessment_construct_scale_means",
     "state_assessment_target_values_normalized",
     "psychological_construct_update_details",
     "psychological_construct_update_strategy",
@@ -895,11 +896,14 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         "psychological_construct_values_before_state_assessment": _json_log_value(
             record.get("psychological_construct_values_before_state_assessment")
         ),
-        "state_assessment_construct_evidence": _json_log_value(
-            record.get("state_assessment_construct_evidence")
+        "state_assessment_raw_item_or_scale_assessment": _json_log_value(
+            record.get("state_assessment_raw_item_or_scale_assessment")
         ),
         "state_assessment_validation": _json_log_value(
             record.get("state_assessment_validation")
+        ),
+        "state_assessment_construct_scale_means": _json_log_value(
+            record.get("state_assessment_construct_scale_means")
         ),
         "state_assessment_target_values_normalized": _json_log_value(
             record.get("state_assessment_target_values_normalized")
@@ -1079,7 +1083,7 @@ def _build_simulation_run_manifest(
             "llm2": config.model,
             "state_assessment": config.model,
         },
-        "psychological_construct_update_strategy": "evidence_offset_smoothed_bounded",
+        "psychological_construct_update_strategy": "questionnaire_scale_target_smoothed_bounded",
         "psychological_construct_update_alpha": 0.20,
         "psychological_construct_update_max_daily_change": 0.10,
         "psychological_construct_update_null_handling": "keep_previous",
@@ -1097,7 +1101,7 @@ def _build_simulation_run_manifest(
             "previous_diary_entry_context_strategy": "all_previous_entries_for_run",
             "active_constructs": list(ACTIVE_CONSTRUCTS),
             "placeholder_next_day_activity_generation_disabled": True,
-            "psychological_construct_update_strategy": "evidence_offset_smoothed_bounded",
+            "psychological_construct_update_strategy": "questionnaire_scale_target_smoothed_bounded",
             "psychological_construct_update_alpha": 0.20,
             "psychological_construct_update_max_daily_change": 0.10,
             "psychological_construct_update_null_handling": "keep_previous",
@@ -1116,7 +1120,7 @@ def _build_simulation_run_manifest(
             "llm2_raw_psychological_construct_values": "not provided; LLM1 is the sole processor of raw normalized constructs before LLM2 and passes four behavior_policy probabilities.",
             "weekday_convention": "Internal weekday is 0=Monday through 6=Sunday; LLM-facing context also includes weekday_name.",
             "phase_representation": "Internal phase may be holiday for lower-structure vacation blocks; LLM-facing phase_llm translates this as vacation_period. Public holidays require separate event variables.",
-            "llm3_assessment_policy": "LLM2 generates subjective diary entries; diary entries are the sole source of psychological-update evidence; LLM3 estimates continuous normalized construct targets; questionnaire responses are not simulated; Python applies smoothing and bounded daily updates; invalid or absent diary evidence preserves the previous value; automaticity uses diary-only explicit routine evidence.",
+            "llm3_assessment_policy": "LLM2 generates subjective diary entries; current and previous diary entries are the only sources for LLM3 assessment; LLM3 uses the restored questionnaire-item/construct-scale assessment schema, Python normalizes original scale means to [0,1], then applies continuous bounded smoothing; null or malformed construct assessments preserve the previous value exactly; PA decision, schedule, weather, accessibility, energy, and other context fields are not separate update evidence.",
         },
         "prompt_files": {
             "llm1": str((SIMULATION_DIR / "BehaviorProbability_Prompt.md").relative_to(ROOT_DIR)),
@@ -1364,11 +1368,14 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     "psychological_construct_values_before_state_assessment": assessment[
                         "psychological_construct_values_before_state_assessment"
                     ],
-                    "state_assessment_construct_evidence": assessment[
-                        "state_assessment_construct_evidence"
+                    "state_assessment_raw_item_or_scale_assessment": assessment[
+                        "state_assessment_raw_item_or_scale_assessment"
                     ],
                     "state_assessment_validation": assessment[
                         "state_assessment_validation"
+                    ],
+                    "state_assessment_construct_scale_means": assessment[
+                        "state_assessment_construct_scale_means"
                     ],
                     "state_assessment_target_values_normalized": assessment[
                         "state_assessment_target_values_normalized"
