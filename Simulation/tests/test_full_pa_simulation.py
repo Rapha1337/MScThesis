@@ -5,6 +5,7 @@ import json
 from datetime import date
 from pathlib import Path
 import sys
+import pytest
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
@@ -624,3 +625,91 @@ def test_planned_physical_activity_summary_preserves_mixed_targets_in_one_block(
     assert planned["is_contiguous"] is True
     assert planned["planned_target_locations"] == ["indoor_activity", "outdoor_activity"]
     assert planned["blocks"][0]["planned_target_locations"] == ["indoor_activity", "outdoor_activity"]
+
+
+def _loads_cell(value: str):
+    return json.loads(value)
+
+
+def test_manifest_update_parameters_match_trace_and_run_config(tmp_path: Path) -> None:
+    from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
+    from state_assessment import PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA, PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE
+
+    config = FullSimulationConfig(
+        n_personas=1,
+        n_days=1,
+        start_date=date(2026, 1, 1),
+        base_seed=137,
+        output_dir=tmp_path / "manifest_update_params",
+        model="gpt-oss-120b",
+        temperature=0,
+        llm1_max_tokens=2000,
+        llm2_max_tokens=1200,
+        dry_run=True,
+        include_full_hourly_context=False,
+    )
+    trace = run_full_simulation(config)
+    manifest = json.loads((config.output_dir / "simulation_run_manifest.json").read_text(encoding="utf-8"))
+    run_config = json.loads((config.output_dir / "run_config.json").read_text(encoding="utf-8"))
+    record = trace["records"][0]
+    assert manifest["psychological_construct_update_alpha"] == PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA == record["psychological_construct_update_alpha"] == run_config["psychological_construct_update_alpha"]
+    assert manifest["state_assessment"]["psychological_construct_update_alpha"] == PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA
+    assert manifest["psychological_construct_update_max_daily_change"] == PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE == record["psychological_construct_update_max_daily_change"] == run_config["psychological_construct_update_max_daily_change"]
+    assert manifest["state_assessment"]["psychological_construct_update_max_daily_change"] == PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE
+
+
+def test_pipeline_closed_loop_log_matches_trace_daily_and_longitudinal(tmp_path: Path) -> None:
+    config, trace = _run_dry_simulation(tmp_path)
+    pipeline_rows = list(csv.DictReader((config.output_dir / "pipeline_closed_loop_daily_log.csv").open("r", encoding="utf-8", newline="")))
+    daily_rows = list(csv.DictReader((config.output_dir / "daily_decision_log.csv").open("r", encoding="utf-8", newline="")))
+    longitudinal_rows = list(csv.DictReader((config.output_dir / "longitudinal_constructs.csv").open("r", encoding="utf-8", newline="")))
+    assert len(pipeline_rows) == len(trace["records"]) == len(daily_rows)
+    longitudinal_by_key = {(r["persona_id"], int(r["day_index"]), r["construct"]): r for r in longitudinal_rows}
+    for record, prow, drow in zip(trace["records"], pipeline_rows, daily_rows, strict=True):
+        assert prow == drow
+        previous = _loads_cell(prow["previous_psychological_constructs"])
+        updated = _loads_cell(prow["updated_psychological_constructs"])
+        applied = _loads_cell(prow["psychological_construct_update_delta_applied"])
+        assert previous == record["psychological_constructs_before_update"]
+        assert updated == record["psychological_constructs_after_update"]
+        assert _loads_cell(prow["state_assessment_target_values_normalized"]) == record["state_assessment_target_values_normalized"]
+        assert int(prow["previous_diary_entries_count"]) == record["previous_diary_entries_count"]
+        for construct, prev_value in previous.items():
+            assert float(updated[construct]) == pytest.approx(float(prev_value) + float(applied[construct]))
+            lrow = longitudinal_by_key[(record["persona_id"], int(record["day_index"]), construct)]
+            assert float(lrow["value_before"]) == pytest.approx(float(prev_value))
+            assert float(lrow["value_after"]) == pytest.approx(float(updated[construct]))
+            assert float(lrow["delta"]) == pytest.approx(float(applied[construct]))
+
+
+def test_unplanned_diary_entries_remain_in_day3_llm3_history(tmp_path: Path, monkeypatch) -> None:
+    import run_full_pa_simulation as module
+    from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
+
+    planned = {"scheduled_hours": [18], "description": "planned PA"}
+    def fake_planned(_hourly):
+        day = fake_planned.calls
+        fake_planned.calls += 1
+        return None if day in (0, 1) else planned
+    fake_planned.calls = 0
+    monkeypatch.setattr(module, "planned_physical_activity_from_schedule", fake_planned)
+
+    config = FullSimulationConfig(
+        n_personas=1,
+        n_days=3,
+        start_date=date(2026, 1, 1),
+        base_seed=137,
+        output_dir=tmp_path / "unplanned_history",
+        model="gpt-oss-120b",
+        temperature=0,
+        llm1_max_tokens=2000,
+        llm2_max_tokens=1200,
+        dry_run=True,
+        include_full_hourly_context=False,
+    )
+    trace = run_full_simulation(config)
+    records = trace["records"]
+    assert [r["was_physical_activity_planned_today"] for r in records] == [False, False, True]
+    day3_history = records[2]["previous_diary_entries_context_used"]
+    assert [entry["day_index"] for entry in day3_history] == [0, 1]
+    assert all(entry["diary_entry"] for entry in day3_history)
