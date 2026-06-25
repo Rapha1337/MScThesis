@@ -131,20 +131,29 @@ def parse_state_assessment_json(raw: str) -> dict[str, Any]:
 
 
 AUTOMATICITY_PRIOR_SIMILAR_EPISODES_REQUIRED = 2
-FORBIDDEN_LLM3_EVIDENCE_FIELDS = frozenset({
-    "direction", "strength", "evidence_strength", "deterministic_target_offset",
-    "delta", "update_amount", "fixed_offset", "offset", "item_scores", "items",
-    "scale_mean", "mean_score",
-})
 
 
-def _no_evidence() -> dict[str, Any]:
+def _no_item_assessment() -> dict[str, Any]:
     return {
-        "evidence_present": False,
-        "target_value_normalized": None,
-        "evidence_span": None,
-        "reasoning_short": "",
+        "items": [],
+        "mean_score": None,
     }
+
+
+def _scale_range(construct: str) -> tuple[float, float]:
+    low, high = BACKEND_CONSTRUCT_RANGES[construct]
+    return float(low), float(high)
+
+
+def normalize_construct_scale_score(construct: str, score: Any) -> float | None:
+    """Normalize an original questionnaire scale score to [0, 1]."""
+    if score is None or isinstance(score, bool) or not isinstance(score, (int, float)):
+        return None
+    low, high = _scale_range(construct)
+    numeric = float(score)
+    if numeric < low or numeric > high:
+        return None
+    return (numeric - low) / (high - low)
 
 
 def _find_removed_construct_keys(value: Any) -> set[str]:
@@ -160,41 +169,19 @@ def _find_removed_construct_keys(value: Any) -> set[str]:
     return found
 
 
-def _find_forbidden_numeric_assessment_keys(value: Any, path: str = "") -> list[str]:
-    forbidden = {
-        "item_scores", "items", "mean_score", "mean_scores", "mean_scores_raw",
-        "mean_scores_normalized", "target_values", "construct_updates", "updates",
-        "score", "raw_scale_construct_means", "normalized_construct_targets",
-        "evidence_strength", "deterministic_target_offset",
-        "delta", "update_amount", "fixed_offset", "offset", "scale_mean",
-    }
-    found: list[str] = []
-    if isinstance(value, Mapping):
-        for key, item in value.items():
-            child = f"{path}.{key}" if path else str(key)
-            if str(key) in forbidden:
-                found.append(child)
-            found.extend(_find_forbidden_numeric_assessment_keys(item, child))
-    elif isinstance(value, list):
-        for index, item in enumerate(value):
-            found.extend(_find_forbidden_numeric_assessment_keys(item, f"{path}[{index}]"))
-    return found
-
-
-def _span_has_construct_support(construct: str, span: str) -> bool:
-    text = span.lower()
-    checks = {
-        "automaticity": ["without thinking", "automatically", "as usual", "routine", "like every", "found myself"],
-        "pa_specific_self_control": ["wanted to stay", "temptation", "resisted", "overcome", "overcame", "wanted to skip", "but went", "but I went".lower()],
-        "action_planning": ["planned", "plan", "packed", "prepared", "at ", "after work", "in the morning", "where", "when", "how"],
-        "intention": ["determined", "decided", "intended", "committed", "would go", "would exercise", "was going to"],
-        "perceived_behavioral_control": ["capable", "able to", "under my control", "beyond my control", "not feel capable", "could manage", "could not manage"],
-        "attitude_toward_the_behavior": ["worthwhile", "beneficial", "pleasant", "unpleasant", "boring", "valuable", "harmful", "good for me"],
-        "subjective_norm": ["encouraged", "expected me", "pressure", "pressured", "approved", "disapproved", "training partner"],
-        "intrinsic_motivation": ["enjoyed", "fun", "pleasure", "interesting", "satisfying", "liked"],
-        "motivational_competence": ["motivate myself", "motivation", "get started effectively", "mobilize myself", "managed to get started"],
-    }
-    return any(marker in text for marker in checks[construct])
+def _item_scores_for_construct(raw: Any) -> tuple[list[Mapping[str, Any]], float | None, list[str]]:
+    reasons: list[str] = []
+    if not isinstance(raw, Mapping):
+        return [], None, ["missing_or_non_object"]
+    items = raw.get("items")
+    if not isinstance(items, list):
+        reasons.append("items_not_array")
+        items = []
+    mean = raw.get("mean_score")
+    if mean is not None and (isinstance(mean, bool) or not isinstance(mean, (int, float))):
+        reasons.append("mean_score_not_number_or_null")
+        mean = None
+    return [item for item in items if isinstance(item, Mapping)], (float(mean) if mean is not None else None), reasons
 
 
 def validate_state_assessment_output(
@@ -207,93 +194,76 @@ def validate_state_assessment_output(
     removed_anywhere = sorted(_find_removed_construct_keys(payload))
     if removed_anywhere:
         raise ValueError(f"State Assessment contains removed construct keys: {removed_anywhere}.")
-    forbidden_keys = _find_forbidden_numeric_assessment_keys(payload)
-    if forbidden_keys:
-        raise ValueError(f"State Assessment returned forbidden scoring/target keys: {forbidden_keys}.")
     if payload.get("persona_id") != expected_persona_id:
         raise ValueError("State Assessment persona_id does not match the request.")
     day_index = payload.get("day_index")
     if isinstance(day_index, bool) or not isinstance(day_index, int) or day_index != expected_day_index:
         raise ValueError("State Assessment day_index does not match the request.")
 
-    evidence_root = payload.get("construct_evidence")
-    if not isinstance(evidence_root, Mapping):
-        raise ValueError("State Assessment construct_evidence must be an object.")
+    item_scores_root = payload.get("item_scores")
+    if not isinstance(item_scores_root, Mapping):
+        raise ValueError("State Assessment item_scores must be an object.")
 
     accepted: dict[str, Any] = {}
     rejected: dict[str, list[dict[str, Any]]] = {construct: [] for construct in ACTIVE_CONSTRUCTS}
     validation_errors: list[dict[str, Any]] = []
-    span_to_constructs: dict[str, list[str]] = {}
 
     for construct in ACTIVE_CONSTRUCTS:
-        raw = evidence_root.get(construct)
-        if not isinstance(raw, Mapping):
-            accepted[construct] = _no_evidence()
-            rejected[construct].append({"reason": "missing_or_non_object", "raw": raw})
-            continue
-        present = raw.get("evidence_present")
-        target = raw.get("target_value_normalized")
-        span = raw.get("evidence_span")
-        reasoning = raw.get("reasoning_short")
-        reasons: list[str] = []
-        forbidden_present = sorted(str(k) for k in raw if str(k) in FORBIDDEN_LLM3_EVIDENCE_FIELDS)
-        if forbidden_present:
-            reasons.append("forbidden_evidence_fields:" + ",".join(forbidden_present))
-        if not isinstance(present, bool):
-            reasons.append("evidence_present_not_boolean")
-        if present is False:
-            if target is not None or span is not None or reasoning != "":
-                reasons.append("absent_evidence_must_use_null_span_target_and_empty_reasoning")
-        elif present is True:
-            if isinstance(target, bool) or not isinstance(target, (int, float)) or not 0 <= float(target) <= 1:
-                reasons.append("target_value_normalized_not_in_0_1")
-            if not isinstance(span, str) or not span or span not in current_simulated_diary_entry:
-                reasons.append("span_not_exact_current_diary_substring")
-            elif not _span_has_construct_support(construct, span):
-                reasons.append("span_lacks_construct_specific_support")
-            if not isinstance(reasoning, str) or not reasoning.strip():
-                reasons.append("missing_reasoning")
-        else:
-            reasons.append("invalid_evidence_present")
-        if reasons:
-            accepted[construct] = _no_evidence()
-            rejected[construct].append({"reason": ";".join(reasons), "raw": dict(raw)})
-            validation_errors.append({"construct": construct, "reason": ";".join(reasons)})
-            continue
-        if present:
-            entry = {
-                "evidence_present": True,
-                "target_value_normalized": float(target),
-                "evidence_span": span,
-                "reasoning_short": reasoning.strip(),
-            }
-            accepted[construct] = entry
-            span_to_constructs.setdefault(span, []).append(construct)  # type: ignore[arg-type]
-        else:
-            accepted[construct] = _no_evidence()
+        raw = item_scores_root.get(construct)
+        items, mean_score, reasons = _item_scores_for_construct(raw)
+        low, high = _scale_range(construct)
+        expected_count = CONSTRUCT_ITEM_COUNTS[construct]
+        valid_item_scores: list[float] = []
+        sanitized_items: list[dict[str, Any]] = []
 
-    duplicate_conflicts: list[dict[str, Any]] = []
-    for span, constructs in span_to_constructs.items():
-        if len(constructs) < 2:
-            continue
-        reasonings = [accepted[c]["reasoning_short"].strip().lower() for c in constructs]
-        has_distinct_explanations = len(set(reasonings)) == len(reasonings) and all(len(r) >= 12 for r in reasonings)
-        has_distinct_clauses = any(marker in span.lower() for marker in [" but ", " and ", ";", ","])
-        all_constructs_supported = all(_span_has_construct_support(c, span) for c in constructs)
-        if not (has_distinct_explanations and has_distinct_clauses and all_constructs_supported):
-            conflict = {"evidence_span": span, "constructs": constructs, "reason": "ambiguous_duplicate_span"}
-            duplicate_conflicts.append(conflict)
-            for construct in constructs:
-                rejected[construct].append({"reason": "ambiguous_duplicate_span", "raw": accepted[construct]})
-                accepted[construct] = _no_evidence()
+        if len(items) != expected_count:
+            reasons.append(f"item_count_not_{expected_count}")
+        for index, item in enumerate(items):
+            score = item.get("score")
+            spans = item.get("evidence_spans")
+            reasoning = item.get("reasoning_short")
+            item_reasons: list[str] = []
+            if score is None:
+                pass
+            elif isinstance(score, bool) or not isinstance(score, (int, float)) or not low <= float(score) <= high:
+                item_reasons.append("score_outside_original_scale_or_bad_type")
+            else:
+                valid_item_scores.append(float(score))
+            if not isinstance(spans, list) or any(not isinstance(span, str) or span not in current_simulated_diary_entry for span in spans):
+                item_reasons.append("evidence_spans_must_be_current_diary_substrings")
+            if score is None and spans not in ([], None):
+                item_reasons.append("null_score_requires_empty_evidence_spans")
+            if score is not None and (not isinstance(reasoning, str) or not reasoning.strip()):
+                item_reasons.append("scored_item_requires_reasoning")
+            sanitized_items.append({
+                "question_id": item.get("question_id") or f"{construct}_q{index + 1}",
+                "score": (float(score) if isinstance(score, (int, float)) and not isinstance(score, bool) else None),
+                "range": item.get("range") or f"{low:g}-{high:g}",
+                "evidence_spans": spans if isinstance(spans, list) else [],
+                "reasoning_short": reasoning.strip() if isinstance(reasoning, str) else "",
+            })
+            reasons.extend(item_reasons)
+
+        calculated_mean = (sum(valid_item_scores) / len(valid_item_scores)) if valid_item_scores else None
+        if mean_score is not None and (mean_score < low or mean_score > high):
+            reasons.append("mean_score_outside_original_scale")
+        if mean_score is not None and calculated_mean is not None and abs(mean_score - calculated_mean) > 0.05:
+            reasons.append("mean_score_does_not_match_item_scores")
+        effective_mean = mean_score if mean_score is not None else calculated_mean
+        normalized = normalize_construct_scale_score(construct, effective_mean)
+        if reasons or normalized is None:
+            accepted[construct] = _no_item_assessment()
+            rejected[construct].append({"reason": ";".join(reasons or ["null_or_malformed_assessment"]), "raw": raw})
+            validation_errors.append({"construct": construct, "reason": ";".join(reasons or ["null_or_malformed_assessment"])})
+        else:
+            accepted[construct] = {"items": sanitized_items, "mean_score": effective_mean}
 
     return {
         "persona_id": expected_persona_id,
         "day_index": expected_day_index,
-        "accepted_evidence": accepted,
-        "rejected_evidence": rejected,
+        "accepted_item_scores": accepted,
+        "rejected_item_scores": rejected,
         "rejection_reasons": validation_errors,
-        "duplicate_span_conflicts": duplicate_conflicts,
     }
 
 
@@ -303,68 +273,72 @@ def _extract_diary_text(entry: Mapping[str, Any]) -> str:
 
 
 def _matching_prior_automaticity_occurrences(previous_diary_entries: Sequence[Mapping[str, Any]]) -> list[Mapping[str, Any]]:
-    return [entry for entry in previous_diary_entries if _span_has_construct_support("automaticity", _extract_diary_text(entry))]
+    text_markers = ["without thinking", "automatically", "as usual", "routine", "habit"]
+    return [entry for entry in previous_diary_entries if any(marker in _extract_diary_text(entry).lower() for marker in text_markers)]
 
-def evidence_to_deterministic_construct_update(
+
+def item_assessment_to_smoothed_construct_update(
     previous_values: Mapping[str, float],
-    accepted_evidence: Mapping[str, Mapping[str, Any]],
+    accepted_item_scores: Mapping[str, Mapping[str, Any]],
     *,
     previous_diary_entries: Sequence[Mapping[str, Any]] = (),
-    current_decision_label: str | None = None,
-    was_physical_activity_planned_today: bool | None = None,
-    planned_physical_activity_summary: Mapping[str, Any] | None = None,
     alpha: float = PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA,
     max_daily_change: float = PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE,
     automaticity_prior_threshold: int = AUTOMATICITY_PRIOR_SIMILAR_EPISODES_REQUIRED,
 ) -> dict[str, Any]:
-    del current_decision_label, was_physical_activity_planned_today, planned_physical_activity_summary
     targets: dict[str, float | None] = {}
     proposed: dict[str, float] = {}
     applied: dict[str, float] = {}
     updated: dict[str, float] = {}
     details: dict[str, Any] = {}
+    raw_assessment: dict[str, Any] = {}
+    scale_means: dict[str, float | None] = {}
     prior_matches = _matching_prior_automaticity_occurrences(previous_diary_entries)
-
-    current_auto = accepted_evidence.get("automaticity", _no_evidence())
-    auto_gate_passed = bool(current_auto.get("evidence_present")) and len(prior_matches) >= automaticity_prior_threshold
 
     for construct in ACTIVE_CONSTRUCTS:
         current = float(previous_values[construct])
-        ev = accepted_evidence.get(construct, _no_evidence())
-        effective_target = ev.get("target_value_normalized") if ev.get("evidence_present") else None
-        if construct == "automaticity" and ev.get("evidence_present") and not auto_gate_passed:
-            effective_target = None
-        if effective_target is None or isinstance(effective_target, bool) or not isinstance(effective_target, (int, float)) or not 0 <= float(effective_target) <= 1:
+        assessment = accepted_item_scores.get(construct, _no_item_assessment())
+        mean_score = assessment.get("mean_score")
+        target = normalize_construct_scale_score(construct, mean_score)
+        if construct == "automaticity" and target is not None and len(prior_matches) < automaticity_prior_threshold:
             target = None
+        if target is None:
             proposed_delta = 0.0
             applied_delta = 0.0
         else:
-            target = float(effective_target)
             proposed_delta = alpha * (target - current)
             applied_delta = max(-max_daily_change, min(max_daily_change, proposed_delta))
         targets[construct] = target
+        scale_means[construct] = mean_score if isinstance(mean_score, (int, float)) and not isinstance(mean_score, bool) else None
         proposed[construct] = proposed_delta
         applied[construct] = applied_delta
         updated[construct] = min(1.0, max(0.0, current + applied_delta))
+        raw_assessment[construct] = assessment
         details[construct] = {
+            "raw_llm3_item_or_scale_assessment": assessment,
+            "construct_scale_mean": scale_means[construct],
+            "normalized_target_value": target,
             "current_value": current,
-            "target_value_normalized": target,
             "proposed_delta": proposed_delta,
             "applied_delta": applied_delta,
             "updated_value": updated[construct],
         }
     gate = {
-        "current_automaticity_evidence_span": current_auto.get("evidence_span") if current_auto.get("evidence_present") else None,
         "qualifying_previous_diary_evidence_spans": [_extract_diary_text(entry) for entry in prior_matches],
         "qualifying_prior_occurrences": len(prior_matches),
         "repetition_threshold_prior_occurrences": automaticity_prior_threshold,
-        "automaticity_update_gate_passed": auto_gate_passed,
+        "automaticity_update_gate_passed": targets["automaticity"] is not None,
         "gate_basis": "diary_only_explicit_routine_or_automaticity_wording",
     }
-    return {"targets_normalized": targets, "delta_proposed": proposed, "delta_applied": applied, "updated_values": updated, "details": details, "automaticity_repetition_gate": gate}
+    return {"raw_item_or_scale_assessment": raw_assessment, "scale_means": scale_means, "targets_normalized": targets, "delta_proposed": proposed, "delta_applied": applied, "updated_values": updated, "details": details, "automaticity_repetition_gate": gate}
+
+
+def evidence_to_deterministic_construct_update(previous_values: Mapping[str, float], accepted_evidence: Mapping[str, Mapping[str, Any]], **kwargs: Any) -> dict[str, Any]:
+    return item_assessment_to_smoothed_construct_update(previous_values, accepted_evidence, previous_diary_entries=kwargs.get("previous_diary_entries", ()))
+
 
 def build_dry_run_state_assessment(*, persona_id: str, day_index: int, previous_normalized_values: Mapping[str, Any]) -> dict[str, Any]:
-    return {"persona_id": persona_id, "day_index": day_index, "construct_evidence": {construct: _no_evidence() for construct in ACTIVE_CONSTRUCTS}, "metadata": {"mode": "dry_run_mock"}}
+    return {"persona_id": persona_id, "day_index": day_index, "item_scores": {construct: _no_item_assessment() for construct in ACTIVE_CONSTRUCTS}, "metadata": {"mode": "dry_run_mock"}}
 
 def _get_client() -> Any:
     global _client
@@ -562,36 +536,40 @@ def run_state_assessment(
                     raise
         mode = "llm"
 
-    validated = validate_state_assessment_output(
-        raw_payload,
-        expected_persona_id=persona_id,
-        expected_day_index=day_index,
-        current_simulated_diary_entry=current_simulated_diary_entry,
-    )
-    update = evidence_to_deterministic_construct_update(
+    try:
+        validated = validate_state_assessment_output(
+            raw_payload,
+            expected_persona_id=persona_id,
+            expected_day_index=day_index,
+            current_simulated_diary_entry=current_simulated_diary_entry,
+        )
+    except ValueError as exc:
+        validated = {
+            "accepted_item_scores": {construct: _no_item_assessment() for construct in ACTIVE_CONSTRUCTS},
+            "rejected_item_scores": {construct: [{"reason": "malformed_assessment_response", "raw": raw_payload}] for construct in ACTIVE_CONSTRUCTS},
+            "rejection_reasons": [{"construct": "__response__", "reason": str(exc)}],
+        }
+    update = item_assessment_to_smoothed_construct_update(
         previous_normalized_values,
-        validated["accepted_evidence"],
+        validated["accepted_item_scores"],
         previous_diary_entries=previous_diary_entries,
-        current_decision_label=current_decision_label,
-        was_physical_activity_planned_today=was_physical_activity_planned_today,
-        planned_physical_activity_summary=planned_physical_activity_summary,
     )
     visible_targets = update["targets_normalized"]
     return {
         "state_assessment_enabled": True,
         "state_assessment_mode": mode,
-        "state_assessment_construct_evidence": validated["accepted_evidence"],
+        "state_assessment_raw_item_or_scale_assessment": validated["accepted_item_scores"],
         "state_assessment_validation": {
-            "accepted_evidence": validated["accepted_evidence"],
-            "rejected_evidence": validated["rejected_evidence"],
+            "accepted_item_scores": validated["accepted_item_scores"],
+            "rejected_item_scores": validated["rejected_item_scores"],
             "rejection_reasons": validated["rejection_reasons"],
-            "duplicate_span_conflicts": validated["duplicate_span_conflicts"],
         },
         "state_assessment_target_values_normalized": visible_targets,
         "psychological_construct_values_before_state_assessment": dict(
             previous_normalized_values
         ),
-        "psychological_construct_update_strategy": "continuous_target_smoothed_bounded",
+        "state_assessment_construct_scale_means": update["scale_means"],
+        "psychological_construct_update_strategy": "questionnaire_scale_target_smoothed_bounded",
         "psychological_construct_update_alpha": PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA,
         "psychological_construct_update_max_daily_change": (
             PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE
