@@ -78,7 +78,7 @@ Semantik der Labels:
 
 `rationale_short` soll die wichtigsten psychologischen und kontextuellen Faktoren nennen, die zur Entscheidung geführt haben. Nenne keine Fragebogenitems und keine numerischen Wahrscheinlichkeiten.
 
-`diary_entry` ist eine natürlich klingende simulierte Tagebuchpassage in der Ich-Perspektive, meistens mit zwei oder drei kurzen Sätzen. Sie muss zur finalen Entscheidung, dazu ob PA geplant war, zum Tageskontext und zur Begründung passen. Sie soll das subjektive Erleben des Tages und der PA-Entscheidung beschreiben, nicht nur ein Faktenprotokoll der Entscheidung. Wenn es plausibel und im Kontext begründet ist, darf sie ein bis drei psychologisch informative Erfahrungen enthalten, z. B. Wollen oder Entschlossenheit, sich fähig oder unfähig fühlen, einen konkurrierenden Impuls bewusst überwinden, konkret planen wann/wo/wie Bewegung stattfindet, Freude oder Abneigung gegenüber Bewegung, soziale Ermutigung/Erwartung/Druck, sich selbst motivieren können oder automatisches/routiniertes Handeln.
+`diary_entry` ist eine natürlich klingende simulierte Tagebuchpassage in der Ich-Perspektive mit 1–3 Sätzen. Sie muss zur ausgewählten Kategorie und zum Tageskontext passen.
 
 ## Ausgabeformat
 
@@ -102,16 +102,7 @@ Regeln:
 * `decision_label` muss in `valid_decision_categories` enthalten sein.
 * Wähle keine Kategorie, die wegen fehlender geplanter PA ungültig ist.
 * `rationale_short` begründet die aktuelle Tagesentscheidung kurz aus den gelieferten psychologischen Tendenzen und Kontextinformationen.
-* `diary_entry` beschreibt subjektives Erleben, Motivation, Gewohnheiten oder wahrgenommene Einflüsse und nicht nur den Stundenplan oder das Verhalten.
-* Erzwinge keine psychologische Evidenz in jedem Tagebuch; erwähne nicht jeden Tag alle Konstrukte.
-* Nutze höchstens ein bis drei psychologisch relevante Erfahrungen pro Tagebuch.
-* Verwende normale Ich-Sprache und keine formalen Konstruktbegriffe wie `perceived behavioral control`, `intrinsic motivation`, `subjective norm` oder `automaticity`.
-* Erfinde keine soziale Unterstützung, sozialen Druck, Freude, Kompetenz, Intention oder Gewohnheit, wenn sie nicht aus Entscheidung und verfügbarem Kontext plausibel sind.
-* Behaupte keine durchgeführte Aktivität, wenn die finale Entscheidung `skip_activity` ist.
-* Beschreibe geplante PA nicht als bereits abgeschlossen, bevor die Entscheidung getroffen wurde.
-* Leite keine nicht genannten Ereignisse wie Universität, Arbeit, soziale Interaktion oder öffentliche Feiertage ab, wenn sie im Kontext fehlen.
-* Ein Tagebucheintrag sollte normalerweise nicht nur aus einem rein faktischen Ein-Satz-Bericht wie „Ich habe das geplante Training gemacht“ bestehen.
-* Gute Stile sind z. B.: „Ich hatte nach der Arbeit trainieren wollen und war trotz Müdigkeit noch entschlossen. Erst wollte ich zu Hause bleiben, aber ich habe diesen Impuls überwunden und die Einheit gemacht.“ Oder: „Ich fühlte mich nach dem stressigen Tag nicht fähig, das geplante Training zu schaffen. Deshalb habe ich entschieden, es auszulassen und mich auszuruhen.“
+* `diary_entry` beschreibt Erleben, Motivation, Gewohnheiten oder wahrgenommene Einflüsse und nicht nur den Stundenplan.
 * Schlage keine neue oder zukünftige Aktivität vor.
 * Füge keinen Text vor oder nach dem JSON ein.
 
