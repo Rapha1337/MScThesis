@@ -381,47 +381,105 @@ def _validated_origin_accessibility(
     return copied, None
 
 
+def _planned_pa_blocks(hourly_context: list[Any]) -> list[list[int]]:
+    """Return contiguous hour-index blocks whose schedule says physical_activity."""
+    blocks: list[list[int]] = []
+    current_block: list[int] = []
+    for index, entry in enumerate(hourly_context):
+        is_planned_pa = isinstance(entry, Mapping) and entry.get("activity_type") == "physical_activity"
+        if is_planned_pa:
+            current_block.append(index)
+            continue
+        if current_block:
+            blocks.append(current_block)
+            current_block = []
+    if current_block:
+        blocks.append(current_block)
+    return blocks
+
+
+def _fallback_home_origin_entry(hourly_context: list[Any]) -> Mapping[str, Any]:
+    for entry in hourly_context:
+        if isinstance(entry, Mapping) and entry.get("current_location") == "home" and not _is_pa_context_entry(entry):
+            return entry
+    return {
+        "hour": None,
+        "activity_type": "fallback_origin",
+        "subtype": "home_assumption",
+        "current_location": "home",
+        "poi_accessibility": None,
+        "origin_fallback_reason": "no_preceding_non_pa_stable_origin",
+    }
+
+
+def _pre_decision_origin_for_block(hourly_context: list[Any], start_index: int) -> Mapping[str, Any]:
+    """Return the block origin from the last concrete non-PA location before the block."""
+    for index in range(start_index - 1, -1, -1):
+        entry = hourly_context[index]
+        if not isinstance(entry, Mapping) or _is_pa_context_entry(entry):
+            continue
+        if entry.get("current_location") in STABLE_LOCATION_ANCHORS:
+            return entry
+    fallback = _fallback_home_origin_entry(hourly_context)
+    if isinstance(fallback, dict):
+        fallback = {**fallback, "origin_fallback_reason": "no_preceding_concrete_origin_before_pa_block"}
+    return fallback
+
+
 def build_pre_decision_hourly_context(
     hourly_context: list[Any],
     planned_physical_activity: Mapping[str, Any] | None,
 ) -> list[Any]:
     """Return an LLM2-facing context where planned PA is not treated as realized behavior."""
+    del planned_physical_activity
     context = _strip_raw_psychological_fields(hourly_context)
-    if not isinstance(planned_physical_activity, Mapping):
+    blocks = _planned_pa_blocks(context)
+    if not blocks:
         return context
-    hours = planned_physical_activity.get("scheduled_hours")
-    if not isinstance(hours, list) or not hours:
-        return context
-    pa_hours = {int(hour) for hour in hours if isinstance(hour, int) and 0 <= hour <= 23}
-    if not pa_hours:
-        return context
-    start_hour = min(pa_hours)
-    origin_entry = _pre_decision_origin_hour(context, start_hour)
-    origin_location = origin_entry.get("current_location") if isinstance(origin_entry, Mapping) else "unknown"
-    for entry in context:
-        if not isinstance(entry, dict) or entry.get("hour") not in pa_hours:
-            continue
-        planned_target = entry.get("current_location")
-        entry["scheduled_activity_type"] = entry.get("activity_type")
-        entry["scheduled_subtype"] = entry.get("subtype")
-        entry["planned_pa_target_location"] = planned_target
-        entry["pre_decision_origin_location"] = origin_location
-        entry["activity_type"] = "pre_decision_context"
-        entry["subtype"] = "planned_physical_activity_pending_decision"
-        entry["current_location"] = origin_location
-        origin_accessibility, accessibility_issue = _validated_origin_accessibility(
-            origin_entry,
-            origin_location=origin_location,
-            planned_target=planned_target,
-        )
-        entry["poi_accessibility"] = origin_accessibility
-        entry["poi_accessibility_origin_location"] = origin_location
-        if accessibility_issue is not None:
-            entry["poi_accessibility_validation_issue"] = accessibility_issue
-        if isinstance(origin_entry, Mapping) and origin_entry.get("origin_fallback_reason") is not None:
-            entry["pre_decision_origin_fallback_reason"] = origin_entry.get("origin_fallback_reason")
-        entry["planned_activity_not_yet_realized"] = True
+
+    for block in blocks:
+        origin_entry = _pre_decision_origin_for_block(context, block[0])
+        origin_location = origin_entry.get("current_location") if isinstance(origin_entry, Mapping) else "home"
+        for index in block:
+            entry = context[index]
+            if not isinstance(entry, dict):
+                continue
+            planned_target = entry.get("current_location")
+            entry["planned_destination"] = planned_target
+            entry["activity_type"] = "planned_physical_activity"
+            entry["current_location"] = origin_location
+            entry["decision_status"] = "not_yet_realized"
+            origin_accessibility, accessibility_issue = _validated_origin_accessibility(
+                origin_entry,
+                origin_location=origin_location,
+                planned_target=planned_target,
+            )
+            entry["poi_accessibility"] = origin_accessibility
+            if accessibility_issue is not None:
+                entry["poi_accessibility_validation_issue"] = accessibility_issue
+            if isinstance(origin_entry, Mapping) and origin_entry.get("origin_fallback_reason") is not None:
+                entry["pre_decision_origin_fallback_reason"] = origin_entry.get("origin_fallback_reason")
     return context
+
+
+def llm2_planned_pa_context_summary(daily_context: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Return trace rows for transformed planned PA hours passed to LLM2."""
+    hourly_context = daily_context.get("hourly_context_24h")
+    if not isinstance(hourly_context, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for entry in hourly_context:
+        if not isinstance(entry, Mapping) or entry.get("activity_type") != "planned_physical_activity":
+            continue
+        rows.append({
+            "hour": entry.get("hour"),
+            "activity_type": entry.get("activity_type"),
+            "current_location": entry.get("current_location"),
+            "planned_destination": entry.get("planned_destination"),
+            "decision_status": entry.get("decision_status"),
+            "poi_accessibility": copy.deepcopy(entry.get("poi_accessibility")),
+        })
+    return rows
 
 
 def prepare_daily_context_for_pa_decision(
@@ -1211,6 +1269,7 @@ def run_pipeline_for_context(
         "decision_source": str(pa_decision_input["decision_source"]),
         "pa_decision": pa_decision,
         "closed_loop_update": closed_loop_update,
+        "llm2_planned_pa_context": llm2_planned_pa_context_summary(pa_decision_input["daily_context"]),
         "output_files": {
             "behavior_policy": str(behavior_output_path),
             "pa_decision": str(pa_decision_output_path),

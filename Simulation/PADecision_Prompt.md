@@ -109,4 +109,4 @@ Regeln:
 
 Kalenderhinweis: `weekday` nutzt intern 0=Monday bis 6=Sunday; verwende bevorzugt `weekday_name`. Die interne Phase `holiday` wird LLM-seitig als `vacation_period` verstanden, nicht als öffentlicher Feiertag.
 
-Pre-decision context: Für geplante PA-Stunden beschreibt `daily_context.hourly_context_24h` den Zustand vor der finalen Entscheidung. Felder wie `scheduled_activity_type`, `planned_pa_target_location`, `pre_decision_origin_location` und `planned_activity_not_yet_realized` markieren geplante, noch nicht realisierte PA.
+Pre-decision context: `planned_physical_activity` beschreibt eine geplante, aber noch nicht ausgeführte Aktivität. In solchen Stunden beschreiben `current_location` und `poi_accessibility` die Situation vor Beginn der Aktivität; `planned_destination` ist der geplante Zielort. Eine geplante Aktivität bedeutet nicht, dass sie durchgeführt wird. Wäge Verhaltenstendenzen und gesamten Tageskontext gegeneinander ab.

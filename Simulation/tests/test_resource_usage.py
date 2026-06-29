@@ -163,6 +163,8 @@ def test_full_simulation_dry_run_writes_resource_usage_jsonl(tmp_path: Path) -> 
     assert "postpone_activity" in manifest["decision_schema"]["deprecated_categories"]
     assert "postponed" in manifest["decision_schema"]["deprecated_categories"]
     assert manifest["output_files"]["resource_usage"] == "resource_usage.jsonl"
+    assert "pipeline_closed_loop_daily_log" not in manifest["output_files"]
+    assert not (tmp_path / "pipeline_closed_loop_daily_log.csv").exists()
 
 
 def test_failed_resource_stop_writes_total_and_preserves_original_exception(tmp_path: Path) -> None:
