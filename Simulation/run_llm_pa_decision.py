@@ -477,6 +477,18 @@ def llm2_planned_pa_context_summary(daily_context: Mapping[str, Any]) -> list[di
             "current_location": entry.get("current_location"),
             "planned_destination": entry.get("planned_destination"),
             "decision_status": entry.get("decision_status"),
+            "energy_level": entry.get("energy_level"),
+            "energy_category": entry.get("energy_category"),
+            "temperature_c": entry.get("temperature_c"),
+            "feels_like_c": entry.get("feels_like_c"),
+            "humidity_pct": entry.get("humidity_pct"),
+            "wind_m_s": entry.get("wind_m_s"),
+            "precipitation_mm": entry.get("precipitation_mm"),
+            "is_wet": entry.get("is_wet"),
+            "sun_frac": entry.get("sun_frac"),
+            "is_daylight": entry.get("is_daylight"),
+            "snow_cover": entry.get("snow_cover"),
+            "active_constraints": copy.deepcopy(entry.get("active_constraints")),
             "poi_accessibility": copy.deepcopy(entry.get("poi_accessibility")),
         })
     return rows

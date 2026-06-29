@@ -53,6 +53,8 @@ from simulation_runner import SimulationRunner  # noqa: E402
 from state_assessment import (  # noqa: E402
     ACTIVE_CONSTRUCTS,
     DEFAULT_MAX_TOKENS as STATE_ASSESSMENT_MAX_TOKENS,
+    PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA,
+    PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE,
     load_state_assessment_prompt,
     run_state_assessment,
 )
@@ -1078,8 +1080,10 @@ def _build_simulation_run_manifest(
             "state_assessment": config.model,
         },
         "psychological_construct_update_strategy": "smoothed_bounded",
-        "psychological_construct_update_alpha": 0.20,
-        "psychological_construct_update_max_daily_change": 0.10,
+        "psychological_construct_update_alpha": PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA,
+        "psychological_construct_update_max_daily_change": (
+            PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE
+        ),
         "psychological_construct_update_null_handling": "keep_previous",
         "state_assessment": {
             "state_assessment_enabled": True,
@@ -1096,8 +1100,10 @@ def _build_simulation_run_manifest(
             "active_constructs": list(ACTIVE_CONSTRUCTS),
             "placeholder_next_day_activity_generation_disabled": True,
             "psychological_construct_update_strategy": "smoothed_bounded",
-            "psychological_construct_update_alpha": 0.20,
-            "psychological_construct_update_max_daily_change": 0.10,
+            "psychological_construct_update_alpha": PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA,
+            "psychological_construct_update_max_daily_change": (
+                PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE
+            ),
             "psychological_construct_update_null_handling": "keep_previous",
         },
         "decision_schema": {
@@ -1416,7 +1422,10 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     "closed_loop_update": closed_loop_update,
                     "psychological_constructs_after_update": constructs_after,
                     "context_summary": _context_summary(llm_context),
-                    "output_files": dict(pipeline_record.get("output_files", {})),
+                    "output_files": {
+                        **dict(pipeline_record.get("output_files", {})),
+                        "daily_decision_log": str(daily_log_path),
+                    },
                 }
                 record["output_files"]["state_assessment"] = str(assessment_output_path)
                 if config.include_full_hourly_context:
@@ -1464,6 +1473,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 "base_seed": config.base_seed,
                 "dry_run": config.dry_run,
                 "persona_metadata_file": str(persona_metadata_path),
+                "output_files": dict(output_files),
             },
             "records": records,
         }
