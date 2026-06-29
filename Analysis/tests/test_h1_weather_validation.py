@@ -7,11 +7,14 @@ import sys
 import pandas as pd
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+ANALYSIS_DIR = Path(__file__).resolve().parents[1]
+ROOT = ANALYSIS_DIR.parent
 
-from Analysis import h1_weather_validation as h1
+for path in (ROOT, ANALYSIS_DIR):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
+
+import h1_weather_validation as h1
 
 
 def tiny_hourly(seed: int = 1) -> pd.DataFrame:
@@ -75,9 +78,9 @@ def test_monthly_precipitation_quantiles_across_years() -> None:
     ref = h1.load_reference()
     out = h1.precip_quantile_comparison(monthly, ref)
     jan = out[out.month == 1]
-    assert jan.loc[jan.quantile == 0, "simulated_mm"].iloc[0] == pytest.approx(10)
-    assert jan.loc[jan.quantile == 100, "simulated_mm"].iloc[0] == pytest.approx(30)
-    assert jan.loc[jan.quantile == 40, "simulated_mm"].iloc[0] == pytest.approx(18)
+    assert jan.loc[jan["quantile"] == 0, "simulated_mm"].iloc[0] == pytest.approx(10)
+    assert jan.loc[jan["quantile"] == 100, "simulated_mm"].iloc[0] == pytest.approx(30)
+    assert jan.loc[jan["quantile"] == 40, "simulated_mm"].iloc[0] == pytest.approx(18)
 
 
 def test_script_does_not_require_network_access(monkeypatch, tmp_path: Path) -> None:
