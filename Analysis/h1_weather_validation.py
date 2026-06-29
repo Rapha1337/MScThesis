@@ -134,13 +134,55 @@ def summary_metrics(comp: pd.DataFrame) -> pd.DataFrame:
         diff=y-x; rows.append({"variable":var,"pearson_r":corr,"mae":float(np.mean(np.abs(diff))),"rmse":float(np.sqrt(np.mean(diff**2))),"mean_bias_sim_minus_ref":float(np.mean(diff))})
     return pd.DataFrame(rows)
 
-def precip_quantile_comparison(monthly: pd.DataFrame, reference: pd.DataFrame) -> pd.DataFrame:
-    rows=[]
-    for mo in range(1,13):
-        vals = monthly.loc[monthly.month==mo, "precipitation_total_mm"].to_numpy(float)
-        for q in QUANTILES:
-            ref = float(reference.loc[reference.month_number==mo, f"precip_q{int(q*100)}_mm"].iloc[0]); sim=float(np.quantile(vals,q))
-            rows.append({"month":mo,"month_label":MONTH_LABELS[mo-1],"quantile":int(q*100),"reference_mm":ref,"simulated_mm":sim,"difference_mm":sim-ref,"absolute_difference_mm":abs(sim-ref)})
+def precip_quantile_comparison(
+    monthly: pd.DataFrame,
+    reference: pd.DataFrame,
+) -> pd.DataFrame:
+    """Compare simulated and reference precipitation quantiles by available month."""
+    rows = []
+
+    available_months = sorted(monthly["month"].dropna().astype(int).unique())
+
+    for month in available_months:
+        values = (
+            monthly.loc[
+                monthly["month"] == month,
+                "precipitation_total_mm",
+            ]
+            .dropna()
+            .to_numpy(dtype=float)
+        )
+
+        if values.size == 0:
+            continue
+
+        reference_row = reference.loc[reference["month_number"] == month]
+        if reference_row.empty:
+            raise ValueError(
+                f"No reference precipitation quantiles found for month {month}."
+            )
+
+        for quantile in QUANTILES:
+            quantile_percent = int(quantile * 100)
+            reference_value = float(
+                reference_row[f"precip_q{quantile_percent}_mm"].iloc[0]
+            )
+            simulated_value = float(np.quantile(values, quantile))
+
+            rows.append(
+                {
+                    "month": month,
+                    "month_label": MONTH_LABELS[month - 1],
+                    "quantile": quantile_percent,
+                    "reference_mm": reference_value,
+                    "simulated_mm": simulated_value,
+                    "difference_mm": simulated_value - reference_value,
+                    "absolute_difference_mm": abs(
+                        simulated_value - reference_value
+                    ),
+                }
+            )
+
     return pd.DataFrame(rows)
 
 def annual_summary(monthly: pd.DataFrame) -> pd.DataFrame:
