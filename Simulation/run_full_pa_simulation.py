@@ -1024,7 +1024,6 @@ def _known_output_files(
     longitudinal_path: Path,
     contexts_compact_path: Path,
     persona_metadata_path: Path,
-    pipeline_daily_log_path: Path,
     resource_usage_path: Path,
     manifest_path: Path,
     output_dir: Path,
@@ -1041,7 +1040,6 @@ def _known_output_files(
         "longitudinal_constructs": rel(longitudinal_path),
         "contexts_compact": rel(contexts_compact_path),
         "persona_metadata": rel(persona_metadata_path),
-        "pipeline_closed_loop_daily_log": rel(pipeline_daily_log_path),
         "resource_usage": rel(resource_usage_path),
         "simulation_run_manifest": rel(manifest_path),
         "run_config": "run_config.json",
@@ -1112,7 +1110,7 @@ def _build_simulation_run_manifest(
             "decision_source": DECISION_SOURCE_LLM2_CONTEXTUAL,
             "llm2_makes_final_contextual_decision": True,
             "pre_llm2_seeded_sampling_active": False,
-            "planned_vs_realized_context": "planned_physical_activity records schedule intent; LLM2 daily_context rewrites planned PA hours as pre_decision_context with origin-based accessibility until LLM2 decides.",
+            "planned_vs_realized_context": "planned_physical_activity records schedule intent; LLM2 daily_context rewrites planned PA hours as planned_physical_activity with origin-based accessibility until LLM2 decides.",
             "llm2_raw_psychological_construct_values": "not provided; LLM1 is the sole processor of raw normalized constructs before LLM2 and passes four behavior_policy probabilities.",
             "weekday_convention": "Internal weekday is 0=Monday through 6=Sunday; LLM-facing context also includes weekday_name.",
             "phase_representation": "Internal phase may be holiday for lower-structure vacation blocks; LLM-facing phase_llm translates this as vacation_period. Public holidays require separate event variables.",
@@ -1159,12 +1157,11 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
     longitudinal_path = config.output_dir / "longitudinal_constructs.csv"
     contexts_compact_path = config.output_dir / "contexts_compact.json"
     persona_metadata_path = config.output_dir / "persona_metadata.json"
-    pipeline_daily_log_path = config.output_dir / "pipeline_closed_loop_daily_log.csv"
     resource_usage_path = config.output_dir / RESOURCE_USAGE_FILENAME
     manifest_path = config.output_dir / SIMULATION_RUN_MANIFEST_FILENAME
 
     # Avoid appending to stale run outputs for deterministic reruns in the same directory.
-    for csv_path in (daily_log_path, longitudinal_path, pipeline_daily_log_path):
+    for csv_path in (daily_log_path, longitudinal_path):
         if csv_path.exists():
             csv_path.unlink()
 
@@ -1199,7 +1196,6 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
         longitudinal_path=longitudinal_path,
         contexts_compact_path=contexts_compact_path,
         persona_metadata_path=persona_metadata_path,
-        pipeline_daily_log_path=pipeline_daily_log_path,
         resource_usage_path=resource_usage_path,
         manifest_path=manifest_path,
         output_dir=config.output_dir,
@@ -1277,7 +1273,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     planned_activity_for_day=planned_activity_for_day,
                     config=config,
                     output_dir=per_day_output_dir,
-                    pipeline_daily_log_path=pipeline_daily_log_path,
+                    pipeline_daily_log_path=per_day_output_dir / "llm_pa_decision_daily_log.csv",
                     behavior_system_prompt=behavior_system_prompt,
                     pa_decision_system_prompt=pa_decision_system_prompt,
                     resource_tracker=resource_tracker,
@@ -1409,6 +1405,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     ),
                     "decision_source": pipeline_record["decision_source"],
                     "planned_physical_activity": planned_activity_for_day,
+                    "llm2_planned_pa_context": list(pipeline_record.get("llm2_planned_pa_context", [])),
                     "was_physical_activity_planned_today": planned_activity_for_day is not None,
                     "persona_metadata": {
                         "input_parameters": dict(state.input_parameters),
