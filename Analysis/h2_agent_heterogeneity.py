@@ -1005,7 +1005,7 @@ def plot_construct_boxplots(
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.boxplot(
         values,
-        labels=[
+        tick_labels=[
             CONSTRUCT_DISPLAY_LABELS.get(
                 construct,
                 construct.replace("_", " "),
