@@ -624,3 +624,99 @@ def test_planned_physical_activity_summary_preserves_mixed_targets_in_one_block(
     assert planned["is_contiguous"] is True
     assert planned["planned_target_locations"] == ["indoor_activity", "outdoor_activity"]
     assert planned["blocks"][0]["planned_target_locations"] == ["indoor_activity", "outdoor_activity"]
+
+def test_closed_loop_pipeline_log_removed_from_outputs_and_trace_points_to_daily_log(tmp_path: Path) -> None:
+    config, trace = _run_dry_simulation(tmp_path)
+    manifest = json.loads((config.output_dir / "simulation_run_manifest.json").read_text(encoding="utf-8"))
+    trace_file_payload = json.loads((config.output_dir / "full_simulation_trace.json").read_text(encoding="utf-8"))
+
+    assert not (config.output_dir / "pipeline_closed_loop_daily_log.csv").exists()
+    assert "pipeline_closed_loop_daily_log" not in manifest["output_files"]
+    assert "pipeline_closed_loop_daily_log.csv" not in manifest["output_files"].values()
+    assert "pipeline_closed_loop_daily_log" not in trace_file_payload["metadata"]["output_files"]
+    assert trace_file_payload["metadata"]["output_files"]["daily_decision_log"] == "daily_decision_log.csv"
+    for record in trace["records"]:
+        assert record["output_files"]["daily_decision_log"].endswith("daily_decision_log.csv")
+        assert "pipeline_closed_loop_daily_log.csv" not in record["output_files"]["daily_decision_log"]
+
+
+def test_llm2_planned_pa_context_in_trace_matches_original_pa_hours(tmp_path: Path) -> None:
+    _, trace = _run_dry_simulation(tmp_path)
+    planned_records = [record for record in trace["records"] if record["was_physical_activity_planned_today"]]
+    unplanned_records = [record for record in trace["records"] if not record["was_physical_activity_planned_today"]]
+    assert planned_records
+    assert unplanned_records
+
+    weather_and_energy_fields = {
+        "energy_level",
+        "energy_category",
+        "temperature_c",
+        "feels_like_c",
+        "humidity_pct",
+        "wind_m_s",
+        "precipitation_mm",
+        "is_wet",
+        "sun_frac",
+        "is_daylight",
+        "snow_cover",
+    }
+    required_fields = weather_and_energy_fields | {
+        "hour",
+        "activity_type",
+        "current_location",
+        "planned_destination",
+        "decision_status",
+        "active_constraints",
+        "poi_accessibility",
+    }
+
+    for record in planned_records:
+        transformed_rows = record["llm2_planned_pa_context"]
+        original_pa_hours = [
+            entry
+            for entry in record["hourly_context_24h"]
+            if entry["activity_type"] == "physical_activity"
+            or entry.get("subtype") == "physical_activity"
+        ]
+        assert transformed_rows
+        assert len(transformed_rows) == len(original_pa_hours)
+        for transformed, original in zip(transformed_rows, original_pa_hours):
+            assert required_fields <= set(transformed)
+            assert transformed["activity_type"] == "planned_physical_activity"
+            assert transformed["decision_status"] == "not_yet_realized"
+            assert transformed["planned_destination"] == original["current_location"]
+            for field in weather_and_energy_fields:
+                assert transformed[field] == original[field]
+
+    for record in unplanned_records:
+        assert record["llm2_planned_pa_context"] == []
+
+
+def test_manifest_construct_update_parameters_match_runtime_records(tmp_path: Path) -> None:
+    from state_assessment import (
+        PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA,
+        PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE,
+    )
+
+    config, trace = _run_dry_simulation(tmp_path)
+    manifest = json.loads((config.output_dir / "simulation_run_manifest.json").read_text(encoding="utf-8"))
+
+    assert manifest["psychological_construct_update_alpha"] == PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA
+    assert (
+        manifest["psychological_construct_update_max_daily_change"]
+        == PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE
+    )
+    assert (
+        manifest["state_assessment"]["psychological_construct_update_alpha"]
+        == manifest["psychological_construct_update_alpha"]
+    )
+    assert (
+        manifest["state_assessment"]["psychological_construct_update_max_daily_change"]
+        == manifest["psychological_construct_update_max_daily_change"]
+    )
+    for record in trace["records"]:
+        assert record["psychological_construct_update_alpha"] == manifest["psychological_construct_update_alpha"]
+        assert (
+            record["psychological_construct_update_max_daily_change"]
+            == manifest["psychological_construct_update_max_daily_change"]
+        )
