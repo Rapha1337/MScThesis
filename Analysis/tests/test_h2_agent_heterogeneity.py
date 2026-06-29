@@ -6,12 +6,14 @@ import sys
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+ANALYSIS_DIR = Path(__file__).resolve().parents[1]
+ROOT = ANALYSIS_DIR.parent
 
-from Analysis import h2_agent_heterogeneity as h2
+for path in (ROOT, ANALYSIS_DIR):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
+import h2_agent_heterogeneity as h2
 
 def test_base_seed_sequence() -> None:
     assert h2.base_seed_sequence(3263, 10) == list(range(3263, 3273))
