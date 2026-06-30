@@ -1,0 +1,8 @@
+activity_type,activity_code
+downtime,0
+eat,1
+physical_activity,2
+sleep,3
+social_time,4
+wake_up,5
+work,6

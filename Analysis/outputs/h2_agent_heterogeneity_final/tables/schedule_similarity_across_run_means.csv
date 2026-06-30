@@ -1,0 +1,2 @@
+scope,n_runs,mean_of_run_mean_similarity_percent,sd_of_run_mean_similarity_percent,min_run_mean_similarity_percent,max_run_mean_similarity_percent,sd_type
+run_level_means,10,86.79232804232804,0.5355509581843586,86.29629629629629,88.17460317460318,population
