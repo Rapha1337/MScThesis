@@ -9,7 +9,7 @@ import sys
 from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
-from statistics import mean, median, pstdev
+from statistics import mean, pstdev
 from typing import Any, Iterable
 
 try:
@@ -33,18 +33,17 @@ if str(SIM) not in sys.path:
     sys.path.insert(0, str(SIM))
 
 from agent_context_export import PSYCHOLOGICAL_SEED_OFFSET
-from persona_wrappers import StudentHoursWrapper, StudentWrapper
+from persona_wrappers import StudentHoursWrapper
 from psychological_state import BACKEND_CONSTRUCT_RANGES, build_psychological_state
-from schedule_model_student import (
-    YearPhase,
-    distribute_weekly_budgets_to_days,
-    generate_full_day_schedule,
-)
+from schedule_model_student import YearPhase
+from simulation_runner import SimulationRunner
 
 
 ACTIVE_CONSTRUCTS = tuple(BACKEND_CONSTRUCT_RANGES.keys())
+PHASES = ("normal", "high_stress", "holiday")
 WEEKDAY_LABELS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-TOTAL_WEEK_SLOTS = 168
+WEEKS_PER_YEAR = 52
+TOTAL_YEAR_SLOTS = WEEKS_PER_YEAR * 7 * 24
 DEFAULT_OUTPUT_DIR = ROOT / "Analysis" / "outputs" / "h2_agent_heterogeneity"
 
 CONSTRUCT_DISPLAY_LABELS = {
@@ -68,9 +67,7 @@ class AgentRecord:
     persona_id: str
     persona_seed: int
     psychological_seed: int
-    phase: str
     wrapper: StudentHoursWrapper
-    weekly_structure: Any
 
 
 def base_seed_sequence(base_seed: int, n_base_seeds: int) -> list[int]:
@@ -87,29 +84,41 @@ def generic_student_inputs() -> dict[str, float | None]:
     return StudentHoursWrapper.from_zve_student_generic().input_parameters()
 
 
+def _clone_persona_wrapper(
+    template: StudentHoursWrapper,
+    persona_name: str,
+) -> StudentHoursWrapper:
+    return StudentHoursWrapper(
+        name=persona_name,
+        fitness_hours_week=template.fitness_hours_week,
+        social_hours_week=template.social_hours_week,
+        work_hours_week=template.work_hours_week,
+        carework_hours_week=template.carework_hours_week,
+        workplace_distance_km=template.workplace_distance_km,
+        indoor_activity_distance_km=template.indoor_activity_distance_km,
+        outdoor_activity_distance_km=template.outdoor_activity_distance_km,
+        seed_variation=template.seed_variation,
+        variation_strength=template.variation_strength,
+    )
+
+
 def generate_agents(
     base_seeds: Iterable[int],
     agents_per_seed: int,
-    phase: str,
 ) -> list[AgentRecord]:
-    phase_value = YearPhase.coerce(phase)
-    parameters = StudentHoursWrapper.from_zve_student_generic()
+    """Generate deterministic persona seeds and wrappers without fixing a phase."""
+    if agents_per_seed < 1:
+        raise ValueError("agents_per_seed must be at least 1")
+
+    template = StudentHoursWrapper.from_zve_student_generic()
     agents: list[AgentRecord] = []
 
     for base_seed in base_seeds:
-        personas = StudentWrapper(
-            parameters,
-            int(base_seed),
-        ).create_personas(agents_per_seed, phase_value)
-
-        if len(personas) != agents_per_seed:
-            raise ValueError("persona count mismatch")
-
-        for persona in personas:
-            persona_index = int(persona["persona_index"])
-            persona_id = str(persona["persona_name"])
-            persona_seed = int(persona["persona_seed"])
-
+        rng = random.Random(int(base_seed))
+        for persona_index in range(agents_per_seed):
+            persona_seed = rng.randint(0, 2**31 - 1)
+            persona_id = f"StudentPersona_{persona_index + 1:02d}"
+            wrapper = _clone_persona_wrapper(template, persona_id)
             agents.append(
                 AgentRecord(
                     unique_agent_id=f"base{base_seed}_{persona_id}",
@@ -120,9 +129,7 @@ def generate_agents(
                     psychological_seed=psychological_seed_from_persona_seed(
                         persona_seed
                     ),
-                    phase=phase_value.value,
-                    wrapper=persona["wrapper"],
-                    weekly_structure=persona["weekly_structure"],
+                    wrapper=wrapper,
                 )
             )
 
@@ -132,59 +139,109 @@ def generate_agents(
     return sorted(agents, key=lambda agent: (agent.base_seed, agent.persona_index))
 
 
-def generate_agent_schedule(agent: AgentRecord) -> list[dict[str, Any]]:
-    distribute_weekly_budgets_to_days(
-        agent.weekly_structure,
-        rng=random.Random(agent.persona_seed),
+def _build_year_runner(
+    agent: AgentRecord,
+    n_weeks: int = WEEKS_PER_YEAR,
+) -> SimulationRunner:
+    """Use the production year-structure and constrained-schedule pathway.
+
+    The required ``phase`` argument is only a fallback used when
+    ``use_year_structure=False``. Here ``use_year_structure=True``, so each
+    week's phase is generated internally by ``YearStructureGenerator``.
+    """
+    return SimulationRunner(
+        persona=agent.wrapper,
+        phase=YearPhase.NORMAL,
+        env=None,
+        seed=agent.persona_seed,
+        n_weeks=n_weeks,
+        use_year_structure=True,
     )
 
+
+def generate_agent_schedule(
+    agent: AgentRecord,
+    n_weeks: int = WEEKS_PER_YEAR,
+) -> list[dict[str, Any]]:
+    """Generate one complete constrained agent year from the production runner."""
+    runner = _build_year_runner(agent, n_weeks=n_weeks)
+    if runner.year_structure is None:
+        raise RuntimeError("Year structure was not generated")
+
     rows: list[dict[str, Any]] = []
-    for weekday in range(7):
-        day = generate_full_day_schedule(
-            agent.weekly_structure,
-            weekday,
-            rng=random.Random(agent.persona_seed + weekday),
-        )
+    for week_index in range(n_weeks):
+        week_plan = runner.year_structure.weeks[week_index]
+        phase = str(week_plan.phase)
+        if phase not in PHASES:
+            raise ValueError(f"Unexpected year phase: {phase}")
 
-        if len(day) != 24:
-            raise ValueError("day must have 24 slots")
-
-        for episode in sorted(day, key=lambda item: int(item.hour)):
-            rows.append(
-                {
-                    "unique_agent_id": agent.unique_agent_id,
-                    "base_seed": agent.base_seed,
-                    "persona_index": agent.persona_index,
-                    "persona_id": agent.persona_id,
-                    "persona_seed": agent.persona_seed,
-                    "psychological_seed": agent.psychological_seed,
-                    "phase": agent.phase,
-                    "weekday": weekday,
-                    "weekday_label": WEEKDAY_LABELS[weekday],
-                    "hour": int(episode.hour),
-                    "week_hour": weekday * 24 + int(episode.hour),
-                    "activity_type": str(
-                        getattr(episode.activity_type, "value", episode.activity_type)
-                    ),
-                    "subtype": episode.subtype or "",
-                }
+        for weekday in range(7):
+            inspected = runner.inspect_agent_day_schedule(
+                week_index=week_index,
+                weekday=weekday,
             )
+            day = inspected["day_schedule"]
+            if len(day) != 24:
+                raise ValueError("day must have 24 slots")
+
+            event_ids = "|".join(
+                str(value)
+                for value in inspected.get("active_event_ids", [])
+                if value is not None
+            )
+            event_types = "|".join(
+                str(value)
+                for value in inspected.get("active_event_types", [])
+                if value is not None
+            )
+
+            for episode in sorted(day, key=lambda item: int(item["hour"])):
+                hour = int(episode["hour"])
+                rows.append(
+                    {
+                        "unique_agent_id": agent.unique_agent_id,
+                        "base_seed": agent.base_seed,
+                        "persona_index": agent.persona_index,
+                        "persona_id": agent.persona_id,
+                        "persona_seed": agent.persona_seed,
+                        "psychological_seed": agent.psychological_seed,
+                        "week_index": week_index,
+                        "week_number": week_index + 1,
+                        "phase": phase,
+                        "fixed_block_tag": (
+                            inspected.get("fixed_block_tag") or ""
+                        ),
+                        "weekday": weekday,
+                        "weekday_label": WEEKDAY_LABELS[weekday],
+                        "hour": hour,
+                        "year_hour": week_index * 168 + weekday * 24 + hour,
+                        "activity_type": str(episode["activity_type"]),
+                        "subtype": episode.get("subtype") or "",
+                        "flexibility": episode.get("flexibility") or "",
+                        "active_event_ids": event_ids,
+                        "active_event_types": event_types,
+                    }
+                )
 
     return rows
 
 
-def generate_schedules(agents: list[AgentRecord]) -> list[dict[str, Any]]:
+def generate_schedules(
+    agents: list[AgentRecord],
+    n_weeks: int = WEEKS_PER_YEAR,
+) -> list[dict[str, Any]]:
     rows = [
         row
         for agent in agents
-        for row in generate_agent_schedule(agent)
+        for row in generate_agent_schedule(agent, n_weeks=n_weeks)
     ]
-    validate_schedules(rows, len(agents))
+    validate_schedules(rows, len(agents), n_weeks=n_weeks)
     return sorted(
         rows,
         key=lambda row: (
             row["base_seed"],
             row["persona_index"],
+            row["week_index"],
             row["weekday"],
             row["hour"],
         ),
@@ -194,7 +251,9 @@ def generate_schedules(agents: list[AgentRecord]) -> list[dict[str, Any]]:
 def validate_schedules(
     rows: list[dict[str, Any]],
     expected_agents: int,
+    n_weeks: int = WEEKS_PER_YEAR,
 ) -> None:
+    expected_slots = n_weeks * 7 * 24
     agent_ids = sorted({row["unique_agent_id"] for row in rows})
     if len(agent_ids) != expected_agents:
         raise ValueError("agent count mismatch")
@@ -204,13 +263,17 @@ def validate_schedules(
             row for row in rows if row["unique_agent_id"] == agent_id
         ]
         unique_slots = {
-            (row["weekday"], row["hour"]) for row in agent_rows
+            (row["week_index"], row["weekday"], row["hour"])
+            for row in agent_rows
         }
-
-        if len(agent_rows) != TOTAL_WEEK_SLOTS or len(unique_slots) != TOTAL_WEEK_SLOTS:
+        if len(agent_rows) != expected_slots or len(unique_slots) != expected_slots:
             raise ValueError(
-                "Each agent must have 168 unique weekday-hour rows"
+                f"Each agent must have {expected_slots} unique year-hour rows"
             )
+        if sorted({row["week_index"] for row in agent_rows}) != list(
+            range(n_weeks)
+        ):
+            raise ValueError("bad week coverage")
         if sorted({row["weekday"] for row in agent_rows}) != list(range(7)):
             raise ValueError("bad weekday coverage")
         if sorted({row["hour"] for row in agent_rows}) != list(range(24)):
@@ -219,39 +282,53 @@ def validate_schedules(
             raise ValueError("empty activity_type")
 
 
-def week_grid(
+def year_grid(
     rows: list[dict[str, Any]],
     agent_id: str,
+    n_weeks: int = WEEKS_PER_YEAR,
 ) -> list[str]:
     agent_rows = [
         row for row in rows if row["unique_agent_id"] == agent_id
     ]
-    return [
+    grid = [
         row["activity_type"]
         for row in sorted(
             agent_rows,
-            key=lambda item: (item["weekday"], item["hour"]),
+            key=lambda item: (
+                item["week_index"],
+                item["weekday"],
+                item["hour"],
+            ),
         )
     ]
+    expected_slots = n_weeks * 7 * 24
+    if len(grid) != expected_slots:
+        raise ValueError(
+            f"Agent year must contain {expected_slots} activity labels"
+        )
+    return grid
 
 
-def compare_week_activity_types(
-    week_a: list[str],
-    week_b: list[str],
+def compare_year_activity_types(
+    year_a: list[str],
+    year_b: list[str],
 ) -> dict[str, float | int]:
-    if len(week_a) != TOTAL_WEEK_SLOTS or len(week_b) != TOTAL_WEEK_SLOTS:
-        raise ValueError("Weekly schedules must contain 168 activity labels")
+    if len(year_a) != len(year_b) or not year_a:
+        raise ValueError(
+            "Annual schedules must be non-empty and contain equally many slots"
+        )
 
+    total_slots = len(year_a)
     matching_slots = sum(
         activity_a == activity_b
-        for activity_a, activity_b in zip(week_a, week_b)
+        for activity_a, activity_b in zip(year_a, year_b)
     )
-    similarity = matching_slots / TOTAL_WEEK_SLOTS
+    similarity = matching_slots / total_slots
 
     return {
         "matching_slots": matching_slots,
-        "differing_slots": TOTAL_WEEK_SLOTS - matching_slots,
-        "total_slots": TOTAL_WEEK_SLOTS,
+        "differing_slots": total_slots - matching_slots,
+        "total_slots": total_slots,
         "similarity": similarity,
         "similarity_percent": similarity * 100,
         "difference": 1 - similarity,
@@ -259,8 +336,13 @@ def compare_week_activity_types(
     }
 
 
+# Backward-compatible alias for simple unit tests and external notebooks.
+compare_week_activity_types = compare_year_activity_types
+
+
 def pairwise_schedule_similarity(
     rows: list[dict[str, Any]],
+    n_weeks: int = WEEKS_PER_YEAR,
 ) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
 
@@ -276,7 +358,7 @@ def pairwise_schedule_similarity(
             )
         ]
         grids = {
-            agent_id: week_grid(run_rows, agent_id)
+            agent_id: year_grid(run_rows, agent_id, n_weeks=n_weeks)
             for agent_id in agent_ids
         }
 
@@ -286,7 +368,7 @@ def pairwise_schedule_similarity(
                     "base_seed": base_seed,
                     "agent_a_id": agent_a,
                     "agent_b_id": agent_b,
-                    **compare_week_activity_types(
+                    **compare_year_activity_types(
                         grids[agent_a],
                         grids[agent_b],
                     ),
@@ -346,7 +428,7 @@ def summarize_schedule_similarity(
 
     overall_summary = [
         {
-            "scope": "all_within_run_pairs",
+            "scope": "all_within_run_annual_pairs",
             "n_pairs": len(pairs),
             "mean_similarity_percent": mean(similarities),
             "sd_similarity_percent": (
@@ -369,7 +451,7 @@ def summarize_schedule_similarity(
     ] or [100.0]
     across_run_summary = [
         {
-            "scope": "run_level_means",
+            "scope": "run_level_annual_means",
             "n_runs": len(run_summary),
             "mean_of_run_mean_similarity_percent": mean(run_means),
             "sd_of_run_mean_similarity_percent": (
@@ -399,34 +481,233 @@ def activity_hours(
                 **dict(zip(keys, key)),
                 "hours": hours,
             }
-            if "weekday" in keys:
-                result["day_type"] = (
-                    "weekday"
-                    if int(result["weekday"]) < 5
-                    else "weekend"
-                )
             output.append(result)
         return output
 
+    annual = count(
+        [
+            "unique_agent_id",
+            "base_seed",
+            "persona_index",
+            "activity_type",
+        ]
+    )
     weekly = count(
         [
             "unique_agent_id",
             "base_seed",
             "persona_index",
+            "week_index",
+            "week_number",
+            "phase",
             "activity_type",
         ]
     )
-    daily = count(
-        [
-            "unique_agent_id",
-            "base_seed",
-            "persona_index",
-            "weekday",
-            "weekday_label",
-            "activity_type",
-        ]
+    return annual, weekly
+
+
+def phase_sequence_rows(
+    schedules: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    unique: dict[tuple[str, int], dict[str, Any]] = {}
+    for row in schedules:
+        key = (str(row["unique_agent_id"]), int(row["week_index"]))
+        if key not in unique:
+            unique[key] = {
+                "unique_agent_id": row["unique_agent_id"],
+                "base_seed": row["base_seed"],
+                "persona_index": row["persona_index"],
+                "week_index": row["week_index"],
+                "week_number": row["week_number"],
+                "phase": row["phase"],
+                "fixed_block_tag": row["fixed_block_tag"],
+            }
+    return sorted(
+        unique.values(),
+        key=lambda row: (
+            row["base_seed"],
+            row["persona_index"],
+            row["week_index"],
+        ),
     )
-    return weekly, daily
+
+
+def phase_week_counts(
+    phase_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    counts: dict[tuple[str, int, int, str], int] = {}
+    for row in phase_rows:
+        key = (
+            str(row["unique_agent_id"]),
+            int(row["base_seed"]),
+            int(row["persona_index"]),
+            str(row["phase"]),
+        )
+        counts[key] = counts.get(key, 0) + 1
+
+    output = [
+        {
+            "unique_agent_id": key[0],
+            "base_seed": key[1],
+            "persona_index": key[2],
+            "phase": key[3],
+            "n_weeks": value,
+        }
+        for key, value in sorted(counts.items())
+    ]
+
+    existing = {
+        (row["unique_agent_id"], row["phase"])
+        for row in output
+    }
+    agent_meta = {
+        (
+            str(row["unique_agent_id"]),
+            int(row["base_seed"]),
+            int(row["persona_index"]),
+        )
+        for row in phase_rows
+    }
+    for unique_agent_id, base_seed, persona_index in sorted(agent_meta):
+        for phase in PHASES:
+            if (unique_agent_id, phase) not in existing:
+                output.append(
+                    {
+                        "unique_agent_id": unique_agent_id,
+                        "base_seed": base_seed,
+                        "persona_index": persona_index,
+                        "phase": phase,
+                        "n_weeks": 0,
+                    }
+                )
+
+    return sorted(
+        output,
+        key=lambda row: (
+            row["base_seed"],
+            row["persona_index"],
+            PHASES.index(row["phase"]),
+        ),
+    )
+
+
+def phase_activity_summaries(
+    weekly_activity_rows: list[dict[str, Any]],
+    phase_counts_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Summarize activity hours per generated phase using agent-week means.
+
+    Zero-hour activity/phase combinations are retained so phase means are not
+    conditioned on an activity being present.
+    """
+    week_count_lookup = {
+        (str(row["unique_agent_id"]), str(row["phase"])): int(row["n_weeks"])
+        for row in phase_counts_rows
+    }
+    agent_meta = {
+        str(row["unique_agent_id"]): (
+            int(row["base_seed"]),
+            int(row["persona_index"]),
+        )
+        for row in phase_counts_rows
+    }
+    activities = sorted(
+        {str(row["activity_type"]) for row in weekly_activity_rows}
+    )
+
+    totals: dict[tuple[str, str, str], int] = {}
+    for row in weekly_activity_rows:
+        key = (
+            str(row["unique_agent_id"]),
+            str(row["phase"]),
+            str(row["activity_type"]),
+        )
+        totals[key] = totals.get(key, 0) + int(row["hours"])
+
+    agent_phase_rows: list[dict[str, Any]] = []
+    for (unique_agent_id, phase), n_weeks in sorted(
+        week_count_lookup.items(),
+        key=lambda item: (
+            agent_meta[item[0][0]][0],
+            agent_meta[item[0][0]][1],
+            PHASES.index(item[0][1]),
+        ),
+    ):
+        if n_weeks <= 0:
+            continue
+        base_seed, persona_index = agent_meta[unique_agent_id]
+        for activity_type in activities:
+            total_hours = totals.get(
+                (unique_agent_id, phase, activity_type),
+                0,
+            )
+            agent_phase_rows.append(
+                {
+                    "unique_agent_id": unique_agent_id,
+                    "base_seed": base_seed,
+                    "persona_index": persona_index,
+                    "phase": phase,
+                    "activity_type": activity_type,
+                    "n_weeks": n_weeks,
+                    "total_hours": total_hours,
+                    "mean_hours_per_week": total_hours / n_weeks,
+                }
+            )
+
+    phase_summary: list[dict[str, Any]] = []
+    for phase in PHASES:
+        for activity_type in activities:
+            subset = [
+                row
+                for row in agent_phase_rows
+                if row["phase"] == phase
+                and row["activity_type"] == activity_type
+            ]
+            if not subset:
+                continue
+            values = [float(row["mean_hours_per_week"]) for row in subset]
+            phase_summary.append(
+                {
+                    "phase": phase,
+                    "activity_type": activity_type,
+                    "n_agents": len(values),
+                    "n_agent_weeks": sum(
+                        int(row["n_weeks"]) for row in subset
+                    ),
+                    "mean_hours_per_week": mean(values),
+                    "population_sd_hours_per_week": (
+                        pstdev(values) if len(values) > 1 else 0
+                    ),
+                    "minimum_hours_per_week": min(values),
+                    "maximum_hours_per_week": max(values),
+                }
+            )
+
+    return agent_phase_rows, phase_summary
+
+def phase_count_summary(
+    phase_counts_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for phase in PHASES:
+        values = [
+            int(row["n_weeks"])
+            for row in phase_counts_rows
+            if row["phase"] == phase
+        ]
+        output.append(
+            {
+                "phase": phase,
+                "n_agents": len(values),
+                "mean_weeks": mean(values),
+                "population_sd_weeks": (
+                    pstdev(values) if len(values) > 1 else 0
+                ),
+                "minimum_weeks": min(values),
+                "maximum_weeks": max(values),
+            }
+        )
+    return output
 
 
 def generate_psychological_constructs(
@@ -572,22 +853,56 @@ def construct_summaries(
     return summary, run_summary, correlations
 
 
+def _schedule_signature(
+    schedules: list[dict[str, Any]],
+) -> list[tuple[Any, ...]]:
+    return [
+        (
+            row["week_index"],
+            row["weekday"],
+            row["hour"],
+            row["phase"],
+            row["activity_type"],
+            row["subtype"],
+            row["active_event_types"],
+        )
+        for row in schedules
+    ]
+
+
 def reproducibility_summary(
     base_seed: int,
     agents_per_seed: int,
-    phase: str,
+    n_weeks: int = WEEKS_PER_YEAR,
 ) -> list[dict[str, Any]]:
-    first = generate_agents([base_seed], agents_per_seed, phase)
-    repeated = generate_agents([base_seed], agents_per_seed, phase)
-    different = generate_agents([base_seed + 1], agents_per_seed, phase)
+    first = generate_agents([base_seed], agents_per_seed)
+    repeated = generate_agents([base_seed], agents_per_seed)
+    different = generate_agents([base_seed + 1], agents_per_seed)
 
-    first_schedules = generate_schedules(first)
-    repeated_schedules = generate_schedules(repeated)
-    different_schedules = generate_schedules(different)
+    first_schedules = generate_schedules(first, n_weeks=n_weeks)
+    repeated_schedules = generate_schedules(repeated, n_weeks=n_weeks)
+    different_schedules = generate_schedules(different, n_weeks=n_weeks)
 
     first_psychology = generate_psychological_constructs(first)
     repeated_psychology = generate_psychological_constructs(repeated)
     different_psychology = generate_psychological_constructs(different)
+
+    first_phases = [
+        (row["unique_agent_id"], row["week_index"], row["phase"])
+        for row in phase_sequence_rows(first_schedules)
+    ]
+    repeated_phases = [
+        (row["unique_agent_id"], row["week_index"], row["phase"])
+        for row in phase_sequence_rows(repeated_schedules)
+    ]
+    different_phases = [
+        (row["persona_index"], row["week_index"], row["phase"])
+        for row in phase_sequence_rows(different_schedules)
+    ]
+    first_phases_without_ids = [
+        (row["persona_index"], row["week_index"], row["phase"])
+        for row in phase_sequence_rows(first_schedules)
+    ]
 
     return [
         {
@@ -598,26 +913,14 @@ def reproducibility_summary(
             ),
         },
         {
-            "check": "same_seed_schedules_identical",
+            "check": "same_seed_phase_sequences_identical",
+            "result": first_phases == repeated_phases,
+        },
+        {
+            "check": "same_seed_annual_schedules_identical",
             "result": (
-                [
-                    (
-                        row["weekday"],
-                        row["hour"],
-                        row["activity_type"],
-                        row["subtype"],
-                    )
-                    for row in first_schedules
-                ]
-                == [
-                    (
-                        row["weekday"],
-                        row["hour"],
-                        row["activity_type"],
-                        row["subtype"],
-                    )
-                    for row in repeated_schedules
-                ]
+                _schedule_signature(first_schedules)
+                == _schedule_signature(repeated_schedules)
             ),
         },
         {
@@ -654,14 +957,14 @@ def reproducibility_summary(
             ),
         },
         {
-            "check": "different_base_seed_schedules_differ",
+            "check": "different_base_seed_phase_sequences_differ",
+            "result": first_phases_without_ids != different_phases,
+        },
+        {
+            "check": "different_base_seed_annual_schedules_differ",
             "result": (
-                [
-                    row["activity_type"] for row in first_schedules
-                ]
-                != [
-                    row["activity_type"] for row in different_schedules
-                ]
+                [row["activity_type"] for row in first_schedules]
+                != [row["activity_type"] for row in different_schedules]
             ),
         },
         {
@@ -772,10 +1075,11 @@ def _save_figure(
     plt.close(fig)
 
 
-def plot_schedule_heatmap(
+def plot_annual_schedule_heatmap(
     schedules: list[dict[str, Any]],
     codebook: list[dict[str, Any]],
     path: Path,
+    n_weeks: int = WEEKS_PER_YEAR,
 ) -> None:
     agent_ids = _ordered_schedule_agent_ids(schedules)
     activity_to_code = {
@@ -787,11 +1091,15 @@ def plot_schedule_heatmap(
         [
             [
                 activity_to_code[activity]
-                for activity in week_grid(schedules, agent_id)
+                for activity in year_grid(
+                    schedules,
+                    agent_id,
+                    n_weeks=n_weeks,
+                )
             ]
             for agent_id in agent_ids
         ],
-        dtype=int,
+        dtype=np.int16,
     )
 
     n_activities = max(len(codebook), 1)
@@ -802,7 +1110,7 @@ def plot_schedule_heatmap(
     )
 
     figure_height = max(5.5, min(12, 3.5 + len(agent_ids) * 0.06))
-    fig, ax = plt.subplots(figsize=(15, figure_height))
+    fig, ax = plt.subplots(figsize=(18, figure_height))
     ax.imshow(
         matrix,
         aspect="auto",
@@ -811,14 +1119,17 @@ def plot_schedule_heatmap(
         norm=norm,
     )
 
-    for boundary in range(24, TOTAL_WEEK_SLOTS, 24):
-        ax.axvline(boundary - 0.5, linewidth=0.8)
+    for week_boundary in range(13, n_weeks, 13):
+        ax.axvline(week_boundary * 168 - 0.5, linewidth=0.8)
 
-    ax.set_xticks([11.5 + 24 * index for index in range(7)])
-    ax.set_xticklabels(WEEKDAY_LABELS)
-    ax.set_xlabel("Day of week")
+    tick_weeks = sorted(
+        set([1, 13, 26, 39, n_weeks])
+    )
+    ax.set_xticks([(week - 1) * 168 + 83.5 for week in tick_weeks])
+    ax.set_xticklabels([f"Week {week}" for week in tick_weeks])
+    ax.set_xlabel("Generated agent year")
     ax.set_ylabel("Agent realization")
-    ax.set_title("Generated weekly routines")
+    ax.set_title("Generated annual routines across 52 weeks")
 
     y_positions = _sparse_tick_positions(len(agent_ids))
     ax.set_yticks(y_positions)
@@ -843,6 +1154,77 @@ def plot_schedule_heatmap(
         fontsize=8,
     )
 
+    _save_figure(fig, path)
+
+
+def plot_phase_sequence_heatmap(
+    phase_rows: list[dict[str, Any]],
+    path: Path,
+    n_weeks: int = WEEKS_PER_YEAR,
+) -> None:
+    agent_ids = [
+        unique_agent_id
+        for _, _, unique_agent_id in sorted(
+            {
+                (
+                    int(row["base_seed"]),
+                    int(row["persona_index"]),
+                    str(row["unique_agent_id"]),
+                )
+                for row in phase_rows
+            }
+        )
+    ]
+    phase_to_code = {phase: index for index, phase in enumerate(PHASES)}
+    lookup = {
+        (str(row["unique_agent_id"]), int(row["week_index"])): str(row["phase"])
+        for row in phase_rows
+    }
+    matrix = np.asarray(
+        [
+            [
+                phase_to_code[lookup[(agent_id, week_index)]]
+                for week_index in range(n_weeks)
+            ]
+            for agent_id in agent_ids
+        ],
+        dtype=np.int8,
+    )
+
+    cmap = plt.get_cmap("Set2", len(PHASES))
+    norm = BoundaryNorm(np.arange(-0.5, len(PHASES) + 0.5, 1), cmap.N)
+    figure_height = max(5.5, min(12, 3.5 + len(agent_ids) * 0.06))
+    fig, ax = plt.subplots(figsize=(13, figure_height))
+    ax.imshow(
+        matrix,
+        aspect="auto",
+        interpolation="nearest",
+        cmap=cmap,
+        norm=norm,
+    )
+    ax.set_xticks([0, 12, 25, 38, n_weeks - 1])
+    ax.set_xticklabels(["1", "13", "26", "39", str(n_weeks)])
+    ax.set_xlabel("Week of generated year")
+    ax.set_ylabel("Agent realization")
+    ax.set_title("Internally generated annual phase sequences")
+    y_positions = _sparse_tick_positions(len(agent_ids))
+    ax.set_yticks(y_positions)
+    ax.set_yticklabels(
+        [_short_agent_label(agent_ids[index]) for index in y_positions],
+        fontsize=7,
+    )
+    ax.legend(
+        handles=[
+            Patch(
+                facecolor=cmap(index),
+                label=phase.replace("_", " "),
+            )
+            for index, phase in enumerate(PHASES)
+        ],
+        title="Generated phase",
+        loc="upper left",
+        bbox_to_anchor=(1.01, 1),
+    )
     _save_figure(fig, path)
 
 
@@ -878,10 +1260,10 @@ def plot_schedule_similarity_distribution(
         label=f"Median = {median_value:.1f}%",
     )
     ax.set_xlim(0, 100)
-    ax.set_xlabel("Schedule similarity (%)")
+    ax.set_xlabel("Annual schedule similarity (%)")
     ax.set_ylabel("Number of agent pairs")
     ax.set_title(
-        "Distribution of within-run schedule similarity "
+        "Distribution of within-run annual schedule similarity "
         f"(n = {similarities.size})"
     )
     ax.legend()
@@ -928,10 +1310,94 @@ def plot_schedule_run_means(
     )
     ax.set_ylim(0, 100)
     ax.set_xlabel("Base seed")
-    ax.set_ylabel("Mean schedule similarity (%)")
-    ax.set_title("Mean schedule similarity by base seed")
+    ax.set_ylabel("Mean annual schedule similarity (%)")
+    ax.set_title("Mean annual schedule similarity by base seed")
     ax.legend()
 
+    _save_figure(fig, path)
+
+
+def plot_phase_week_counts(
+    phase_counts_rows: list[dict[str, Any]],
+    path: Path,
+) -> None:
+    values = [
+        [
+            int(row["n_weeks"])
+            for row in phase_counts_rows
+            if row["phase"] == phase
+        ]
+        for phase in PHASES
+    ]
+    fig, ax = plt.subplots(figsize=(8.5, 5.5))
+    ax.boxplot(
+        values,
+        tick_labels=[phase.replace("_", " ") for phase in PHASES],
+        showfliers=True,
+    )
+    ax.set_ylabel("Generated weeks per agent year")
+    ax.set_title("Distribution of generated annual phase counts")
+    _save_figure(fig, path)
+
+
+def plot_phase_activity_hours(
+    phase_summary: list[dict[str, Any]],
+    path: Path,
+) -> None:
+    preferred = [
+        "sleep",
+        "work",
+        "studying",
+        "physical_activity",
+        "social",
+        "social_time",
+        "downtime",
+    ]
+    available = sorted({str(row["activity_type"]) for row in phase_summary})
+    activities = [activity for activity in preferred if activity in available]
+    if not activities:
+        activities = available[:7]
+
+    x = np.arange(len(activities), dtype=float)
+    width = 0.25
+    fig, ax = plt.subplots(figsize=(12, 6))
+    for phase_index, phase in enumerate(PHASES):
+        lookup = {
+            str(row["activity_type"]): row
+            for row in phase_summary
+            if row["phase"] == phase
+        }
+        means = [
+            float(lookup.get(activity, {}).get("mean_hours_per_week", 0))
+            for activity in activities
+        ]
+        sds = [
+            float(
+                lookup.get(activity, {}).get(
+                    "population_sd_hours_per_week",
+                    0,
+                )
+            )
+            for activity in activities
+        ]
+        ax.bar(
+            x + (phase_index - 1) * width,
+            means,
+            width,
+            yerr=sds,
+            capsize=3,
+            label=phase.replace("_", " "),
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(
+        [activity.replace("_", " ") for activity in activities],
+        rotation=30,
+        ha="right",
+    )
+    ax.set_ylabel("Mean hours per generated week")
+    ax.set_title("Weekly activity allocation by internally generated phase")
+    ax.legend(title="Phase")
     _save_figure(fig, path)
 
 
@@ -939,7 +1405,13 @@ def plot_construct_heatmap(
     psychological_rows: list[dict[str, Any]],
     path: Path,
 ) -> None:
-    ordered = _ordered_psychological_rows(psychological_rows)
+    ordered = sorted(
+        psychological_rows,
+        key=lambda row: (
+            int(row["base_seed"]),
+            int(row["persona_index"]),
+        ),
+    )
     matrix = np.asarray(
         [
             [float(row[construct]) for construct in ACTIVE_CONSTRUCTS]
@@ -1030,6 +1502,10 @@ def make_dirs(
 ) -> tuple[Path, Path, Path]:
     if output_dir.exists() and overwrite:
         shutil.rmtree(output_dir)
+    elif output_dir.exists() and any(output_dir.iterdir()):
+        raise FileExistsError(
+            f"{output_dir} exists and is not empty; use --overwrite"
+        )
 
     data_dir = output_dir / "data"
     tables_dir = output_dir / "tables"
@@ -1066,6 +1542,7 @@ def run_analysis(args: argparse.Namespace) -> dict[str, Any]:
         args.overwrite,
     )
 
+    n_weeks = WEEKS_PER_YEAR
     seeds = base_seed_sequence(
         args.base_seed,
         args.n_base_seeds,
@@ -1073,12 +1550,19 @@ def run_analysis(args: argparse.Namespace) -> dict[str, Any]:
     agents = generate_agents(
         seeds,
         args.agents_per_seed,
-        args.phase,
     )
-    schedules = generate_schedules(agents)
+    schedules = generate_schedules(agents, n_weeks=n_weeks)
     psychological_rows = generate_psychological_constructs(agents)
-    pairs = pairwise_schedule_similarity(schedules)
-    weekly_hours, daily_hours = activity_hours(schedules)
+    pairs = pairwise_schedule_similarity(schedules, n_weeks=n_weeks)
+    annual_hours, weekly_hours = activity_hours(schedules)
+
+    phase_rows = phase_sequence_rows(schedules)
+    phase_counts_rows = phase_week_counts(phase_rows)
+    agent_phase_activity, phase_activity_summary = phase_activity_summaries(
+        weekly_hours,
+        phase_counts_rows,
+    )
+    phase_counts_summary = phase_count_summary(phase_counts_rows)
 
     (
         overall_schedule_summary,
@@ -1098,7 +1582,7 @@ def run_analysis(args: argparse.Namespace) -> dict[str, Any]:
     reproducibility = reproducibility_summary(
         args.base_seed,
         args.agents_per_seed,
-        args.phase,
+        n_weeks=n_weeks,
     )
 
     expected_pairs = args.n_base_seeds * (
@@ -1106,13 +1590,28 @@ def run_analysis(args: argparse.Namespace) -> dict[str, Any]:
     )
     if len(pairs) != expected_pairs:
         raise ValueError("pair count mismatch")
+    if len(schedules) != len(agents) * n_weeks * 7 * 24:
+        raise ValueError("annual schedule row count mismatch")
+    if any(
+        sum(
+            1
+            for row in phase_rows
+            if row["unique_agent_id"] == agent.unique_agent_id
+        )
+        != n_weeks
+        for agent in agents
+    ):
+        raise ValueError("phase sequence must contain exactly 52 weeks per agent")
 
     data_outputs = {
-        "agent_schedules_long.csv": schedules,
+        "agent_year_schedules_long.csv": schedules,
+        "agent_annual_activity_hours.csv": annual_hours,
         "agent_weekly_activity_hours.csv": weekly_hours,
-        "agent_daily_activity_hours.csv": daily_hours,
+        "agent_phase_sequence.csv": phase_rows,
+        "agent_phase_week_counts.csv": phase_counts_rows,
+        "agent_phase_activity_hours.csv": agent_phase_activity,
         "initial_psychological_constructs.csv": psychological_rows,
-        "pairwise_schedule_similarity.csv": pairs,
+        "pairwise_annual_schedule_similarity.csv": pairs,
     }
     for filename, rows in data_outputs.items():
         write_csv(data_dir / filename, rows)
@@ -1123,6 +1622,8 @@ def run_analysis(args: argparse.Namespace) -> dict[str, Any]:
         "schedule_similarity_across_run_means.csv": (
             across_run_schedule_summary
         ),
+        "phase_week_count_summary.csv": phase_counts_summary,
+        "phase_activity_summary.csv": phase_activity_summary,
         "construct_heterogeneity_summary.csv": construct_summary,
         "construct_run_summary.csv": construct_run_summary,
         "construct_correlation_matrix.csv": construct_correlations,
@@ -1134,18 +1635,32 @@ def run_analysis(args: argparse.Namespace) -> dict[str, Any]:
     codebook = activity_codebook(schedules)
     write_csv(tables_dir / "activity_codebook.csv", codebook)
 
-    plot_schedule_heatmap(
+    plot_annual_schedule_heatmap(
         schedules,
         codebook,
-        figures_dir / "schedule_heatmap.png",
+        figures_dir / "annual_schedule_heatmap.png",
+        n_weeks=n_weeks,
+    )
+    plot_phase_sequence_heatmap(
+        phase_rows,
+        figures_dir / "phase_sequence_heatmap.png",
+        n_weeks=n_weeks,
     )
     plot_schedule_similarity_distribution(
         pairs,
-        figures_dir / "schedule_similarity_distribution.png",
+        figures_dir / "annual_schedule_similarity_distribution.png",
     )
     plot_schedule_run_means(
         run_schedule_summary,
-        figures_dir / "schedule_run_means.png",
+        figures_dir / "annual_schedule_run_means.png",
+    )
+    plot_phase_week_counts(
+        phase_counts_rows,
+        figures_dir / "phase_week_counts.png",
+    )
+    plot_phase_activity_hours(
+        phase_activity_summary,
+        figures_dir / "phase_activity_hours.png",
     )
     plot_construct_heatmap(
         psychological_rows,
@@ -1161,14 +1676,20 @@ def run_analysis(args: argparse.Namespace) -> dict[str, Any]:
         "agents_per_seed": args.agents_per_seed,
         "base_seed": args.base_seed,
         "base_seeds": seeds,
-        "phase": YearPhase.coerce(args.phase).value,
+        "n_weeks_per_agent": n_weeks,
+        "phase_source": "YearStructureGenerator via SimulationRunner",
+        "phases": list(PHASES),
+        "schedule_path": "constrained production schedule including generated year events",
         "total_agents": len(agents),
         "total_schedule_rows": len(schedules),
+        "slots_per_agent_year": n_weeks * 7 * 24,
         "total_pairwise_comparisons": len(pairs),
         "psychological_seed_offset": PSYCHOLOGICAL_SEED_OFFSET,
         "input_parameters": generic_student_inputs(),
         "sd_type": "population",
         "active_constructs": list(ACTIVE_CONSTRUCTS),
+        "llm_used": False,
+        "network_used": False,
     }
     (output_dir / "run_config.json").write_text(
         json.dumps(config, indent=2),
@@ -1192,33 +1713,45 @@ def run_analysis(args: argparse.Namespace) -> dict[str, Any]:
         (
             f"Base seeds: {seeds}; agents per seed: "
             f"{args.agents_per_seed}; total agent realizations: "
-            f"{len(agents)}; phase: {config['phase']}; common high-level "
-            f"inputs: `{config['input_parameters']}`."
+            f"{len(agents)}; generated weeks per agent: {n_weeks}; common "
+            f"high-level inputs: `{config['input_parameters']}`."
         ),
         (
-            "Persona seeds come from `StudentWrapper.create_personas`; "
-            "psychological seeds use `persona_seed + 10_000_019`; schedules "
-            "use generated weekly structures and "
-            "`generate_full_day_schedule` with `persona_seed + weekday` "
-            "daily RNGs."
+            "No phase was imposed by the analysis. Each agent's sequence of "
+            "normal, high_stress, and holiday weeks was generated internally "
+            "through the production YearStructureGenerator."
         ),
         (
-            "Schedules are 168 hourly top-level activity-type labels. "
-            "Similarity is matching slots / 168 and difference is "
-            "1 - similarity. Population SD is reported."
+            "Annual schedules were generated through SimulationRunner with "
+            "use_year_structure=True. They therefore use the production "
+            "week-specific phase and seed logic and include generated illness "
+            "and public-holiday effects."
+        ),
+        (
+            f"Schedules contain {n_weeks * 7 * 24} hourly top-level "
+            "activity-type labels per agent. Similarity is matching annual "
+            "slots / total annual slots and difference is 1 - similarity. "
+            "Population SD is reported."
         ),
         f"Total within-run pairwise comparisons: {len(pairs)}",
-        "## Main schedule heterogeneity table",
+        "## Main annual schedule heterogeneity table",
         md_table(overall_schedule_summary),
+        "## Generated phase counts",
+        md_table(phase_counts_summary),
+        "## Activity allocation by generated phase",
+        md_table(phase_activity_summary),
         "## Main construct heterogeneity table",
         md_table(construct_summary),
         "## Figures",
-        "- [Schedule heatmap](figures/schedule_heatmap.png)",
+        "- [Annual schedule heatmap](figures/annual_schedule_heatmap.png)",
+        "- [Phase sequence heatmap](figures/phase_sequence_heatmap.png)",
         (
-            "- [Schedule similarity distribution]"
-            "(figures/schedule_similarity_distribution.png)"
+            "- [Annual schedule similarity distribution]"
+            "(figures/annual_schedule_similarity_distribution.png)"
         ),
-        "- [Schedule run means](figures/schedule_run_means.png)",
+        "- [Annual schedule run means](figures/annual_schedule_run_means.png)",
+        "- [Phase week counts](figures/phase_week_counts.png)",
+        "- [Phase activity hours](figures/phase_activity_hours.png)",
         "- [Construct heatmap](figures/construct_heatmap.png)",
         "- [Construct boxplots](figures/construct_boxplots.png)",
         "## Reproducibility results",
@@ -1226,14 +1759,15 @@ def run_analysis(args: argparse.Namespace) -> dict[str, Any]:
         (
             "Only nine active constructs are analysed: "
             f"{', '.join(ACTIVE_CONSTRUCTS)}. The legacy "
-            "intrinsic-motivation subscales (`interest_enjoyment`, "
-            "`perceived_competence`, `perceived_choice`, "
-            "`pressure_tension`) are not separate model outputs."
+            "intrinsic-motivation subscales are not separate model outputs."
         ),
         "## Limitations",
         "- simulated rather than empirical agents;",
         "- common high-level input parameters;",
-        "- one controlled normal-phase week per agent;",
+        (
+            "- annual schedule differences combine persona-specific stochastic "
+            "variation, generated phase sequences, and generated constraint events;"
+        ),
         (
             "- descriptive evidence does not establish real-world "
             "population validity;"
@@ -1263,7 +1797,12 @@ def run_analysis(args: argparse.Namespace) -> dict[str, Any]:
 def parse_args(
     argv: list[str] | None = None,
 ) -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description=(
+            "H2 heterogeneity analysis using complete internally generated "
+            "52-week agent years"
+        )
+    )
     parser.add_argument(
         "--n-base-seeds",
         type=int,
@@ -1278,10 +1817,6 @@ def parse_args(
         "--base-seed",
         type=int,
         default=3263,
-    )
-    parser.add_argument(
-        "--phase",
-        default="normal",
     )
     parser.add_argument(
         "--output-dir",

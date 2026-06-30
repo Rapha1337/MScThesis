@@ -1,0 +1,8 @@
+check,result
+same_seed_persona_seeds_identical,True
+same_seed_schedules_identical,True
+same_seed_psychological_seeds_identical,True
+same_seed_psychological_values_identical,True
+different_base_seed_persona_seeds_differ,True
+different_base_seed_schedules_differ,True
+different_base_seed_psychological_values_differ,True
