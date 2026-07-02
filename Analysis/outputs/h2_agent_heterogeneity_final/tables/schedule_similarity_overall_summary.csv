@@ -1,2 +1,0 @@
-scope,n_pairs,mean_similarity_percent,sd_similarity_percent,min_similarity_percent,max_similarity_percent,mean_difference_percent,sd_difference_percent,min_difference_percent,max_difference_percent,sd_type
-all_within_run_pairs,450,86.79232804232804,3.2584348511572716,79.16666666666666,94.64285714285714,13.207671957671957,3.258434851157271,5.35714285714286,20.833333333333336,population
