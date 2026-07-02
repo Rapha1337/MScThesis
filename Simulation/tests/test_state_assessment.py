@@ -283,7 +283,10 @@ def test_dry_run_assessment_keeps_state_and_records_previous_context() -> None:
     assert result["psychological_construct_values_after_state_assessment"] == pytest.approx(
         _previous_values()
     )
+    assert result["previous_diary_entries_total_available_count"] == 2
+    assert result["previous_diary_entries_context_count"] == 2
     assert result["previous_diary_entries_count"] == 2
+    assert result["previous_diary_entries_context_strategy"] == "rolling_window_last_7_entries"
     assert [entry["day_index"] for entry in result["previous_diary_entries_context_used"]] == [0, 1]
     assert "current" not in json.dumps(result["previous_diary_entries_context_used"])
 
@@ -504,3 +507,74 @@ def _run_real_assessment_with_json_mode(tmp_path: Path) -> dict:
         max_tokens=10000,
         json_mode=True,
     )
+
+
+def test_schema_invalid_empty_items_is_retried_and_then_valid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invalid = _valid_payload()
+    invalid["item_scores"]["automaticity"]["items"] = []
+    responses = iter([
+        {"raw_response": json.dumps(invalid), "finish_reason": "stop", "resource_usage": {}},
+        {"raw_response": json.dumps(_valid_payload()), "finish_reason": "stop", "resource_usage": {}},
+    ])
+    calls: list[dict] = []
+
+    def fake_call(*args, **kwargs):
+        calls.append(kwargs)
+        return next(responses)
+
+    monkeypatch.setattr(state_assessment, "call_state_assessment_llm", fake_call)
+    result = _run_real_assessment(tmp_path)
+
+    assert result["state_assessment_mode"] == "llm"
+    assert result["state_assessment_fallback_used"] is False
+    assert result["state_assessment_attempt_count"] == 2
+    assert len(calls) == 2
+    assert "Every active construct" in calls[1]["repair_instruction"]
+    metadata = json.loads((tmp_path / "state_assessment_Persona_01_attempt_1_schema_validation_error.json").read_text(encoding="utf-8"))
+    assert metadata["error_type"] == "schema_validation_error"
+    assert metadata["attempt"] == 1
+    assert metadata["raw_response_path"].endswith("attempt_1_raw_invalid.txt")
+
+
+def test_two_item_cardinality_failures_use_conservative_null_item_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invalid = _valid_payload()
+    invalid["item_scores"]["automaticity"]["items"] = []
+    responses = iter([
+        {"raw_response": json.dumps(invalid), "finish_reason": "stop", "resource_usage": {}},
+        {"raw_response": json.dumps(invalid), "finish_reason": "stop", "resource_usage": {}},
+    ])
+
+    monkeypatch.setattr(state_assessment, "call_state_assessment_llm", lambda *a, **k: next(responses))
+    result = _run_real_assessment(tmp_path)
+
+    assert result["state_assessment_fallback_used"] is True
+    assert "automaticity.items" in result["state_assessment_fallback_reason"]
+    assert result["state_assessment_attempt_count"] == 2
+    automaticity = result["state_assessment_item_scores"]["automaticity"]
+    assert len(automaticity["items"]) == CONSTRUCT_ITEM_COUNTS["automaticity"]
+    assert [item["question_id"] for item in automaticity["items"]] == [
+        f"automaticity_q{index}" for index in range(1, 5)
+    ]
+    assert all(item["score"] is None for item in automaticity["items"])
+    assert automaticity["mean_score"] is None
+    assert result["state_assessment_mean_scores_raw"]["automaticity"] is None
+    assert result["state_assessment_mean_scores_normalized"]["automaticity"] == 0.5
+
+
+def test_wrong_persona_id_still_raises_after_retries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    invalid = _valid_payload()
+    invalid["persona_id"] = "WrongPersona"
+    monkeypatch.setattr(
+        state_assessment,
+        "call_state_assessment_llm",
+        lambda *a, **k: {"raw_response": json.dumps(invalid), "finish_reason": "stop", "resource_usage": {}},
+    )
+
+    with pytest.raises(ValueError, match="persona_id does not match"):
+        _run_real_assessment(tmp_path)

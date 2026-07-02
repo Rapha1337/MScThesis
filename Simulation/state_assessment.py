@@ -15,10 +15,15 @@ DEFAULT_PROMPT_PATH = SIMULATION_DIR / "AssessmentModel_Prompt.md"
 DEFAULT_MODEL_NAME = "gpt-oss-120b"
 DEFAULT_MAX_TOKENS = 10000
 RETRY_MIN_MAX_TOKENS = 12000
+PREVIOUS_DIARY_CONTEXT_WINDOW = 7
+PREVIOUS_DIARY_CONTEXT_STRATEGY = "rolling_window_last_7_entries"
 JSON_REPAIR_INSTRUCTION = (
-    "Your previous response was malformed. Return only one complete valid JSON object "
+    "Your previous State Assessment response was invalid. Return only one complete valid JSON object "
     "parseable by Python json.loads. All property names must be enclosed in double quotes. "
-    "Do not use markdown, comments, trailing commas, ellipses, or unquoted keys."
+    "Do not use markdown, comments, trailing commas, ellipses, or unquoted keys. "
+    "Every active construct must be present in item_scores, and each construct must contain "
+    "exactly the required number of item objects with the expected question_id, score, range, "
+    "evidence_spans, and reasoning_short fields."
 )
 PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA = 0.20
 PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE = 0.10
@@ -436,47 +441,129 @@ def call_state_assessment_llm(
     }
 
 
-def _save_invalid_state_assessment(
+def _invalid_state_assessment_paths(
     *,
     output_dir: Path,
     persona_id: str,
-    day_index: int,
-    raw_response: str,
-    parse_error: ValueError,
-    finish_reason: str | None,
-    max_tokens: int,
-    model: str,
-    retry: bool,
+    attempt: int,
+    error_type: str,
 ) -> tuple[Path, Path]:
     safe_persona_id = "".join(
         character if character.isalnum() or character in "._-" else "_"
         for character in persona_id
     )
-    marker = "_retry" if retry else ""
-    raw_path = output_dir / f"state_assessment_{safe_persona_id}{marker}_raw_invalid.txt"
-    metadata_path = output_dir / f"state_assessment_{safe_persona_id}{marker}_parse_error.json"
+    attempt_label = f"attempt_{attempt}"
+    raw_path = output_dir / f"state_assessment_{safe_persona_id}_{attempt_label}_raw_invalid.txt"
+    metadata_path = output_dir / f"state_assessment_{safe_persona_id}_{attempt_label}_{error_type}.json"
+    return raw_path, metadata_path
+
+
+def _save_invalid_state_assessment(
+    *,
+    output_dir: Path,
+    persona_id: str,
+    day_index: int,
+    attempt: int,
+    raw_response: str,
+    error: ValueError,
+    error_type: str,
+    finish_reason: str | None,
+    max_tokens: int,
+    model: str,
+) -> tuple[Path, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
+    raw_path, metadata_path = _invalid_state_assessment_paths(
+        output_dir=output_dir,
+        persona_id=persona_id,
+        attempt=attempt,
+        error_type=error_type,
+    )
     raw_path.write_text(raw_response, encoding="utf-8")
-    decode_error = parse_error.__cause__
+    # Keep legacy parse-error filenames for existing tooling/tests while also
+    # writing attempt-numbered files for robust diagnostics.
+    if error_type == "parse_error":
+        safe_persona_id = "".join(
+            character if character.isalnum() or character in "._-" else "_"
+            for character in persona_id
+        )
+        legacy_marker = "" if attempt == 1 else "_retry"
+        legacy_raw_path = output_dir / f"state_assessment_{safe_persona_id}{legacy_marker}_raw_invalid.txt"
+        legacy_metadata_path = output_dir / f"state_assessment_{safe_persona_id}{legacy_marker}_parse_error.json"
+        legacy_raw_path.write_text(raw_response, encoding="utf-8")
+    else:
+        legacy_metadata_path = None
+    decode_error = error.__cause__
     metadata = {
         "persona_id": persona_id,
         "day_index": day_index,
-        "parse_error_message": str(parse_error),
+        "attempt": attempt,
+        "error_type": error_type,
+        "error_message": str(error),
+        "parse_error_message": str(error) if error_type == "parse_error" else None,
         "line_number": getattr(decode_error, "lineno", None),
         "column_number": getattr(decode_error, "colno", None),
         "character_position": getattr(decode_error, "pos", None),
         "finish_reason": finish_reason,
         "response_length": len(raw_response),
+        "max_tokens": max_tokens,
         "state_assessment_max_tokens": max_tokens,
+        "model": model,
         "model_name": model,
+        "raw_response_path": str(raw_path),
         "raw_invalid_output_path": str(raw_path),
     }
-    metadata_path.write_text(
-        json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    metadata_json = json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    metadata_path.write_text(metadata_json, encoding="utf-8")
+    if legacy_metadata_path is not None:
+        legacy_metadata = dict(metadata)
+        legacy_metadata["raw_response_path"] = str(legacy_raw_path)
+        legacy_metadata["raw_invalid_output_path"] = str(legacy_raw_path)
+        legacy_metadata_path.write_text(
+            json.dumps(legacy_metadata, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     return raw_path, metadata_path
 
+
+def _is_item_cardinality_error(error: ValueError) -> bool:
+    message = str(error)
+    return ".items must contain exactly" in message
+
+
+def _payload_with_conservative_null_items(payload: Mapping[str, Any]) -> dict[str, Any]:
+    patched = deepcopy(payload)
+    item_scores = patched.get("item_scores")
+    if not isinstance(item_scores, Mapping):
+        raise ValueError("Cannot apply item-cardinality fallback without item_scores object.")
+    patched_scores = dict(item_scores)
+    for construct in ACTIVE_CONSTRUCTS:
+        construct_payload = patched_scores.get(construct)
+        if not isinstance(construct_payload, Mapping):
+            continue
+        existing_items = construct_payload.get("items")
+        if not isinstance(existing_items, list):
+            continue
+        expected_count = CONSTRUCT_ITEM_COUNTS[construct]
+        if len(existing_items) >= expected_count:
+            continue
+        low, high = BACKEND_CONSTRUCT_RANGES[construct]
+        expected_range = f"{low:g}-{high:g}"
+        padded_items = list(existing_items)
+        for index in range(len(padded_items) + 1, expected_count + 1):
+            padded_items.append(
+                {
+                    "question_id": f"{construct}_q{index}",
+                    "score": None,
+                    "range": expected_range,
+                    "evidence_spans": [],
+                    "reasoning_short": "",
+                }
+            )
+        updated_construct_payload = dict(construct_payload)
+        updated_construct_payload["items"] = padded_items
+        patched_scores[construct] = updated_construct_payload
+    patched["item_scores"] = patched_scores
+    return patched
 
 def run_state_assessment(
     *,
@@ -485,6 +572,7 @@ def run_state_assessment(
     previous_normalized_values: Mapping[str, Any],
     current_simulated_diary_entry: str,
     previous_diary_entries: Sequence[Mapping[str, Any]],
+    previous_diary_entries_total_available_count: int | None = None,
     current_decision_label: str | None = None,
     was_physical_activity_planned_today: bool | None = None,
     planned_physical_activity_summary: Mapping[str, Any] | None = None,
@@ -500,23 +588,42 @@ def run_state_assessment(
     json_mode: bool = False,
 ) -> dict[str, Any]:
     template = prompt_template if prompt_template is not None else load_state_assessment_prompt()
+    # The caller is responsible for applying the rolling diary-history window.
+    # For backward compatibility, previous_diary_entries_count below means the
+    # number of previous entries actually passed to LLM3, not the full retained
+    # internal diary history.
+    diary_context_entries = [dict(entry) for entry in previous_diary_entries]
+    context_count = len(diary_context_entries)
+    total_available_count = (
+        context_count
+        if previous_diary_entries_total_available_count is None
+        else int(previous_diary_entries_total_available_count)
+    )
     rendered_prompt = render_state_assessment_prompt(
         template,
         persona_id=persona_id,
         day_index=day_index,
         previous_psychological_construct_values=previous_normalized_values,
         current_simulated_diary_entry=current_simulated_diary_entry,
-        previous_diary_entries=previous_diary_entries,
+        previous_diary_entries=diary_context_entries,
         current_decision_label=current_decision_label,
         was_physical_activity_planned_today=was_physical_activity_planned_today,
         planned_physical_activity_summary=planned_physical_activity_summary,
         previous_diary_entries_summary=previous_diary_entries_summary,
     )
+    fallback_used = False
+    fallback_reason: str | None = None
+    attempt_count = 1
     if dry_run:
         raw_payload = build_dry_run_state_assessment(
             persona_id=persona_id,
             day_index=day_index,
             previous_normalized_values=previous_normalized_values,
+        )
+        validated = validate_state_assessment_output(
+            raw_payload,
+            expected_persona_id=persona_id,
+            expected_day_index=day_index,
         )
         resource_usage = {
             "prompt_tokens": 0,
@@ -528,8 +635,12 @@ def run_state_assessment(
         mode = "dry_run_mock"
     else:
         invalid_output_dir = output_dir or SIMULATION_DIR / "output"
-        for attempt in range(2):
-            attempt_max_tokens = max_tokens if attempt == 0 else max(max_tokens, RETRY_MIN_MAX_TOKENS)
+        last_error: ValueError | None = None
+        last_payload: dict[str, Any] | None = None
+        last_resource_usage: Mapping[str, Any] = {}
+        for attempt_index in range(2):
+            attempt_count = attempt_index + 1
+            attempt_max_tokens = max_tokens if attempt_index == 0 else max(max_tokens, RETRY_MIN_MAX_TOKENS)
             llm_result = call_state_assessment_llm(
                 rendered_prompt,
                 model=model,
@@ -537,34 +648,51 @@ def run_state_assessment(
                 top_p=top_p,
                 llm_seed=llm_seed,
                 max_tokens=attempt_max_tokens,
-                repair_instruction=JSON_REPAIR_INSTRUCTION if attempt else None,
+                repair_instruction=JSON_REPAIR_INSTRUCTION if attempt_index else None,
                 json_mode=json_mode,
             )
+            last_resource_usage = llm_result["resource_usage"]
             try:
                 raw_payload = parse_state_assessment_json(llm_result["raw_response"])
-                resource_usage = llm_result["resource_usage"]
+                last_payload = raw_payload
+                validated = validate_state_assessment_output(
+                    raw_payload,
+                    expected_persona_id=persona_id,
+                    expected_day_index=day_index,
+                )
+                resource_usage = last_resource_usage
                 break
             except ValueError as exc:
+                last_error = exc
+                error_type = "parse_error" if exc.__cause__ is not None else "schema_validation_error"
                 _save_invalid_state_assessment(
                     output_dir=invalid_output_dir,
                     persona_id=persona_id,
                     day_index=day_index,
+                    attempt=attempt_count,
                     raw_response=llm_result["raw_response"],
-                    parse_error=exc,
+                    error=exc,
+                    error_type=error_type,
                     finish_reason=llm_result["finish_reason"],
                     max_tokens=attempt_max_tokens,
                     model=model,
-                    retry=bool(attempt),
                 )
-                if attempt == 1:
-                    raise
+        else:
+            if last_error is not None and _is_item_cardinality_error(last_error) and last_payload is not None:
+                fallback_reason = str(last_error)
+                fallback_payload = _payload_with_conservative_null_items(last_payload)
+                validated = validate_state_assessment_output(
+                    fallback_payload,
+                    expected_persona_id=persona_id,
+                    expected_day_index=day_index,
+                )
+                fallback_used = True
+                resource_usage = last_resource_usage
+            elif last_error is not None:
+                raise last_error
+            else:
+                raise RuntimeError("State Assessment retry loop ended without a result.")
         mode = "llm"
-
-    validated = validate_state_assessment_output(
-        raw_payload,
-        expected_persona_id=persona_id,
-        expected_day_index=day_index,
-    )
     target_normalized = normalize_mean_scores(
         validated["mean_scores_raw"],
         previous_normalized_values,
@@ -601,9 +729,15 @@ def run_state_assessment(
         "psychological_construct_update_delta_applied": update["delta_applied"],
         "psychological_construct_values_after_smoothed_update": update["updated_values"],
         "psychological_construct_values_after_state_assessment": update["updated_values"],
-        "previous_diary_entries_count": len(previous_diary_entries),
-        "previous_diary_entries_context_used": [dict(entry) for entry in previous_diary_entries],
-        "previous_diary_entries_context_strategy": "all_previous_entries_for_run",
+        "previous_diary_entries_total_available_count": total_available_count,
+        "previous_diary_entries_context_count": context_count,
+        "previous_diary_entries_count": context_count,
+        "previous_diary_entries_count_semantics": "entries_actually_passed_to_llm3",
+        "previous_diary_entries_context_used": diary_context_entries,
+        "previous_diary_entries_context_strategy": PREVIOUS_DIARY_CONTEXT_STRATEGY,
+        "state_assessment_fallback_used": fallback_used,
+        "state_assessment_fallback_reason": fallback_reason,
+        "state_assessment_attempt_count": attempt_count,
         "rendered_prompt": rendered_prompt,
         "_resource_usage": resource_usage,
     }
