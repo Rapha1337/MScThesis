@@ -55,6 +55,8 @@ from state_assessment import (  # noqa: E402
     DEFAULT_MAX_TOKENS as STATE_ASSESSMENT_MAX_TOKENS,
     PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA,
     PSYCHOLOGICAL_CONSTRUCT_UPDATE_MAX_DAILY_CHANGE,
+    PREVIOUS_DIARY_CONTEXT_STRATEGY,
+    PREVIOUS_DIARY_CONTEXT_WINDOW,
     load_state_assessment_prompt,
     run_state_assessment,
 )
@@ -150,6 +152,9 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "state_assessment_enabled",
     "state_assessment_mode",
     "previous_diary_entries_count",
+    "previous_diary_entries_total_available_count",
+    "previous_diary_entries_context_count",
+    "previous_diary_entries_context_strategy",
     "psychological_construct_values_before_state_assessment",
     "state_assessment_item_scores",
     "state_assessment_mean_scores_raw",
@@ -206,6 +211,7 @@ class FullSimulationConfig:
     enable_resource_tracking: bool = True
     enable_codecarbon: bool = True
     verbose_llm_debug: bool = False
+    resume: bool = False
     top_p: float = TOP_P
     llm_seed: int | None = None
 
@@ -283,6 +289,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument("--include-full-hourly-context", action="store_true")
+    parser.add_argument("--resume", action="store_true", help="Resume from an existing full simulation checkpoint in --output-dir.")
     parser.add_argument("--physical-activity-hours-per-week", default=None)
     parser.add_argument("--social-hours-per-week", default=None)
     parser.add_argument("--care-work-hours-per-week", default=None)
@@ -414,6 +421,7 @@ def config_from_args(args: argparse.Namespace) -> FullSimulationConfig:
         enable_resource_tracking=bool(args.enable_resource_tracking),
         enable_codecarbon=bool(args.enable_codecarbon),
         verbose_llm_debug=bool(args.verbose_llm_debug),
+        resume=bool(getattr(args, "resume", False)),
     )
 
 
@@ -894,6 +902,9 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         "state_assessment_enabled": bool(record.get("state_assessment_enabled")),
         "state_assessment_mode": str(record.get("state_assessment_mode")),
         "previous_diary_entries_count": int(record.get("previous_diary_entries_count", 0)),
+        "previous_diary_entries_total_available_count": int(record.get("previous_diary_entries_total_available_count", 0)),
+        "previous_diary_entries_context_count": int(record.get("previous_diary_entries_context_count", 0)),
+        "previous_diary_entries_context_strategy": str(record.get("previous_diary_entries_context_strategy", "")),
         "psychological_construct_values_before_state_assessment": _json_log_value(
             record.get("psychological_construct_values_before_state_assessment")
         ),
@@ -1096,7 +1107,8 @@ def _build_simulation_run_manifest(
             "state_assessment_call_count": state_assessment_call_count,
             "state_assessment_dry_run_count": state_assessment_dry_run_count,
             "previous_diary_entries_passed_as_context": True,
-            "previous_diary_entry_context_strategy": "all_previous_entries_for_run",
+            "previous_diary_entry_context_strategy": PREVIOUS_DIARY_CONTEXT_STRATEGY,
+            "previous_diary_entries_context_window": PREVIOUS_DIARY_CONTEXT_WINDOW,
             "active_constructs": list(ACTIVE_CONSTRUCTS),
             "placeholder_next_day_activity_generation_disabled": True,
             "psychological_construct_update_strategy": "smoothed_bounded",
@@ -1157,6 +1169,139 @@ def _write_simulation_run_manifest(
     )
 
 
+CHECKPOINT_FILENAME = "full_simulation_checkpoint.json"
+
+
+def _run_config_comparison_payload(config: FullSimulationConfig, daily_log_path: Path) -> dict[str, Any]:
+    return {
+        "n_personas": config.n_personas,
+        "n_days": config.n_days,
+        "start_date": config.start_date.isoformat(),
+        "base_seed": config.base_seed,
+        "model": config.model,
+        "temperature": config.temperature,
+        "top_p": config.top_p,
+        "llm_seed": config.llm_seed,
+        "llm1_max_tokens": config.llm1_max_tokens,
+        "llm2_max_tokens": config.llm2_max_tokens,
+        "state_assessment_max_tokens": config.state_assessment_max_tokens,
+        "state_assessment_json_mode_enabled": config.state_assessment_json_mode,
+        "dry_run": config.dry_run,
+        "include_full_hourly_context": config.include_full_hourly_context,
+        "daily_log_path": str(daily_log_path),
+        "cli_overrides": config.cli_overrides or {},
+    }
+
+
+def _checkpoint_path(config: FullSimulationConfig) -> Path:
+    return config.output_dir / CHECKPOINT_FILENAME
+
+
+def _write_incremental_outputs(
+    *,
+    config: FullSimulationConfig,
+    contexts_compact_path: Path,
+    persona_metadata_path: Path,
+    output_files: Mapping[str, str],
+    compact_contexts: Sequence[Mapping[str, Any]],
+    records: Sequence[Mapping[str, Any]],
+    state_assessment_call_count: int,
+) -> None:
+    _write_json(
+        contexts_compact_path,
+        {
+            "simulation_metadata": {
+                "n_personas": config.n_personas,
+                "n_days": config.n_days,
+                "n_contexts": len(compact_contexts),
+                "start_date": config.start_date.isoformat(),
+                "base_seed": config.base_seed,
+                "dry_run": config.dry_run,
+                "persona_metadata_file": str(persona_metadata_path),
+                "state_assessment_call_count": state_assessment_call_count,
+            },
+            "llm_contexts": list(compact_contexts),
+        },
+    )
+    _write_json(
+        config.output_dir / "full_simulation_trace.json",
+        {
+            "metadata": {
+                "n_personas": config.n_personas,
+                "n_days": config.n_days,
+                "n_records": len(records),
+                "start_date": config.start_date.isoformat(),
+                "base_seed": config.base_seed,
+                "dry_run": config.dry_run,
+                "persona_metadata_file": str(persona_metadata_path),
+                "output_files": dict(output_files),
+            },
+            "records": list(records),
+        },
+    )
+
+
+def _write_checkpoint(
+    *,
+    config: FullSimulationConfig,
+    daily_log_path: Path,
+    persona_states: Sequence[PersonaRuntimeState],
+    previous_diary_entries_by_persona: Mapping[str, Sequence[Mapping[str, Any]]],
+    compact_contexts: Sequence[Mapping[str, Any]],
+    records: Sequence[Mapping[str, Any]],
+    next_persona_index: int,
+    next_day_index: int,
+    state_assessment_call_count: int,
+    state_assessment_dry_run_count: int,
+) -> None:
+    _write_json(
+        _checkpoint_path(config),
+        {
+            "checkpoint_version": 1,
+            "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "run_configuration": _run_config_comparison_payload(config, daily_log_path),
+            "next_persona_index": next_persona_index,
+            "next_day_index": next_day_index,
+            "current_psychological_state_by_persona": {
+                state.persona_id: state.psychological_state for state in persona_states
+            },
+            "previous_diary_entries_by_persona": {
+                persona_id: list(entries)
+                for persona_id, entries in previous_diary_entries_by_persona.items()
+            },
+            "completed_record_count": len(records),
+            "completed_persona_days": [
+                {"persona_id": record["persona_id"], "day_index": record["day_index"]}
+                for record in records
+            ],
+            "state_assessment_call_count": state_assessment_call_count,
+            "state_assessment_dry_run_count": state_assessment_dry_run_count,
+            "compact_contexts": list(compact_contexts),
+            "records": list(records),
+        },
+    )
+
+
+def _load_resume_checkpoint(config: FullSimulationConfig, daily_log_path: Path) -> dict[str, Any]:
+    path = _checkpoint_path(config)
+    if not path.exists():
+        raise ValueError(f"Cannot resume: checkpoint does not exist at {path}.")
+    checkpoint = json.loads(path.read_text(encoding="utf-8"))
+    expected = _run_config_comparison_payload(config, daily_log_path)
+    actual = checkpoint.get("run_configuration")
+    if actual != expected:
+        raise ValueError("Cannot resume: checkpoint run configuration does not match requested run.")
+    return checkpoint
+
+
+def _assert_no_duplicate_persona_days(records: Sequence[Mapping[str, Any]]) -> None:
+    seen: set[tuple[str, int]] = set()
+    for record in records:
+        key = (str(record["persona_id"]), int(record["day_index"]))
+        if key in seen:
+            raise ValueError(f"Duplicate persona-day row detected during resume: {key}.")
+        seen.add(key)
+
 def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
     config.output_dir.mkdir(parents=True, exist_ok=True)
     daily_log_path = config.daily_log_path or config.output_dir / "daily_decision_log.csv"
@@ -1167,9 +1312,10 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
     manifest_path = config.output_dir / SIMULATION_RUN_MANIFEST_FILENAME
 
     # Avoid appending to stale run outputs for deterministic reruns in the same directory.
-    for csv_path in (daily_log_path, longitudinal_path):
-        if csv_path.exists():
-            csv_path.unlink()
+    if not config.resume:
+        for csv_path in (daily_log_path, longitudinal_path):
+            if csv_path.exists():
+                csv_path.unlink()
 
     run_config_payload = {
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
@@ -1193,8 +1339,10 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
         "simulation_run_manifest_path": str(manifest_path),
         "enable_resource_tracking": config.enable_resource_tracking,
         "enable_codecarbon": config.enable_codecarbon,
+        "resume": config.resume,
     }
-    _write_json(config.output_dir / "run_config.json", run_config_payload)
+    if not config.resume:
+        _write_json(config.output_dir / "run_config.json", run_config_payload)
 
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     output_files = _known_output_files(
@@ -1249,9 +1397,32 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
         previous_diary_entries_by_persona: dict[str, list[dict[str, Any]]] = {
             state.persona_id: [] for state in persona_states
         }
+        start_persona_index = 0
+        start_day_index = 0
+        if config.resume:
+            checkpoint = _load_resume_checkpoint(config, daily_log_path)
+            records = list(checkpoint.get("records") or [])
+            _assert_no_duplicate_persona_days(records)
+            compact_contexts = list(checkpoint.get("compact_contexts") or [])
+            previous_diary_entries_by_persona = {
+                str(persona_id): list(entries)
+                for persona_id, entries in (checkpoint.get("previous_diary_entries_by_persona") or {}).items()
+            }
+            state_by_persona = checkpoint.get("current_psychological_state_by_persona") or {}
+            for state in persona_states:
+                if state.persona_id in state_by_persona:
+                    state.psychological_state = state_by_persona[state.persona_id]
+                previous_diary_entries_by_persona.setdefault(state.persona_id, [])
+            start_persona_index = int(checkpoint.get("next_persona_index") or 0)
+            start_day_index = int(checkpoint.get("next_day_index") or 0)
+            state_assessment_call_count = int(checkpoint.get("state_assessment_call_count") or 0)
+            state_assessment_dry_run_count = int(checkpoint.get("state_assessment_dry_run_count") or 0)
 
-        for state in persona_states:
-            for day_index in range(config.n_days):
+        for persona_index, state in enumerate(persona_states):
+            first_day_for_persona = start_day_index if persona_index == start_persona_index else 0
+            if persona_index < start_persona_index:
+                continue
+            for day_index in range(first_day_for_persona, config.n_days):
                 calendar_date = config.start_date + timedelta(days=day_index)
                 llm_context, _diagnostic_context = build_llm_ready_context_for_day(
                     state,
@@ -1286,6 +1457,9 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 )
                 closed_loop_update = dict(pipeline_record["closed_loop_update"])
                 previous_diary_entries = previous_diary_entries_by_persona[state.persona_id]
+                # LLM3 receives only a bounded rolling window; the full diary
+                # history remains in previous_diary_entries and checkpoints.
+                previous_diary_entries_context = previous_diary_entries[-PREVIOUS_DIARY_CONTEXT_WINDOW:]
                 assessment = run_state_assessment(
                     persona_id=state.persona_id,
                     day_index=day_index,
@@ -1293,7 +1467,8 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     current_simulated_diary_entry=str(
                         pipeline_record["pa_decision"]["diary_entry"]
                     ),
-                    previous_diary_entries=previous_diary_entries,
+                    previous_diary_entries=previous_diary_entries_context,
+                    previous_diary_entries_total_available_count=len(previous_diary_entries),
                     current_decision_label=str(
                         pipeline_record["pa_decision"]["decision_label"]
                     ),
@@ -1395,9 +1570,27 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     ],
                     "psychological_construct_values_after_smoothed_update": constructs_after,
                     "psychological_construct_values_after_state_assessment": constructs_after,
+                    "previous_diary_entries_total_available_count": assessment[
+                        "previous_diary_entries_total_available_count"
+                    ],
+                    "previous_diary_entries_context_count": assessment[
+                        "previous_diary_entries_context_count"
+                    ],
                     "previous_diary_entries_count": assessment[
                         "previous_diary_entries_count"
                     ],
+                    "previous_diary_entries_context_strategy": assessment[
+                        "previous_diary_entries_context_strategy"
+                    ],
+                    "state_assessment_fallback_used": assessment.get(
+                        "state_assessment_fallback_used", False
+                    ),
+                    "state_assessment_fallback_reason": assessment.get(
+                        "state_assessment_fallback_reason"
+                    ),
+                    "state_assessment_attempt_count": assessment.get(
+                        "state_assessment_attempt_count", 1
+                    ),
                     "previous_diary_entries_context_used": assessment[
                         "previous_diary_entries_context_used"
                     ],
@@ -1447,6 +1640,33 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                         "physical_activity_decision": decision_label,
                         "planned_physical_activity": planned_activity_for_day,
                     }
+                )
+                next_persona_index = persona_index
+                next_day_index = day_index + 1
+                if next_day_index >= config.n_days:
+                    next_persona_index = persona_index + 1
+                    next_day_index = 0
+                _assert_no_duplicate_persona_days(records)
+                _write_incremental_outputs(
+                    config=config,
+                    contexts_compact_path=contexts_compact_path,
+                    persona_metadata_path=persona_metadata_path,
+                    output_files=output_files,
+                    compact_contexts=compact_contexts,
+                    records=records,
+                    state_assessment_call_count=state_assessment_call_count,
+                )
+                _write_checkpoint(
+                    config=config,
+                    daily_log_path=daily_log_path,
+                    persona_states=persona_states,
+                    previous_diary_entries_by_persona=previous_diary_entries_by_persona,
+                    compact_contexts=compact_contexts,
+                    records=records,
+                    next_persona_index=next_persona_index,
+                    next_day_index=next_day_index,
+                    state_assessment_call_count=state_assessment_call_count,
+                    state_assessment_dry_run_count=state_assessment_dry_run_count,
                 )
 
         contexts_payload = {
