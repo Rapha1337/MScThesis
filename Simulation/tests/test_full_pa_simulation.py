@@ -6,6 +6,8 @@ from datetime import date
 from pathlib import Path
 import sys
 
+import pytest
+
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
@@ -553,8 +555,11 @@ def test_full_simulation_passes_current_decision_and_planned_pa_to_state_assessm
     original = state_assessment.run_state_assessment
 
     def capturing_state_assessment(**kwargs):
-        captured.append(dict(kwargs))
-        return original(**kwargs)
+        result = original(**kwargs)
+        captured_call = dict(kwargs)
+        captured_call["rendered_prompt"] = result["rendered_prompt"]
+        captured.append(captured_call)
+        return result
 
     monkeypatch.setattr(module, "run_state_assessment", capturing_state_assessment)
     config = FullSimulationConfig(
@@ -720,3 +725,268 @@ def test_manifest_construct_update_parameters_match_runtime_records(tmp_path: Pa
             record["psychological_construct_update_max_daily_change"]
             == manifest["psychological_construct_update_max_daily_change"]
         )
+
+
+def test_resume_without_duplicate_rows_and_restores_state_and_diary_history(tmp_path: Path, monkeypatch) -> None:
+    import run_full_pa_simulation as module
+    from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
+
+    output_dir = tmp_path / "resume_run"
+    config = FullSimulationConfig(
+        n_personas=1,
+        n_days=3,
+        start_date=date(2026, 1, 1),
+        base_seed=137,
+        output_dir=output_dir,
+        model="gpt-oss-120b",
+        temperature=0,
+        llm1_max_tokens=2000,
+        llm2_max_tokens=1200,
+        dry_run=True,
+        include_full_hourly_context=True,
+        enable_resource_tracking=False,
+        enable_codecarbon=False,
+    )
+    original = module.run_state_assessment
+    calls = 0
+
+    def fail_after_first(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise RuntimeError("synthetic interruption")
+        return original(**kwargs)
+
+    monkeypatch.setattr(module, "run_state_assessment", fail_after_first)
+    with pytest.raises(RuntimeError, match="synthetic interruption"):
+        run_full_simulation(config)
+
+    checkpoint = json.loads((output_dir / "full_simulation_checkpoint.json").read_text(encoding="utf-8"))
+    assert checkpoint["next_day_index"] == 1
+    assert checkpoint["completed_record_count"] == 1
+    assert checkpoint["previous_diary_entries_by_persona"]["StudentPersona_01"][0]["day_index"] == 0
+    restored_state = checkpoint["current_psychological_state_by_persona"]["StudentPersona_01"]
+
+    monkeypatch.setattr(module, "run_state_assessment", original)
+    resume_config = FullSimulationConfig(**{**config.__dict__, "resume": True})
+    trace = run_full_simulation(resume_config)
+
+    keys = [(record["persona_id"], record["day_index"]) for record in trace["records"]]
+    assert keys == [("StudentPersona_01", 0), ("StudentPersona_01", 1), ("StudentPersona_01", 2)]
+    assert len(keys) == len(set(keys))
+    assert trace["records"][1]["previous_diary_entries_count"] == 1
+    assert trace["records"][1]["psychological_constructs_before_update"] == restored_state["values_normalized"]
+    with (output_dir / "daily_decision_log.csv").open("r", encoding="utf-8", newline="") as file:
+        assert len(list(csv.DictReader(file))) == 3
+
+
+def test_resumed_output_matches_uninterrupted_deterministic_dry_run(tmp_path: Path, monkeypatch) -> None:
+    import run_full_pa_simulation as module
+    from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
+
+    base_kwargs = dict(
+        n_personas=1,
+        n_days=3,
+        start_date=date(2026, 1, 1),
+        base_seed=137,
+        model="gpt-oss-120b",
+        temperature=0,
+        llm1_max_tokens=2000,
+        llm2_max_tokens=1200,
+        dry_run=True,
+        include_full_hourly_context=True,
+        enable_resource_tracking=False,
+        enable_codecarbon=False,
+    )
+    uninterrupted = run_full_simulation(FullSimulationConfig(output_dir=tmp_path / "uninterrupted", **base_kwargs))
+
+    interrupted_config = FullSimulationConfig(output_dir=tmp_path / "interrupted", **base_kwargs)
+    original = module.run_state_assessment
+    calls = 0
+
+    def fail_after_two(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls > 2:
+            raise RuntimeError("synthetic interruption")
+        return original(**kwargs)
+
+    monkeypatch.setattr(module, "run_state_assessment", fail_after_two)
+    with pytest.raises(RuntimeError, match="synthetic interruption"):
+        run_full_simulation(interrupted_config)
+    monkeypatch.setattr(module, "run_state_assessment", original)
+    resumed = run_full_simulation(FullSimulationConfig(output_dir=tmp_path / "interrupted", resume=True, **base_kwargs))
+
+    def comparable(trace: dict) -> list[dict]:
+        rows = []
+        for record in trace["records"]:
+            rows.append({
+                "persona_id": record["persona_id"],
+                "day_index": record["day_index"],
+                "pa_decision": record["pa_decision"],
+                "psychological_constructs_before_update": record["psychological_constructs_before_update"],
+                "psychological_constructs_after_update": record["psychological_constructs_after_update"],
+                "previous_diary_entries_count": record["previous_diary_entries_count"],
+                "context_summary": record["context_summary"],
+            })
+        return rows
+
+    assert comparable(resumed) == comparable(uninterrupted)
+
+
+def test_state_assessment_uses_last_seven_previous_diary_entries_only(tmp_path: Path, monkeypatch) -> None:
+    import run_full_pa_simulation as module
+    from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
+
+    captured: list[dict] = []
+    original = module.run_state_assessment
+
+    def capturing_state_assessment(**kwargs):
+        result = original(**kwargs)
+        captured_call = dict(kwargs)
+        captured_call["rendered_prompt"] = result["rendered_prompt"]
+        captured.append(captured_call)
+        return result
+
+    monkeypatch.setattr(module, "run_state_assessment", capturing_state_assessment)
+    config = FullSimulationConfig(
+        n_personas=1,
+        n_days=9,
+        start_date=date(2026, 1, 1),
+        base_seed=137,
+        output_dir=tmp_path / "rolling_diary_window",
+        model="gpt-oss-120b",
+        temperature=0,
+        llm1_max_tokens=2000,
+        llm2_max_tokens=1200,
+        dry_run=True,
+        include_full_hourly_context=False,
+        enable_resource_tracking=False,
+        enable_codecarbon=False,
+    )
+    trace = run_full_simulation(config)
+
+    assert [len(call["previous_diary_entries"]) for call in captured] == [0, 1, 2, 3, 4, 5, 6, 7, 7]
+    assert [call["previous_diary_entries_total_available_count"] for call in captured] == list(range(9))
+    assert [entry["day_index"] for entry in captured[7]["previous_diary_entries"]] == list(range(7))
+    assert [entry["day_index"] for entry in captured[8]["previous_diary_entries"]] == list(range(1, 8))
+
+    day_8_record = trace["records"][8]
+    assert day_8_record["previous_diary_entries_total_available_count"] == 8
+    assert day_8_record["previous_diary_entries_context_count"] == 7
+    assert day_8_record["previous_diary_entries_count"] == 7
+    assert day_8_record["previous_diary_entries_context_strategy"] == "rolling_window_last_7_entries"
+    used_day_indices = [entry["day_index"] for entry in day_8_record["previous_diary_entries_context_used"]]
+    assert used_day_indices == list(range(1, 8))
+    assert 0 not in used_day_indices
+    rendered_prompt = captured[8]["rendered_prompt"]
+    assert '"day_index": 0' not in rendered_prompt
+    assert '"day_index": 1' in rendered_prompt
+    assert '"day_index": 7' in rendered_prompt
+
+
+def test_checkpoint_retains_full_diary_history_while_resume_passes_last_seven_only(tmp_path: Path, monkeypatch) -> None:
+    import run_full_pa_simulation as module
+    from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
+
+    base_kwargs = dict(
+        n_personas=1,
+        n_days=10,
+        start_date=date(2026, 1, 1),
+        base_seed=137,
+        model="gpt-oss-120b",
+        temperature=0,
+        llm1_max_tokens=2000,
+        llm2_max_tokens=1200,
+        dry_run=True,
+        include_full_hourly_context=True,
+        enable_resource_tracking=False,
+        enable_codecarbon=False,
+    )
+    original = module.run_state_assessment
+    calls = 0
+
+    def fail_after_eight(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls > 8:
+            raise RuntimeError("synthetic interruption")
+        return original(**kwargs)
+
+    interrupted_dir = tmp_path / "interrupted_rolling_resume"
+    monkeypatch.setattr(module, "run_state_assessment", fail_after_eight)
+    with pytest.raises(RuntimeError, match="synthetic interruption"):
+        run_full_simulation(FullSimulationConfig(output_dir=interrupted_dir, **base_kwargs))
+
+    checkpoint = json.loads((interrupted_dir / "full_simulation_checkpoint.json").read_text(encoding="utf-8"))
+    full_history = checkpoint["previous_diary_entries_by_persona"]["StudentPersona_01"]
+    assert len(full_history) == 8
+    assert [entry["day_index"] for entry in full_history] == list(range(8))
+
+    resumed_calls: list[dict] = []
+
+    def capture_after_resume(**kwargs):
+        resumed_calls.append(dict(kwargs))
+        return original(**kwargs)
+
+    monkeypatch.setattr(module, "run_state_assessment", capture_after_resume)
+    resumed = run_full_simulation(FullSimulationConfig(output_dir=interrupted_dir, resume=True, **base_kwargs))
+    first_resume_call = resumed_calls[0]
+    assert first_resume_call["day_index"] == 8
+    assert first_resume_call["previous_diary_entries_total_available_count"] == 8
+    assert [entry["day_index"] for entry in first_resume_call["previous_diary_entries"]] == list(range(1, 8))
+    assert resumed["records"][8]["previous_diary_entries_context_count"] == 7
+    assert [entry["day_index"] for entry in resumed["records"][8]["previous_diary_entries_context_used"]] == list(range(1, 8))
+
+
+def test_resumed_rolling_diary_window_output_matches_uninterrupted_dry_run(tmp_path: Path, monkeypatch) -> None:
+    import run_full_pa_simulation as module
+    from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
+
+    base_kwargs = dict(
+        n_personas=1,
+        n_days=10,
+        start_date=date(2026, 1, 1),
+        base_seed=137,
+        model="gpt-oss-120b",
+        temperature=0,
+        llm1_max_tokens=2000,
+        llm2_max_tokens=1200,
+        dry_run=True,
+        include_full_hourly_context=True,
+        enable_resource_tracking=False,
+        enable_codecarbon=False,
+    )
+    uninterrupted = run_full_simulation(FullSimulationConfig(output_dir=tmp_path / "uninterrupted_rolling", **base_kwargs))
+    original = module.run_state_assessment
+    calls = 0
+
+    def fail_after_eight(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls > 8:
+            raise RuntimeError("synthetic interruption")
+        return original(**kwargs)
+
+    interrupted_dir = tmp_path / "interrupted_rolling"
+    monkeypatch.setattr(module, "run_state_assessment", fail_after_eight)
+    with pytest.raises(RuntimeError, match="synthetic interruption"):
+        run_full_simulation(FullSimulationConfig(output_dir=interrupted_dir, **base_kwargs))
+    monkeypatch.setattr(module, "run_state_assessment", original)
+    resumed = run_full_simulation(FullSimulationConfig(output_dir=interrupted_dir, resume=True, **base_kwargs))
+
+    def comparable(trace: dict) -> list[dict]:
+        return [
+            {
+                "day_index": record["day_index"],
+                "previous_diary_entries_total_available_count": record["previous_diary_entries_total_available_count"],
+                "previous_diary_entries_context_count": record["previous_diary_entries_context_count"],
+                "previous_diary_entries_context_used": record["previous_diary_entries_context_used"],
+                "pa_decision": record["pa_decision"],
+                "psychological_constructs_before_update": record["psychological_constructs_before_update"],
+                "psychological_constructs_after_update": record["psychological_constructs_after_update"],
+            }
+            for record in trace["records"]
+        ]
+
+    assert comparable(resumed) == comparable(uninterrupted)
