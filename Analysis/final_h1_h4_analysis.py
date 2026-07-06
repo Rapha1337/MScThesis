@@ -978,7 +978,6 @@ Adaptations were more frequent in the Hindering Scenario:
 
 
 
-<<<<<<< HEAD
 def write_combined_weather_comparison_figure(
     h1_dir: Path,
     target_path: Path,
@@ -993,18 +992,6 @@ def write_combined_weather_comparison_figure(
 
     This layout is intended for the manuscript where temperature and
     precipitation should be shown side by side in a compact format.
-=======
-def write_standardized_temperature_comparison_figure(
-    h1_dir: Path,
-    target_path: Path,
-) -> bool:
-    """Write the H1 temperature figure with shared 0-30 °C y-axes.
-
-    The final H1-H4 script normally copies source figures from the H1 output
-    folder. This helper regenerates only the temperature comparison figure from
-    the H1 monthly comparison table so the three temperature panels use the same
-    y-axis limits and ticks.
->>>>>>> 8449677ab8e4ccf516d06456f4375c6721427541
     """
     data_path = h1_dir / "data" / "monthly_climate_comparison.csv"
     if not data_path.exists():
@@ -1017,16 +1004,10 @@ def write_standardized_temperature_comparison_figure(
         "month_label",
         "reference_value",
         "simulated_mean",
-<<<<<<< HEAD
-=======
-        "simulated_p025",
-        "simulated_p975",
->>>>>>> 8449677ab8e4ccf516d06456f4375c6721427541
     }
     if not required_columns.issubset(monthly.columns):
         return False
 
-<<<<<<< HEAD
     temp_specs = [
         ("temperature_mean_c", "Mean"),
         ("temperature_daily_max_mean_c", "Daily maximum"),
@@ -1046,19 +1027,6 @@ def write_standardized_temperature_comparison_figure(
     month_labels: list[str] | None = None
 
     for idx, (variable, label) in enumerate(temp_specs):
-=======
-    figure_specs = [
-        ("temperature_mean_c", "Monthly mean temperature"),
-        ("temperature_daily_max_mean_c", "Mean daily maximum temperature"),
-        ("temperature_daily_min_mean_c", "Mean daily minimum temperature"),
-    ]
-
-    fig, axes = plt.subplots(3, 1, figsize=(10, 12), sharex=True)
-    x_positions: np.ndarray | None = None
-    month_labels: list[str] | None = None
-
-    for ax, (variable, title) in zip(axes, figure_specs):
->>>>>>> 8449677ab8e4ccf516d06456f4375c6721427541
         plot_df = monthly[monthly["variable"] == variable].sort_values("month")
         if plot_df.empty:
             plt.close(fig)
@@ -1069,7 +1037,6 @@ def write_standardized_temperature_comparison_figure(
             x_positions = x
             month_labels = plot_df["month_label"].astype(str).tolist()
 
-<<<<<<< HEAD
         line_color = f"C{idx}"
         ax_temp.plot(
             x,
@@ -1156,41 +1123,6 @@ def write_standardized_temperature_comparison_figure(
 
     target_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(target_path, dpi=300, bbox_inches="tight")
-=======
-        ax.fill_between(
-            x,
-            plot_df["simulated_p025"].astype(float),
-            plot_df["simulated_p975"].astype(float),
-            alpha=0.20,
-            label="95% simulation interval",
-        )
-        ax.plot(
-            x,
-            plot_df["reference_value"].astype(float),
-            marker="o",
-            label="Reference",
-        )
-        ax.plot(
-            x,
-            plot_df["simulated_mean"].astype(float),
-            marker="s",
-            label="Simulated mean",
-        )
-        ax.set_title(title)
-        ax.set_ylabel("°C")
-        ax.set_ylim(-5, 30)
-        ax.set_yticks(np.arange(-5, 31, 5))
-        ax.grid(True, alpha=0.30)
-
-    axes[0].legend(loc="upper right")
-    if x_positions is not None and month_labels is not None:
-        axes[-1].set_xticks(x_positions)
-        axes[-1].set_xticklabels(month_labels)
-
-    fig.tight_layout()
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(target_path, dpi=180)
->>>>>>> 8449677ab8e4ccf516d06456f4375c6721427541
     plt.close(fig)
     return True
 
@@ -1199,11 +1131,6 @@ def copy_source_figures(h1_dir: Path, h2_dir: Path, figures_dir: Path) -> None:
     source_dir.mkdir(parents=True, exist_ok=True)
 
     candidates = [
-<<<<<<< HEAD
-=======
-        h1_dir / "figures" / "temperature_monthly_comparison.png",
-        h1_dir / "figures" / "precipitation_monthly_comparison.png",
->>>>>>> 8449677ab8e4ccf516d06456f4375c6721427541
         h2_dir / "figures" / "construct_heatmap.png",
         h2_dir / "figures" / "annual_schedule_similarity_distribution.png",
     ]
@@ -1212,19 +1139,10 @@ def copy_source_figures(h1_dir: Path, h2_dir: Path, figures_dir: Path) -> None:
         if path.exists():
             shutil.copy2(path, source_dir / path.name)
 
-<<<<<<< HEAD
     # Generate one compact combined H1 figure for the manuscript.
     write_combined_weather_comparison_figure(
         h1_dir,
         source_dir / "weather_monthly_comparison.png",
-=======
-    # Regenerate the temperature source figure with identical 0-30 °C y-axes
-    # across all three panels. If the required monthly H1 table is unavailable,
-    # the copied source figure remains unchanged.
-    write_standardized_temperature_comparison_figure(
-        h1_dir,
-        source_dir / "temperature_monthly_comparison.png",
->>>>>>> 8449677ab8e4ccf516d06456f4375c6721427541
     )
 
 
