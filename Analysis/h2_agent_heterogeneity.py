@@ -80,8 +80,24 @@ def psychological_seed_from_persona_seed(persona_seed: int) -> int:
     return int(persona_seed) + int(PSYCHOLOGICAL_SEED_OFFSET)
 
 
+def h2_student_profile(
+    name: str = "student_generic",
+) -> StudentHoursWrapper:
+    """Return the fixed common input profile used for the final H2 analysis."""
+    return StudentHoursWrapper(
+        name=name,
+        fitness_hours_week=6.0,
+        social_hours_week=16.0,
+        work_hours_week=3.0,
+        carework_hours_week=9.0,
+        workplace_distance_km=5.0,
+        indoor_activity_distance_km=3.0,
+        outdoor_activity_distance_km=1.0,
+    )
+
+
 def generic_student_inputs() -> dict[str, float | None]:
-    return StudentHoursWrapper.from_zve_student_generic().input_parameters()
+    return h2_student_profile().input_parameters()
 
 
 def _clone_persona_wrapper(
@@ -110,7 +126,7 @@ def generate_agents(
     if agents_per_seed < 1:
         raise ValueError("agents_per_seed must be at least 1")
 
-    template = StudentHoursWrapper.from_zve_student_generic()
+    template = h2_student_profile()
     agents: list[AgentRecord] = []
 
     for base_seed in base_seeds:
@@ -1686,6 +1702,13 @@ def run_analysis(args: argparse.Namespace) -> dict[str, Any]:
         "total_pairwise_comparisons": len(pairs),
         "psychological_seed_offset": PSYCHOLOGICAL_SEED_OFFSET,
         "input_parameters": generic_student_inputs(),
+        "input_parameter_sources": {
+            "fitness_hours_week": "rounded from purpose-built study-team questionnaires",
+            "social_hours_week": "rounded from German Time Use Survey student values",
+            "work_hours_week": "rounded from German Time Use Survey student values",
+            "carework_hours_week": "rounded from German Time Use Survey student values",
+            "distances": "plausible assumptions for an urban student context",
+        },
         "sd_type": "population",
         "active_constructs": list(ACTIVE_CONSTRUCTS),
         "llm_used": False,
