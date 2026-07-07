@@ -696,21 +696,46 @@ def write_figures(
             else None
         )
         if sd_col is not None:
-            plot_df = h2_construct_summary.sort_values(sd_col, ascending=False)
+            construct_label_map = {
+                "action_planning": "Action planning",
+                "automaticity": "Automaticity",
+                "attitude_toward_the_behavior": "Attitude toward the behavior",
+                "pa_specific_self_control": "PA-specific self-control",
+                "intention": "Intention",
+                "perceived_behavioral_control": "Perceived behavioral control",
+                "subjective_norm": "Subjective norm",
+                "motivational_competence": "Motivational competence",
+                "intrinsic_motivation": "Intrinsic motivation",
+            }
+
+            plot_df = h2_construct_summary.sort_values(
+                sd_col,
+                ascending=False,
+            ).copy()
+            plot_df["construct_label"] = (
+                plot_df["construct"]
+                .map(construct_label_map)
+                .fillna(plot_df["construct"])
+            )
+
             ax = plot_df.plot(
-                x="construct",
+                x="construct_label",
                 y=sd_col,
                 kind="bar",
                 legend=False,
                 figsize=(11, 6),
             )
-            ax.set_title("H2: between-agent heterogeneity in initial psychological constructs")
+            ax.set_title("")
             ax.set_xlabel("Construct")
             ax.set_ylabel("Population SD")
             ax.tick_params(axis="x", rotation=30)
             fig = ax.get_figure()
             fig.tight_layout()
-            fig.savefig(figures_dir / "figure_h2_construct_heterogeneity.png", dpi=180)
+            fig.savefig(
+                figures_dir / "figure_h2_construct_heterogeneity.png",
+                dpi=180,
+                bbox_inches="tight",
+            )
             plt.close(fig)
 
     plot_table = scenario_decisions_by_daytype.copy()
