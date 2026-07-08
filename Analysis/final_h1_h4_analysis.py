@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Final descriptive H1-H4 analysis for the MSc thesis ABM simulation.
+"""Final descriptive and inferential H1-H4 analysis for the MSc thesis ABM simulation.
 
 This script intentionally performs the final calculations in the repository,
 rather than relying on any ad-hoc calculations made in a chat session.
@@ -20,7 +20,8 @@ python Analysis/final_h1_h4_analysis.py `
   --output-dir Analysis/outputs/final_h1_h4 `
   --overwrite
 
-The analysis is descriptive only. No inferential tests are performed.
+The analysis reports descriptive statistics, confidence intervals, effect sizes,
+and inferential tests requested for the thesis results.
 """
 
 from __future__ import annotations
@@ -37,6 +38,10 @@ from typing import Any, Callable, Iterable, Mapping
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from scipy import stats
+from statsmodels.multivariate.manova import MANOVA
+from statsmodels.stats.multitest import multipletests
+from statsmodels.stats.proportion import proportion_confint
 
 
 DECISION_CATEGORIES = [
@@ -47,6 +52,12 @@ DECISION_CATEGORIES = [
 ]
 
 CONTEXT_ORDER = ["supportive", "mixed_neutral", "hindering"]
+CONTEXT_DISPLAY = {
+    "supportive": "supportive",
+    "mixed_neutral": "neutral",
+    "hindering": "hindering",
+}
+ALPHA = 0.05
 
 H1_REQUIRED_TABLES = [
     "h1_summary_metrics.csv",
@@ -638,17 +649,895 @@ def table_to_markdown(df: pd.DataFrame, float_fmt: str = "{:.2f}") -> str:
     return df.map(fmt).to_markdown(index=False)
 
 
+
+def p_value_to_stars(p_value: float | None) -> str:
+    if p_value is None or pd.isna(p_value):
+        return ""
+    if p_value < 0.001:
+        return "***"
+    if p_value < 0.01:
+        return "**"
+    if p_value < 0.05:
+        return "*"
+    return "ns"
+
+
+def format_p_value(p_value: Any) -> str:
+    if p_value is None or pd.isna(p_value):
+        return ""
+    value = float(p_value)
+    return "< .001" if value < 0.001 else f"= {value:.3f}"
+
+
+def prepare_inferential_table_for_markdown(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    result = df.copy()
+    for column in [
+        "p_value",
+        "p_raw",
+        "p_adjusted",
+        "pearson_p",
+        "spearman_p",
+        "selected_p",
+    ]:
+        if column in result.columns:
+            result[column] = result[column].map(format_p_value)
+    return result
+
+
+def add_proportion_confidence_intervals(
+    table: pd.DataFrame,
+    alpha: float = ALPHA,
+) -> pd.DataFrame:
+    """Add Wilson 95% confidence intervals for every decision proportion."""
+    result = table.copy()
+    for category in DECISION_CATEGORIES:
+        lower_values: list[float] = []
+        upper_values: list[float] = []
+        for _, row in result.iterrows():
+            count = int(row[f"{category}_n"])
+            n_days = int(row["n_days"])
+            if n_days <= 0:
+                lower_values.append(np.nan)
+                upper_values.append(np.nan)
+                continue
+            lower, upper = proportion_confint(
+                count=count,
+                nobs=n_days,
+                alpha=alpha,
+                method="wilson",
+            )
+            lower_values.append(float(np.clip(100 * float(lower), 0, 100)))
+            upper_values.append(float(np.clip(100 * float(upper), 0, 100)))
+        result[f"{category}_ci_lower_pct"] = lower_values
+        result[f"{category}_ci_upper_pct"] = upper_values
+    return result
+
+
+def fisher_correlation_ci(
+    coefficient: float,
+    n: int,
+    alpha: float = ALPHA,
+) -> tuple[float, float]:
+    if n <= 3 or pd.isna(coefficient):
+        return np.nan, np.nan
+    clipped = float(np.clip(coefficient, -0.999999999, 0.999999999))
+    z_value = np.arctanh(clipped)
+    standard_error = 1 / math.sqrt(n - 3)
+    z_critical = stats.norm.ppf(1 - alpha / 2)
+    return (
+        float(np.tanh(z_value - z_critical * standard_error)),
+        float(np.tanh(z_value + z_critical * standard_error)),
+    )
+
+
+def bootstrap_spearman_ci(
+    x: np.ndarray,
+    y: np.ndarray,
+    seed: int,
+    repetitions: int = 5000,
+    alpha: float = ALPHA,
+) -> tuple[float, float]:
+    rng = np.random.default_rng(seed)
+    n = len(x)
+    coefficients: list[float] = []
+    for _ in range(repetitions):
+        indices = rng.integers(0, n, size=n)
+        sampled_x = x[indices]
+        sampled_y = y[indices]
+        if np.unique(sampled_x).size < 2 or np.unique(sampled_y).size < 2:
+            continue
+        coefficient = stats.spearmanr(sampled_x, sampled_y).statistic
+        if not pd.isna(coefficient):
+            coefficients.append(float(coefficient))
+    if not coefficients:
+        return np.nan, np.nan
+    return (
+        float(np.quantile(coefficients, alpha / 2)),
+        float(np.quantile(coefficients, 1 - alpha / 2)),
+    )
+
+
+def calculate_h1_correlation_inference(
+    monthly_climate_comparison: pd.DataFrame | None,
+) -> pd.DataFrame:
+    """Calculate normality checks, Pearson/Spearman tests, p values, and CIs."""
+    if monthly_climate_comparison is None:
+        return pd.DataFrame()
+
+    rows: list[dict[str, Any]] = []
+    for variable, group in monthly_climate_comparison.groupby("variable"):
+        paired = group[["reference_value", "simulated_mean"]].dropna()
+        x = paired["reference_value"].astype(float).to_numpy()
+        y = paired["simulated_mean"].astype(float).to_numpy()
+        n = len(paired)
+        if n < 3:
+            continue
+
+        reference_constant = np.unique(x).size < 2
+        simulated_constant = np.unique(y).size < 2
+        shapiro_reference_p = (
+            np.nan if reference_constant else float(stats.shapiro(x).pvalue)
+        )
+        shapiro_simulated_p = (
+            np.nan if simulated_constant else float(stats.shapiro(y).pvalue)
+        )
+
+        if reference_constant or simulated_constant:
+            pearson_r = np.nan
+            pearson_p = np.nan
+            pearson_ci_lower = np.nan
+            pearson_ci_upper = np.nan
+            spearman_rho = np.nan
+            spearman_p = np.nan
+            spearman_ci_lower = np.nan
+            spearman_ci_upper = np.nan
+        else:
+            pearson_result = stats.pearsonr(x, y)
+            pearson_r = float(pearson_result.statistic)
+            pearson_p = float(pearson_result.pvalue)
+            pearson_ci_lower, pearson_ci_upper = fisher_correlation_ci(pearson_r, n)
+
+            spearman_result = stats.spearmanr(x, y)
+            spearman_rho = float(spearman_result.statistic)
+            spearman_p = float(spearman_result.pvalue)
+            spearman_ci_lower, spearman_ci_upper = bootstrap_spearman_ci(
+                x,
+                y,
+                seed=3263 + len(rows),
+            )
+
+        pearson_assumptions_met = (
+            not reference_constant
+            and not simulated_constant
+            and shapiro_reference_p >= ALPHA
+            and shapiro_simulated_p >= ALPHA
+        )
+        if reference_constant or simulated_constant:
+            selected_test = "Not estimable (constant input)"
+            selected_coefficient = np.nan
+            selected_p = np.nan
+            selected_ci_lower = np.nan
+            selected_ci_upper = np.nan
+        else:
+            selected_test = "Pearson" if pearson_assumptions_met else "Spearman"
+            selected_coefficient = pearson_r if pearson_assumptions_met else spearman_rho
+            selected_p = pearson_p if pearson_assumptions_met else spearman_p
+            selected_ci_lower = (
+                pearson_ci_lower if pearson_assumptions_met else spearman_ci_lower
+            )
+            selected_ci_upper = (
+                pearson_ci_upper if pearson_assumptions_met else spearman_ci_upper
+            )
+
+        rows.append(
+            {
+                "variable": variable,
+                "n_months": n,
+                "shapiro_reference_p": shapiro_reference_p,
+                "shapiro_simulated_p": shapiro_simulated_p,
+                "pearson_assumptions_met": pearson_assumptions_met,
+                "pearson_r": pearson_r,
+                "pearson_p": pearson_p,
+                "pearson_ci_lower": pearson_ci_lower,
+                "pearson_ci_upper": pearson_ci_upper,
+                "spearman_rho": spearman_rho,
+                "spearman_p": spearman_p,
+                "spearman_ci_lower": spearman_ci_lower,
+                "spearman_ci_upper": spearman_ci_upper,
+                "selected_test": selected_test,
+                "selected_coefficient": selected_coefficient,
+                "selected_p": selected_p,
+                "selected_ci_lower": selected_ci_lower,
+                "selected_ci_upper": selected_ci_upper,
+                "significance": p_value_to_stars(selected_p),
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def calculate_h2_construct_sd_intervals(
+    initial_constructs: pd.DataFrame | None,
+    h2_construct_summary: pd.DataFrame | None,
+    repetitions: int = 5000,
+    alpha: float = ALPHA,
+) -> pd.DataFrame:
+    """Bootstrap 95% CIs for the population SD of each initial construct."""
+    if initial_constructs is None or h2_construct_summary is None:
+        return pd.DataFrame()
+
+    rng = np.random.default_rng(3263)
+    rows: list[dict[str, Any]] = []
+    for _, summary_row in h2_construct_summary.iterrows():
+        construct = str(summary_row["construct"])
+        if construct not in initial_constructs.columns:
+            continue
+        values = initial_constructs[construct].dropna().astype(float).to_numpy()
+        n = len(values)
+        if n < 2:
+            continue
+        sample_indices = rng.integers(0, n, size=(repetitions, n))
+        bootstrap_values = values[sample_indices]
+        bootstrap_sd = np.std(bootstrap_values, axis=1, ddof=0)
+        rows.append(
+            {
+                "construct": construct,
+                "n": n,
+                "population_sd": float(np.std(values, ddof=0)),
+                "sd_ci_lower": float(np.quantile(bootstrap_sd, alpha / 2)),
+                "sd_ci_upper": float(np.quantile(bootstrap_sd, 1 - alpha / 2)),
+                "bootstrap_repetitions": repetitions,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def calculate_h2_construct_manova(
+    initial_constructs: pd.DataFrame | None,
+) -> pd.DataFrame:
+    """Exploratory MANOVA of the initial construct profile by base seed.
+
+    This checks whether the joint nine-construct profile differs systematically
+    across the ten base-seed groups. Wilks' lambda is treated as the primary
+    multivariate statistic; the other conventional statistics are retained for
+    transparency.
+    """
+    if initial_constructs is None or initial_constructs.empty:
+        return pd.DataFrame()
+
+    constructs = [
+        "automaticity",
+        "pa_specific_self_control",
+        "action_planning",
+        "intention",
+        "perceived_behavioral_control",
+        "attitude_toward_the_behavior",
+        "subjective_norm",
+        "intrinsic_motivation",
+        "motivational_competence",
+    ]
+    required = ["base_seed", *constructs]
+    if any(column not in initial_constructs.columns for column in required):
+        return pd.DataFrame()
+
+    working = initial_constructs[required].dropna().copy()
+    if working.empty or working["base_seed"].nunique() < 2:
+        return pd.DataFrame()
+
+    formula = " + ".join(constructs) + " ~ C(base_seed)"
+    try:
+        result = MANOVA.from_formula(formula, data=working).mv_test()
+        stat_table = result.results["C(base_seed)"]["stat"].copy()
+    except Exception as exc:
+        return pd.DataFrame(
+            [
+                {
+                    "effect": "base_seed",
+                    "test": "MANOVA failed",
+                    "error": str(exc),
+                }
+            ]
+        )
+
+    rows: list[dict[str, Any]] = []
+    test_name_map = {
+        "Wilks' lambda": "Wilks' lambda",
+        "Pillai's trace": "Pillai's trace",
+        "Hotelling-Lawley trace": "Hotelling-Lawley trace",
+        "Roy's greatest root": "Roy's greatest root",
+    }
+    for index_name, row in stat_table.iterrows():
+        p_value = float(row["Pr > F"])
+        rows.append(
+            {
+                "effect": "base_seed",
+                "test": test_name_map.get(str(index_name), str(index_name)),
+                "value": float(row["Value"]),
+                "numerator_df": float(row["Num DF"]),
+                "denominator_df": float(row["Den DF"]),
+                "f_value": float(row["F Value"]),
+                "p_value": p_value,
+                "significance": p_value_to_stars(p_value),
+                "n_agents": int(len(working)),
+                "n_groups": int(working["base_seed"].nunique()),
+                "n_dependent_variables": len(constructs),
+                "primary_test": str(index_name) == "Wilks' lambda",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def binary_outcome_values(frame: pd.DataFrame, outcome: str) -> np.ndarray:
+    if outcome == "planned":
+        return frame["planned"].astype(float).to_numpy()
+    return (frame["decision_label"] == outcome).astype(float).to_numpy()
+
+
+def welch_degrees_of_freedom(
+    variance_a: float,
+    n_a: int,
+    variance_b: float,
+    n_b: int,
+) -> float:
+    numerator = (variance_a / n_a + variance_b / n_b) ** 2
+    denominator = 0.0
+    if n_a > 1:
+        denominator += (variance_a / n_a) ** 2 / (n_a - 1)
+    if n_b > 1:
+        denominator += (variance_b / n_b) ** 2 / (n_b - 1)
+    return numerator / denominator if denominator > 0 else np.nan
+
+
+def paired_weekly_binary_test(
+    frame: pd.DataFrame,
+    group_col: str,
+    group_a: str,
+    group_b: str,
+    outcome: str,
+    analysis: str,
+    alpha: float = ALPHA,
+) -> dict[str, Any]:
+    """Paired t test on weekly outcome rates across the two scenarios.
+
+    Only complete 7-day weeks are included so that a final partial week does
+    not receive the same weight as a complete week.
+    """
+    working = frame.copy()
+    day_values = working["day_index"].astype(int)
+    min_day = int(day_values.min())
+    total_days = int(day_values.max()) - min_day + 1
+    full_weeks = total_days // 7
+    working["calendar_week_index"] = ((day_values - min_day) // 7).astype(int)
+    working = working[working["calendar_week_index"] < full_weeks].copy()
+    if outcome == "planned":
+        working["outcome_binary"] = working["planned"].astype(float)
+    else:
+        working["outcome_binary"] = (
+            working["decision_label"] == outcome
+        ).astype(float)
+
+    weekly = working.pivot_table(
+        index="calendar_week_index",
+        columns=group_col,
+        values="outcome_binary",
+        aggfunc="mean",
+    )
+    if group_a not in weekly.columns or group_b not in weekly.columns:
+        return {
+            "analysis": analysis,
+            "test": "Paired-samples t test on weekly rates",
+            "outcome": outcome,
+            "group_a": group_a,
+            "group_b": group_b,
+            "n_pairs": 0,
+            "mean_a_pct": np.nan,
+            "mean_b_pct": np.nan,
+            "mean_difference_a_minus_b_pp": np.nan,
+            "statistic": np.nan,
+            "degrees_of_freedom": np.nan,
+            "p_value": np.nan,
+            "cohens_dz": np.nan,
+            "ci_lower_pp": np.nan,
+            "ci_upper_pp": np.nan,
+            "significance": "not estimable",
+        }
+
+    paired = weekly[[group_a, group_b]].dropna()
+    values_a = paired[group_a].astype(float).to_numpy()
+    values_b = paired[group_b].astype(float).to_numpy()
+    differences = values_a - values_b
+    n_pairs = len(differences)
+    if n_pairs < 2 or np.std(differences, ddof=1) == 0:
+        return {
+            "analysis": analysis,
+            "test": "Paired-samples t test on weekly rates",
+            "outcome": outcome,
+            "group_a": group_a,
+            "group_b": group_b,
+            "n_pairs": n_pairs,
+            "mean_a_pct": 100 * float(np.mean(values_a)) if n_pairs else np.nan,
+            "mean_b_pct": 100 * float(np.mean(values_b)) if n_pairs else np.nan,
+            "mean_difference_a_minus_b_pp": 100 * float(np.mean(differences)) if n_pairs else np.nan,
+            "statistic": np.nan,
+            "degrees_of_freedom": max(n_pairs - 1, 0),
+            "p_value": np.nan,
+            "cohens_dz": np.nan,
+            "ci_lower_pp": np.nan,
+            "ci_upper_pp": np.nan,
+            "significance": "not estimable",
+        }
+
+    test_result = stats.ttest_rel(values_a, values_b)
+    mean_difference = float(np.mean(differences))
+    standard_error = float(stats.sem(differences))
+    degrees_of_freedom = n_pairs - 1
+    critical = stats.t.ppf(1 - alpha / 2, degrees_of_freedom)
+    cohens_dz = mean_difference / float(np.std(differences, ddof=1))
+
+    return {
+        "analysis": analysis,
+        "test": "Paired-samples t test on weekly rates",
+        "outcome": outcome,
+        "group_a": group_a,
+        "group_b": group_b,
+        "n_pairs": n_pairs,
+        "mean_a_pct": 100 * float(np.mean(values_a)),
+        "mean_b_pct": 100 * float(np.mean(values_b)),
+        "mean_difference_a_minus_b_pp": 100 * mean_difference,
+        "statistic": float(test_result.statistic),
+        "degrees_of_freedom": float(degrees_of_freedom),
+        "p_value": float(test_result.pvalue),
+        "cohens_dz": float(cohens_dz),
+        "ci_lower_pp": 100 * float(mean_difference - critical * standard_error),
+        "ci_upper_pp": 100 * float(mean_difference + critical * standard_error),
+        "significance": p_value_to_stars(float(test_result.pvalue)),
+    }
+
+
+def two_group_binary_test(
+    frame: pd.DataFrame,
+    group_col: str,
+    group_a: str,
+    group_b: str,
+    outcome: str,
+    analysis: str,
+    alpha: float = ALPHA,
+) -> dict[str, Any]:
+    values_a = binary_outcome_values(frame[frame[group_col] == group_a], outcome)
+    values_b = binary_outcome_values(frame[frame[group_col] == group_b], outcome)
+    n_a = len(values_a)
+    n_b = len(values_b)
+
+    mean_a = float(np.mean(values_a)) if n_a else np.nan
+    mean_b = float(np.mean(values_b)) if n_b else np.nan
+    variance_a = float(np.var(values_a, ddof=1)) if n_a > 1 else np.nan
+    variance_b = float(np.var(values_b, ddof=1)) if n_b > 1 else np.nan
+
+    if n_a < 2 or n_b < 2 or (
+        np.nanstd(values_a) == 0 and np.nanstd(values_b) == 0
+    ):
+        return {
+            "analysis": analysis,
+            "test": "Welch independent-samples t test",
+            "outcome": outcome,
+            "group_a": group_a,
+            "group_b": group_b,
+            "n_a": n_a,
+            "n_b": n_b,
+            "mean_a_pct": 100 * mean_a,
+            "mean_b_pct": 100 * mean_b,
+            "mean_difference_a_minus_b_pp": 100 * (mean_a - mean_b),
+            "statistic": np.nan,
+            "degrees_of_freedom": np.nan,
+            "p_value": np.nan,
+            "cohens_d": np.nan,
+            "ci_lower_pp": np.nan,
+            "ci_upper_pp": np.nan,
+            "significance": "not estimable",
+        }
+
+    test_result = stats.ttest_ind(values_a, values_b, equal_var=False)
+    degrees_of_freedom = welch_degrees_of_freedom(
+        variance_a,
+        n_a,
+        variance_b,
+        n_b,
+    )
+    difference = mean_a - mean_b
+    standard_error = math.sqrt(variance_a / n_a + variance_b / n_b)
+    critical = stats.t.ppf(1 - alpha / 2, degrees_of_freedom)
+
+    pooled_variance = (
+        ((n_a - 1) * variance_a + (n_b - 1) * variance_b)
+        / (n_a + n_b - 2)
+    )
+    pooled_sd = math.sqrt(pooled_variance) if pooled_variance > 0 else np.nan
+    cohens_d = difference / pooled_sd if pooled_sd and not pd.isna(pooled_sd) else np.nan
+
+    return {
+        "analysis": analysis,
+        "test": "Welch independent-samples t test",
+        "outcome": outcome,
+        "group_a": group_a,
+        "group_b": group_b,
+        "n_a": n_a,
+        "n_b": n_b,
+        "mean_a_pct": 100 * mean_a,
+        "mean_b_pct": 100 * mean_b,
+        "mean_difference_a_minus_b_pp": 100 * difference,
+        "statistic": float(test_result.statistic),
+        "degrees_of_freedom": float(degrees_of_freedom),
+        "p_value": float(test_result.pvalue),
+        "cohens_d": float(cohens_d) if not pd.isna(cohens_d) else np.nan,
+        "ci_lower_pp": 100 * float(difference - critical * standard_error),
+        "ci_upper_pp": 100 * float(difference + critical * standard_error),
+        "significance": p_value_to_stars(float(test_result.pvalue)),
+    }
+
+
+def one_way_binary_anova(
+    frame: pd.DataFrame,
+    group_col: str,
+    group_order: list[str],
+    outcome: str,
+    analysis: str,
+) -> dict[str, Any]:
+    groups: list[np.ndarray] = []
+    valid_labels: list[str] = []
+    for label in group_order:
+        values = binary_outcome_values(frame[frame[group_col] == label], outcome)
+        if len(values):
+            groups.append(values)
+            valid_labels.append(label)
+
+    all_values = np.concatenate(groups) if groups else np.array([])
+    if len(groups) < 2 or len(all_values) == 0 or np.std(all_values) == 0:
+        return {
+            "analysis": analysis,
+            "test": "One-way ANOVA",
+            "outcome": outcome,
+            "groups": ";".join(valid_labels),
+            "n_total": len(all_values),
+            "statistic": np.nan,
+            "df_between": max(len(groups) - 1, 0),
+            "df_within": max(len(all_values) - len(groups), 0),
+            "p_value": np.nan,
+            "eta_squared": np.nan,
+            "omega_squared": np.nan,
+            "significance": "not estimable",
+        }
+
+    result = stats.f_oneway(*groups)
+    grand_mean = float(np.mean(all_values))
+    ss_between = sum(len(values) * (float(np.mean(values)) - grand_mean) ** 2 for values in groups)
+    ss_within = sum(float(np.sum((values - float(np.mean(values))) ** 2)) for values in groups)
+    ss_total = ss_between + ss_within
+    df_between = len(groups) - 1
+    df_within = len(all_values) - len(groups)
+    ms_within = ss_within / df_within if df_within > 0 else np.nan
+    eta_squared = ss_between / ss_total if ss_total > 0 else np.nan
+    omega_squared = (
+        (ss_between - df_between * ms_within) / (ss_total + ms_within)
+        if ss_total > 0 and not pd.isna(ms_within)
+        else np.nan
+    )
+
+    return {
+        "analysis": analysis,
+        "test": "One-way ANOVA",
+        "outcome": outcome,
+        "groups": ";".join(valid_labels),
+        "n_total": len(all_values),
+        "statistic": float(result.statistic),
+        "df_between": df_between,
+        "df_within": df_within,
+        "p_value": float(result.pvalue),
+        "eta_squared": float(eta_squared),
+        "omega_squared": float(omega_squared),
+        "significance": p_value_to_stars(float(result.pvalue)),
+    }
+
+
+def pairwise_binary_posthoc(
+    frame: pd.DataFrame,
+    group_col: str,
+    group_order: list[str],
+    outcome: str,
+    analysis: str,
+    alpha: float = ALPHA,
+) -> pd.DataFrame:
+    from itertools import combinations
+
+    raw_rows: list[dict[str, Any]] = []
+    for group_a, group_b in combinations(group_order, 2):
+        values_a = binary_outcome_values(frame[frame[group_col] == group_a], outcome)
+        values_b = binary_outcome_values(frame[frame[group_col] == group_b], outcome)
+        if len(values_a) < 2 or len(values_b) < 2:
+            continue
+
+        mean_a = float(np.mean(values_a))
+        mean_b = float(np.mean(values_b))
+        variance_a = float(np.var(values_a, ddof=1))
+        variance_b = float(np.var(values_b, ddof=1))
+        difference = mean_a - mean_b
+
+        if np.std(values_a) == 0 and np.std(values_b) == 0:
+            statistic = np.nan
+            p_raw = np.nan
+            df = np.nan
+            standard_error = np.nan
+            cohens_d = np.nan
+        else:
+            result = stats.ttest_ind(values_a, values_b, equal_var=False)
+            statistic = float(result.statistic)
+            p_raw = float(result.pvalue)
+            df = welch_degrees_of_freedom(
+                variance_a,
+                len(values_a),
+                variance_b,
+                len(values_b),
+            )
+            standard_error = math.sqrt(
+                variance_a / len(values_a) + variance_b / len(values_b)
+            )
+            pooled_variance = (
+                ((len(values_a) - 1) * variance_a + (len(values_b) - 1) * variance_b)
+                / (len(values_a) + len(values_b) - 2)
+            )
+            pooled_sd = math.sqrt(pooled_variance) if pooled_variance > 0 else np.nan
+            cohens_d = difference / pooled_sd if pooled_sd and not pd.isna(pooled_sd) else np.nan
+
+        raw_rows.append(
+            {
+                "analysis": analysis,
+                "test": "Pairwise Welch t test with Bonferroni correction",
+                "outcome": outcome,
+                "group_a": group_a,
+                "group_b": group_b,
+                "n_a": len(values_a),
+                "n_b": len(values_b),
+                "mean_a_pct": 100 * mean_a,
+                "mean_b_pct": 100 * mean_b,
+                "mean_difference_a_minus_b_pp": 100 * difference,
+                "statistic": statistic,
+                "degrees_of_freedom": df,
+                "p_raw": p_raw,
+                "standard_error": standard_error,
+                "cohens_d": cohens_d,
+            }
+        )
+
+    result_df = pd.DataFrame(raw_rows)
+    if result_df.empty:
+        return result_df
+
+    valid_mask = result_df["p_raw"].notna()
+    result_df["p_adjusted"] = np.nan
+    result_df.loc[valid_mask, "p_adjusted"] = multipletests(
+        result_df.loc[valid_mask, "p_raw"].to_numpy(),
+        alpha=alpha,
+        method="bonferroni",
+    )[1]
+
+    number_of_comparisons = max(int(valid_mask.sum()), 1)
+    adjusted_alpha = alpha / number_of_comparisons
+    ci_lowers: list[float] = []
+    ci_uppers: list[float] = []
+    for _, row in result_df.iterrows():
+        if pd.isna(row["standard_error"]) or pd.isna(row["degrees_of_freedom"]):
+            ci_lowers.append(np.nan)
+            ci_uppers.append(np.nan)
+            continue
+        critical = stats.t.ppf(
+            1 - adjusted_alpha / 2,
+            float(row["degrees_of_freedom"]),
+        )
+        difference = float(row["mean_difference_a_minus_b_pp"]) / 100
+        ci_lowers.append(100 * (difference - critical * float(row["standard_error"])))
+        ci_uppers.append(100 * (difference + critical * float(row["standard_error"])))
+
+    result_df["bonferroni_ci_lower_pp"] = ci_lowers
+    result_df["bonferroni_ci_upper_pp"] = ci_uppers
+    result_df["significance"] = result_df["p_adjusted"].map(p_value_to_stars)
+    return result_df.drop(columns=["standard_error"])
+
+
+def calculate_h3_h4_inferential_tests(
+    scenario_day_all: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    unplanned = scenario_day_all[~scenario_day_all["planned"]].copy()
+    planned = scenario_day_all[scenario_day_all["planned"]].copy()
+
+    tests = [
+        paired_weekly_binary_test(
+            planned,
+            "scenario",
+            "Supportive",
+            "Hindering",
+            "do_planned_activity",
+            "H3_planned_do_by_scenario",
+        ),
+        paired_weekly_binary_test(
+            unplanned,
+            "scenario",
+            "Supportive",
+            "Hindering",
+            "extra_activity",
+            "H3_unplanned_extra_by_scenario",
+        ),
+        paired_weekly_binary_test(
+            planned,
+            "scenario",
+            "Supportive",
+            "Hindering",
+            "adapt_activity",
+            "H4_planned_adapt_by_scenario",
+        ),
+        paired_weekly_binary_test(
+            scenario_day_all,
+            "scenario",
+            "Supportive",
+            "Hindering",
+            "planned",
+            "Exploratory_planned_PA_days_by_scenario",
+        ),
+        one_way_binary_anova(
+            planned,
+            "context_class",
+            CONTEXT_ORDER,
+            "do_planned_activity",
+            "H3_planned_do_by_context",
+        ),
+        one_way_binary_anova(
+            unplanned,
+            "context_class",
+            CONTEXT_ORDER,
+            "extra_activity",
+            "H3_unplanned_extra_by_context",
+        ),
+        one_way_binary_anova(
+            planned,
+            "context_class",
+            CONTEXT_ORDER,
+            "adapt_activity",
+            "H4_planned_adapt_by_context",
+        ),
+        one_way_binary_anova(
+            planned,
+            "context_class",
+            CONTEXT_ORDER,
+            "skip_activity",
+            "H4_planned_skip_by_context",
+        ),
+    ]
+
+    posthoc_frames = [
+        pairwise_binary_posthoc(
+            planned,
+            "context_class",
+            CONTEXT_ORDER,
+            "do_planned_activity",
+            "H3_planned_do_by_context",
+        ),
+        pairwise_binary_posthoc(
+            unplanned,
+            "context_class",
+            CONTEXT_ORDER,
+            "extra_activity",
+            "H3_unplanned_extra_by_context",
+        ),
+        pairwise_binary_posthoc(
+            planned,
+            "context_class",
+            CONTEXT_ORDER,
+            "adapt_activity",
+            "H4_planned_adapt_by_context",
+        ),
+    ]
+    tests_df = pd.DataFrame(tests)
+    non_empty = [frame for frame in posthoc_frames if not frame.empty]
+    posthoc = pd.concat(non_empty, ignore_index=True) if non_empty else pd.DataFrame()
+    if not posthoc.empty and not tests_df.empty:
+        significant_omnibus = set(
+            tests_df.loc[
+                tests_df["p_value"].notna() & (tests_df["p_value"] < ALPHA),
+                "analysis",
+            ]
+        )
+        posthoc = posthoc[posthoc["analysis"].isin(significant_omnibus)].copy()
+    return tests_df, posthoc
+
+
+def add_significance_brackets(
+    ax: plt.Axes,
+    x_by_group: dict[str, float],
+    posthoc: pd.DataFrame,
+    inferential_tests: pd.DataFrame,
+    analysis_name: str,
+    starting_y: float | None = None,
+    step: float = 8.0,
+) -> None:
+    if posthoc.empty or inferential_tests.empty:
+        return
+    omnibus = inferential_tests[inferential_tests["analysis"] == analysis_name]
+    if (
+        omnibus.empty
+        or pd.isna(omnibus.iloc[0]["p_value"])
+        or float(omnibus.iloc[0]["p_value"]) >= ALPHA
+    ):
+        return
+    subset = posthoc[
+        (posthoc["analysis"] == analysis_name)
+        & (posthoc["p_adjusted"].notna())
+        & (posthoc["p_adjusted"] < ALPHA)
+    ].copy()
+    if subset.empty:
+        return
+
+    comparisons: list[dict[str, Any]] = []
+    for _, row in subset.iterrows():
+        group_a = str(row["group_a"])
+        group_b = str(row["group_b"])
+        if group_a not in x_by_group or group_b not in x_by_group:
+            continue
+        x1 = float(x_by_group[group_a])
+        x2 = float(x_by_group[group_b])
+        comparisons.append(
+            {
+                "x1": min(x1, x2),
+                "x2": max(x1, x2),
+                "span": abs(x2 - x1),
+                "p_adjusted": float(row["p_adjusted"]),
+            }
+        )
+    if not comparisons:
+        return
+
+    if starting_y is None:
+        patch_tops = [patch.get_height() for patch in ax.patches]
+        starting_y = (max(patch_tops) if patch_tops else 0.0) + 4.0
+
+    y = float(starting_y)
+    for comparison in sorted(
+        comparisons,
+        key=lambda item: (item["span"], item["x1"], item["x2"]),
+    ):
+        x1 = comparison["x1"]
+        x2 = comparison["x2"]
+        ax.plot(
+            [x1, x1, x2, x2],
+            [y, y + 1.5, y + 1.5, y],
+            linewidth=1.0,
+            color="black",
+        )
+        ax.text(
+            (x1 + x2) / 2,
+            y + 1.8,
+            p_value_to_stars(comparison["p_adjusted"]),
+            ha="center",
+            va="bottom",
+            fontsize=10,
+        )
+        y += step
+    ax.set_ylim(0, max(ax.get_ylim()[1], y + 2))
+
+
 def write_figures(
     figures_dir: Path,
-    h1_summary_metrics: pd.DataFrame | None,
+    h1_correlation_inference: pd.DataFrame,
     h2_construct_summary: pd.DataFrame | None,
+    h2_construct_sd_intervals: pd.DataFrame,
     scenario_decisions_by_daytype: pd.DataFrame,
     h3_unplanned_by_context: pd.DataFrame,
     h4_planned_by_scenario: pd.DataFrame,
     h4_planned_by_context: pd.DataFrame,
     construct_trajectories_summary: pd.DataFrame,
+    inferential_tests: pd.DataFrame,
+    pairwise_posthoc: pd.DataFrame,
 ) -> None:
-    if h1_summary_metrics is not None:
+    if not h1_correlation_inference.empty:
         selected_vars = [
             "temperature_mean_c",
             "temperature_daily_max_mean_c",
@@ -662,29 +1551,33 @@ def write_figures(
         available = [
             variable
             for variable in selected_vars
-            if variable in set(h1_summary_metrics["variable"])
+            if variable in set(h1_correlation_inference["variable"])
         ]
-        if available and "pearson_r" in h1_summary_metrics.columns:
+        if available and "selected_coefficient" in h1_correlation_inference.columns:
             plot_df = (
-                h1_summary_metrics[h1_summary_metrics["variable"].isin(available)]
+                h1_correlation_inference[
+                    h1_correlation_inference["variable"].isin(available)
+                ]
                 .set_index("variable")
                 .loc[available]
                 .reset_index()
             )
             ax = plot_df.plot(
                 x="variable",
-                y="pearson_r",
+                y="selected_coefficient",
                 kind="bar",
                 legend=False,
                 figsize=(11, 6),
             )
-            ax.set_title("H1: monthly simulation-reference correlations")
+            ax.set_title("")
             ax.set_xlabel("Weather variable")
-            ax.set_ylabel("Pearson r")
+            ax.set_ylabel("Correlation coefficient")
             ax.tick_params(axis="x", rotation=30)
+            ax.grid(axis="y", alpha=0.25)
+            ax.set_axisbelow(True)
             fig = ax.get_figure()
             fig.tight_layout()
-            fig.savefig(figures_dir / "figure_h1_weather_correlations.png", dpi=180)
+            fig.savefig(figures_dir / "figure_h1_weather_correlations.png", dpi=300)
             plt.close(fig)
 
     if h2_construct_summary is not None:
@@ -697,15 +1590,15 @@ def write_figures(
         )
         if sd_col is not None:
             construct_label_map = {
-                "action_planning": "Action planning",
+                "action_planning": "Action\nplanning",
                 "automaticity": "Automaticity",
-                "attitude_toward_the_behavior": "Attitude toward the behavior",
-                "pa_specific_self_control": "PA-specific self-control",
+                "attitude_toward_the_behavior": "Attitude\ntoward the\nbehavior",
+                "pa_specific_self_control": "PA-specific\nself-control",
                 "intention": "Intention",
-                "perceived_behavioral_control": "Perceived behavioral control",
-                "subjective_norm": "Subjective norm",
-                "motivational_competence": "Motivational competence",
-                "intrinsic_motivation": "Intrinsic motivation",
+                "perceived_behavioral_control": "Perceived\nbehavioral\ncontrol",
+                "subjective_norm": "Subjective\nnorm",
+                "motivational_competence": "Motivational\ncompetence",
+                "intrinsic_motivation": "Intrinsic\nmotivation",
             }
 
             plot_df = h2_construct_summary.sort_values(
@@ -717,85 +1610,229 @@ def write_figures(
                 .map(construct_label_map)
                 .fillna(plot_df["construct"])
             )
+            if not h2_construct_sd_intervals.empty:
+                plot_df = plot_df.merge(
+                    h2_construct_sd_intervals[
+                        ["construct", "sd_ci_lower", "sd_ci_upper"]
+                    ],
+                    on="construct",
+                    how="left",
+                )
 
-            ax = plot_df.plot(
-                x="construct_label",
-                y=sd_col,
-                kind="bar",
-                legend=False,
-                figsize=(11, 6),
+            fig, ax = plt.subplots(figsize=(12.0, 5.4))
+            x = np.arange(len(plot_df))
+            values = plot_df[sd_col].astype(float).to_numpy()
+            yerr = None
+            if {"sd_ci_lower", "sd_ci_upper"}.issubset(plot_df.columns):
+                yerr = np.vstack(
+                    [
+                        values - plot_df["sd_ci_lower"].astype(float).to_numpy(),
+                        plot_df["sd_ci_upper"].astype(float).to_numpy() - values,
+                    ]
+                )
+            ax.bar(
+                x,
+                values,
+                yerr=yerr,
+                capsize=3 if yerr is not None else 0,
             )
-            ax.set_title("")
+            ax.set_xticks(x)
+            ax.set_xticklabels(plot_df["construct_label"], fontsize=9)
             ax.set_xlabel("Construct")
-            ax.set_ylabel("Population SD")
-            ax.tick_params(axis="x", rotation=30)
-            fig = ax.get_figure()
+            ax.set_ylabel("SD")
+            ax.set_ylim(0, 1)
+            ax.set_yticks(np.arange(0, 1.01, 0.2))
+            ax.grid(axis="y", alpha=0.25)
+            ax.set_axisbelow(True)
             fig.tight_layout()
             fig.savefig(
                 figures_dir / "figure_h2_construct_heterogeneity.png",
-                dpi=180,
+                dpi=300,
                 bbox_inches="tight",
             )
             plt.close(fig)
 
     plot_table = scenario_decisions_by_daytype.copy()
-    plot_table["day_type"] = np.where(plot_table["planned"], "planned days", "unplanned days")
-    plot_table["scenario_day_type"] = plot_table["scenario"] + " – " + plot_table["day_type"]
+    plot_table["day_type"] = np.where(
+        plot_table["planned"],
+        "planned days",
+        "unplanned days",
+    )
+    plot_table["scenario_day_type"] = (
+        plot_table["scenario"] + " – " + plot_table["day_type"]
+    )
     decision_counts = plot_table.set_index("scenario_day_type")[
         [f"{category}_n" for category in DECISION_CATEGORIES]
     ]
     decision_counts.columns = DECISION_CATEGORIES
     ax = decision_counts.plot(kind="bar", figsize=(12, 6))
-    ax.set_title("H3/H4: decision categories by scenario and day type")
+    ax.set_title("")
     ax.set_xlabel("Scenario and day type")
     ax.set_ylabel("Number of days")
     ax.tick_params(axis="x", rotation=25)
+    ax.grid(axis="y", alpha=0.25)
+    ax.set_axisbelow(True)
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.14),
+        ncol=2,
+        frameon=False,
+    )
     fig = ax.get_figure()
     fig.tight_layout()
-    fig.savefig(figures_dir / "figure_decision_categories_by_scenario_daytype.png", dpi=180)
+    fig.savefig(
+        figures_dir / "figure_decision_categories_by_scenario_daytype.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
     plt.close(fig)
 
+    # H3 figure: unplanned days by realized daily context.
     h3_plot = h3_unplanned_by_context.set_index("context_class").reindex(CONTEXT_ORDER)
-    available_cols = [
-        column
-        for column in ["skip_activity_pct", "extra_activity_pct"]
-        if column in h3_plot.columns
+    x = np.arange(len(CONTEXT_ORDER))
+    width = 0.32
+    fig, ax = plt.subplots(figsize=(10.0, 5.6))
+    h3_specs = [
+        ("skip_activity", "Skip Activity", -width / 2),
+        ("extra_activity", "Extra Activity", width / 2),
     ]
-    ax = h3_plot[available_cols].plot(kind="bar", figsize=(10, 6))
-    ax.set_title("H3: decisions on unplanned days by realized context")
-    ax.set_xlabel("Resolved daily context class")
-    ax.set_ylabel("Percentage of unplanned days")
-    ax.tick_params(axis="x", rotation=20)
-    fig = ax.get_figure()
+    for category, label, offset in h3_specs:
+        values = h3_plot[f"{category}_pct"].astype(float).to_numpy()
+        lower = h3_plot[f"{category}_ci_lower_pct"].astype(float).to_numpy()
+        upper = h3_plot[f"{category}_ci_upper_pct"].astype(float).to_numpy()
+        yerr = np.vstack([values - lower, upper - values])
+        ax.bar(
+            x + offset,
+            values,
+            width,
+            label=label,
+            yerr=yerr,
+            capsize=3,
+        )
+    ax.set_xticks(x)
+    ax.set_xticklabels([CONTEXT_DISPLAY[value] for value in CONTEXT_ORDER])
+    ax.set_xlabel("Classified Daily Context")
+    ax.set_ylabel("Percentage of days with no planned PA [%]")
+    ax.set_ylim(0, 100)
+    ax.grid(axis="y", alpha=0.25)
+    ax.set_axisbelow(True)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2, frameon=False)
+    extra_x = {
+        group: float(x[index] + width / 2)
+        for index, group in enumerate(CONTEXT_ORDER)
+    }
+    h3_start_y = max(
+        float(np.nanmax(h3_plot["skip_activity_ci_upper_pct"].astype(float).to_numpy())),
+        float(np.nanmax(h3_plot["extra_activity_ci_upper_pct"].astype(float).to_numpy())),
+    ) + 4.0
+    add_significance_brackets(
+        ax,
+        extra_x,
+        pairwise_posthoc,
+        inferential_tests,
+        "H3_unplanned_extra_by_context",
+        starting_y=h3_start_y,
+    )
     fig.tight_layout()
-    fig.savefig(figures_dir / "figure_h3_unplanned_decisions_by_context.png", dpi=180)
+    fig.savefig(
+        figures_dir / "figure_h3_unplanned_decisions_by_context.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
     plt.close(fig)
 
-    h4_plot = h4_planned_by_scenario.set_index("scenario")[
-        [f"{category}_pct" for category in DECISION_CATEGORIES]
+    # H4 structural scenario figure.
+    h4_plot = h4_planned_by_scenario.set_index("scenario")
+    scenario_order = ["Supportive", "Hindering"]
+    h4_plot = h4_plot.reindex(scenario_order)
+    x = np.arange(len(scenario_order))
+    width = 0.32
+    fig, ax = plt.subplots(figsize=(8.5, 5.4))
+    h4_scenario_specs = [
+        ("do_planned_activity", "Do Planned Activity", -width / 2),
+        ("adapt_activity", "Adapt Activity", width / 2),
     ]
-    h4_plot.columns = DECISION_CATEGORIES
-    ax = h4_plot.plot(kind="bar", figsize=(10, 6))
-    ax.set_title("H4: planned-day decision categories by structural scenario")
-    ax.set_xlabel("Scenario")
-    ax.set_ylabel("Percentage of planned days")
-    ax.tick_params(axis="x", rotation=0)
-    fig = ax.get_figure()
+    for category, label, offset in h4_scenario_specs:
+        values = h4_plot[f"{category}_pct"].astype(float).to_numpy()
+        lower = h4_plot[f"{category}_ci_lower_pct"].astype(float).to_numpy()
+        upper = h4_plot[f"{category}_ci_upper_pct"].astype(float).to_numpy()
+        yerr = np.vstack([values - lower, upper - values])
+        ax.bar(
+            x + offset,
+            values,
+            width,
+            label=label,
+            yerr=yerr,
+            capsize=3,
+        )
+    ax.set_xticks(x)
+    ax.set_xticklabels([value.lower() for value in scenario_order])
+    ax.set_xlabel("Structural Scenario")
+    ax.set_ylabel("Percentage of days with planned PA [%]")
+    ax.set_ylim(0, 100)
+    ax.grid(axis="y", alpha=0.25)
+    ax.set_axisbelow(True)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2, frameon=False)
     fig.tight_layout()
-    fig.savefig(figures_dir / "figure_h4_planned_decisions_by_scenario.png", dpi=180)
+    fig.savefig(
+        figures_dir / "figure_h4_planned_decisions_by_scenario.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
     plt.close(fig)
 
+    # H4 figure: planned days by realized daily context.
     h4_context_plot = h4_planned_by_context.set_index("context_class").reindex(CONTEXT_ORDER)
-    ax = h4_context_plot[
-        [f"{category}_pct" for category in DECISION_CATEGORIES]
-    ].plot(kind="bar", figsize=(11, 6))
-    ax.set_title("H4: decision categories on planned days by realized context")
-    ax.set_xlabel("Resolved daily context class")
-    ax.set_ylabel("Percentage of planned days")
-    ax.tick_params(axis="x", rotation=20)
-    fig = ax.get_figure()
+    x = np.arange(len(CONTEXT_ORDER))
+    width = 0.32
+    fig, ax = plt.subplots(figsize=(10.0, 5.6))
+    h4_context_specs = [
+        ("do_planned_activity", "Do Planned Activity", -width / 2),
+        ("adapt_activity", "Adapt Activity", width / 2),
+    ]
+    for category, label, offset in h4_context_specs:
+        values = h4_context_plot[f"{category}_pct"].astype(float).to_numpy()
+        lower = h4_context_plot[f"{category}_ci_lower_pct"].astype(float).to_numpy()
+        upper = h4_context_plot[f"{category}_ci_upper_pct"].astype(float).to_numpy()
+        yerr = np.vstack([values - lower, upper - values])
+        ax.bar(
+            x + offset,
+            values,
+            width,
+            label=label,
+            yerr=yerr,
+            capsize=3,
+        )
+    ax.set_xticks(x)
+    ax.set_xticklabels([CONTEXT_DISPLAY[value] for value in CONTEXT_ORDER])
+    ax.set_xlabel("Classified Daily Context")
+    ax.set_ylabel("Percentage of days with planned PA [%]")
+    ax.set_ylim(0, 100)
+    ax.grid(axis="y", alpha=0.25)
+    ax.set_axisbelow(True)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2, frameon=False)
+    adapt_x = {
+        group: float(x[index] + width / 2)
+        for index, group in enumerate(CONTEXT_ORDER)
+    }
+    h4_start_y = max(
+        float(np.nanmax(h4_context_plot["do_planned_activity_ci_upper_pct"].astype(float).to_numpy())),
+        float(np.nanmax(h4_context_plot["adapt_activity_ci_upper_pct"].astype(float).to_numpy())),
+    ) + 4.0
+    add_significance_brackets(
+        ax,
+        adapt_x,
+        pairwise_posthoc,
+        inferential_tests,
+        "H4_planned_adapt_by_context",
+        starting_y=h4_start_y,
+    )
     fig.tight_layout()
-    fig.savefig(figures_dir / "figure_h4_planned_decisions_by_context.png", dpi=180)
+    fig.savefig(
+        figures_dir / "figure_h4_planned_decisions_by_context.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
     plt.close(fig)
 
     construct_end = construct_trajectories_summary.pivot(
@@ -804,28 +1841,39 @@ def write_figures(
         values="end",
     )
     ax = construct_end.plot(kind="bar", figsize=(12, 6))
-    ax.set_title("Final psychological construct values by scenario")
+    ax.set_title("")
     ax.set_xlabel("Construct")
     ax.set_ylabel("Normalized final value")
     ax.set_ylim(0, 1)
     ax.tick_params(axis="x", rotation=30)
+    ax.grid(axis="y", alpha=0.25)
+    ax.set_axisbelow(True)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2, frameon=False)
     fig = ax.get_figure()
     fig.tight_layout()
-    fig.savefig(figures_dir / "figure_construct_final_values_by_scenario.png", dpi=180)
+    fig.savefig(
+        figures_dir / "figure_construct_final_values_by_scenario.png",
+        dpi=300,
+        bbox_inches="tight",
+    )
     plt.close(fig)
-
 
 def write_docs(
     docs_dir: Path,
     data_audit: pd.DataFrame,
     h1_summary_metrics: pd.DataFrame | None,
+    h1_correlation_inference: pd.DataFrame,
     h2_similarity: pd.DataFrame | None,
     h2_phase_counts: pd.DataFrame | None,
+    h2_construct_sd_intervals: pd.DataFrame,
+    h2_construct_manova: pd.DataFrame,
     h3_unplanned_by_scenario: pd.DataFrame,
     h3_unplanned_by_context: pd.DataFrame,
     h4_planned_by_scenario: pd.DataFrame,
     h4_planned_by_context: pd.DataFrame,
     effects_structural: pd.DataFrame,
+    inferential_tests: pd.DataFrame,
+    pairwise_posthoc: pd.DataFrame,
     construct_trajectories_summary: pd.DataFrame,
 ) -> None:
     analysis_plan = """# Final analysis plan for H1-H4
@@ -837,86 +1885,30 @@ def write_docs(
    - If the location immediately before planned PA is unknown, the last preceding hour with known accessibility is used.
 
 2. H3 and H4 report all decision categories:
-   - H3: unplanned days; all categories are reported, with `skip_activity` and `extra_activity` as the valid categories.
-   - H4: planned PA days; `do_planned_activity`, `adapt_activity`, `skip_activity`, and `extra_activity` are reported.
+   - H3: planned and unplanned days are analysed separately.
+   - H4: planned PA days are analysed using adaptation and skipping as hindering-consistent outcomes.
 
-3. The analysis is descriptive:
-   - No p-values or confirmatory inferential tests are used.
-   - Results are interpreted through frequencies, proportions, descriptive effect sizes, and visual patterns.
-   - This is appropriate because the simulated annual trajectories are not independent empirical observations.
+3. Statistical reporting includes:
+   - descriptive frequencies and percentages;
+   - 95% Wilson confidence intervals for proportions;
+   - Pearson or Spearman correlations for H1, selected after Shapiro-Wilk checks;
+   - paired-samples t tests on complete calendar-week rates for two-scenario comparisons;
+   - one-way ANOVA for the three realised context classes;
+   - Bonferroni-adjusted pairwise Welch t tests after a significant omnibus ANOVA;
+   - effect sizes (Cohen's d, eta squared, and omega squared);
+   - an exploratory MANOVA testing the joint initial construct profile across base-seed groups.
 
-## H1
-
-Weather validation is summarized using correlations, MAE, RMSE, bias, and interval coverage from the final H1 output tables.
-
-## H2
-
-Agent heterogeneity is summarized using schedule similarity, phase distributions, and heterogeneity in initial psychological constructs from the final H2 output tables.
-
-## H3
-
-Unit of analysis: unplanned days.
-
-Main descriptive comparisons:
-- Structural scenario: Supportive versus Hindering
-- Realized daily context: supportive, mixed/neutral, hindering
-- Scenario × realized context
-
-## H4
-
-Unit of analysis: planned PA days.
-
-Decision categories:
-- do planned activity
-- adapt activity
-- skip activity
-- extra activity
-
-Main descriptive comparisons:
-- Structural scenario: Supportive versus Hindering
-- Realized daily context
-- Simulation phase
+4. Significance notation in figures:
+   - * p < .05
+   - ** p < .01
+   - *** p < .001
 """
 
-    h3_supportive = h3_unplanned_by_scenario[
-        h3_unplanned_by_scenario["scenario"] == "Supportive"
-    ].iloc[0]
-    h3_hindering = h3_unplanned_by_scenario[
-        h3_unplanned_by_scenario["scenario"] == "Hindering"
-    ].iloc[0]
-    h4_supportive = h4_planned_by_scenario[
-        h4_planned_by_scenario["scenario"] == "Supportive"
-    ].iloc[0]
-    h4_hindering = h4_planned_by_scenario[
-        h4_planned_by_scenario["scenario"] == "Hindering"
-    ].iloc[0]
-
-    h1_text = "H1 summary table not available."
-    if h1_summary_metrics is not None:
-        selected_vars = [
-            "temperature_mean_c",
-            "temperature_daily_max_mean_c",
-            "temperature_daily_min_mean_c",
-            "precipitation_total_mm",
-            "sunshine_hours",
-            "wind_m_s",
-            "snow_cover_days",
-        ]
-        available = [
-            variable
-            for variable in selected_vars
-            if variable in set(h1_summary_metrics["variable"])
-        ]
-        h1_cols = [
-            column
-            for column in ["variable", "pearson_r", "mae", "rmse", "mean_bias_sim_minus_ref"]
-            if column in h1_summary_metrics.columns
-        ]
-        h1_text = table_to_markdown(
-            h1_summary_metrics[h1_summary_metrics["variable"].isin(available)][h1_cols],
-            float_fmt="{:.3f}",
-        )
-
+    h1_text = (
+        table_to_markdown(h1_correlation_inference, float_fmt="{:.3f}")
+        if not h1_correlation_inference.empty
+        else "H1 inferential table not available."
+    )
     h2_similarity_text = (
         table_to_markdown(h2_similarity, float_fmt="{:.2f}")
         if h2_similarity is not None
@@ -927,18 +1919,45 @@ Main descriptive comparisons:
         if h2_phase_counts is not None
         else "H2 phase table not available."
     )
+    h2_ci_text = (
+        table_to_markdown(h2_construct_sd_intervals, float_fmt="{:.3f}")
+        if not h2_construct_sd_intervals.empty
+        else "H2 construct SD confidence intervals not available."
+    )
+    h2_manova_text = (
+        table_to_markdown(
+            prepare_inferential_table_for_markdown(h2_construct_manova),
+            float_fmt="{:.4f}",
+        )
+        if not h2_construct_manova.empty
+        else "H2 MANOVA not available."
+    )
+    inferential_text = (
+        table_to_markdown(
+            prepare_inferential_table_for_markdown(inferential_tests),
+            float_fmt="{:.4f}",
+        )
+        if not inferential_tests.empty
+        else "Inferential tests not available."
+    )
+    posthoc_text = (
+        table_to_markdown(
+            prepare_inferential_table_for_markdown(pairwise_posthoc),
+            float_fmt="{:.4f}",
+        )
+        if not pairwise_posthoc.empty
+        else "Pairwise post-hoc tests not available."
+    )
 
-    results_summary = f"""# Final descriptive H1-H4 results summary
+    results_summary = f"""# Final H1-H4 results summary
 
 ## Data audit
 
 {table_to_markdown(data_audit, float_fmt="{:.1f}")}
 
-## H1: Weather plausibility
+## H1: Environmental conditions
 
 {h1_text}
-
-Interpretation: H1 is evaluated descriptively by checking whether generated weather patterns reproduce the expected seasonal structure.
 
 ## H2: Agent heterogeneity
 
@@ -950,52 +1969,49 @@ Phase distribution:
 
 {h2_phase_text}
 
-Interpretation: H2 is evaluated descriptively by checking whether the ABM produces heterogeneous, but still plausible, agent routines and psychological starting states.
+Construct SD confidence intervals:
 
-## H3: Decision categories on unplanned days
+{h2_ci_text}
 
-### Structural scenario comparison
+Exploratory MANOVA by base seed:
 
-{table_to_markdown(h3_unplanned_by_scenario[["scenario", "n_days", "do_planned_activity_n", "do_planned_activity_pct", "adapt_activity_n", "adapt_activity_pct", "skip_activity_n", "skip_activity_pct", "extra_activity_n", "extra_activity_pct"]], float_fmt="{:.1f}")}
+{h2_manova_text}
 
-Extra activity was more frequent in the Supportive Scenario than in the Hindering Scenario:
-- Supportive: {h3_supportive["extra_activity_n"]:.0f}/{h3_supportive["n_days"]:.0f} = {h3_supportive["extra_activity_pct"]:.1f}%
-- Hindering: {h3_hindering["extra_activity_n"]:.0f}/{h3_hindering["n_days"]:.0f} = {h3_hindering["extra_activity_pct"]:.1f}%
+## H3: Decisions on unplanned days
 
-### Realized daily context
+Structural scenario comparison:
 
-{table_to_markdown(h3_unplanned_by_context[["context_class", "n_days", "skip_activity_n", "skip_activity_pct", "extra_activity_n", "extra_activity_pct"]].sort_values("context_class"), float_fmt="{:.1f}")}
+{table_to_markdown(h3_unplanned_by_scenario, float_fmt="{:.2f}")}
 
-## H4: Decision categories on planned PA days
+Realised daily context:
 
-### Structural scenario comparison
+{table_to_markdown(h3_unplanned_by_context, float_fmt="{:.2f}")}
 
-{table_to_markdown(h4_planned_by_scenario[["scenario", "n_days", "do_planned_activity_n", "do_planned_activity_pct", "adapt_activity_n", "adapt_activity_pct", "skip_activity_n", "skip_activity_pct", "extra_activity_n", "extra_activity_pct"]], float_fmt="{:.1f}")}
+## H4: Decisions on planned PA days
 
-Adaptations were more frequent in the Hindering Scenario:
-- Supportive: {h4_supportive["adapt_activity_n"]:.0f}/{h4_supportive["n_days"]:.0f} = {h4_supportive["adapt_activity_pct"]:.1f}%
-- Hindering: {h4_hindering["adapt_activity_n"]:.0f}/{h4_hindering["n_days"]:.0f} = {h4_hindering["adapt_activity_pct"]:.1f}%
+Structural scenario comparison:
 
-`skip_activity` did not occur on planned PA days in either scenario.
+{table_to_markdown(h4_planned_by_scenario, float_fmt="{:.2f}")}
 
-### Realized daily context
+Realised daily context:
 
-{table_to_markdown(h4_planned_by_context[["context_class", "n_days", "do_planned_activity_n", "do_planned_activity_pct", "adapt_activity_n", "adapt_activity_pct", "skip_activity_n", "skip_activity_pct", "extra_activity_n", "extra_activity_pct"]].sort_values("context_class"), float_fmt="{:.1f}")}
+{table_to_markdown(h4_planned_by_context, float_fmt="{:.2f}")}
 
-## Descriptive structural effect sizes
+## Structural effect sizes
 
-{table_to_markdown(effects_structural, float_fmt="{:.2f}")}
+{table_to_markdown(effects_structural, float_fmt="{:.3f}")}
 
-## Psychological construct trajectories in H3/H4 scenarios
+## Inferential tests
 
-{table_to_markdown(construct_trajectories_summary[["scenario", "construct", "start", "end", "change"]].sort_values(["construct", "scenario"]), float_fmt="{:.3f}")}
+{inferential_text}
 
-## Overall descriptive conclusion
+## Bonferroni-adjusted post-hoc tests
 
-- H1: descriptively supported.
-- H2: descriptively supported.
-- H3: descriptively supported; extra activity was more common under supportive structural and realized contexts.
-- H4: partially supported; hindering conditions increased `adapt_activity`, but complete skipping of planned PA did not occur.
+{posthoc_text}
+
+## Psychological construct trajectories
+
+{table_to_markdown(construct_trajectories_summary, float_fmt="{:.3f}")}
 """
 
     (docs_dir / "analysis_plan.md").write_text(analysis_plan, encoding="utf-8")
@@ -1197,11 +2213,13 @@ def main() -> None:
     h1_summary_metrics = load_optional_table(args.h1_dir, "tables/h1_summary_metrics.csv")
     h1_interval_coverage = load_optional_table(args.h1_dir, "tables/h1_interval_coverage.csv")
     h1_annual_summary = load_optional_table(args.h1_dir, "tables/h1_annual_summary.csv")
+    h1_monthly_comparison = load_optional_table(args.h1_dir, "data/monthly_climate_comparison.csv")
 
     h2_similarity = load_optional_table(args.h2_dir, "tables/schedule_similarity_overall_summary.csv")
     h2_phase_counts = load_optional_table(args.h2_dir, "tables/phase_week_count_summary.csv")
     h2_construct_summary = load_optional_table(args.h2_dir, "tables/construct_heterogeneity_summary.csv")
     h2_phase_activity = load_optional_table(args.h2_dir, "tables/phase_activity_summary.csv")
+    h2_initial_constructs = load_optional_table(args.h2_dir, "data/initial_psychological_constructs.csv")
 
     h1_status = "complete" if h1_summary_metrics is not None else "missing h1_summary_metrics.csv"
     h2_status = (
@@ -1258,6 +2276,41 @@ def main() -> None:
     phase_decisions = tabulate_decisions(
         scenario_day_all,
         ["scenario", "phase", "planned"],
+    )
+
+    scenario_decisions_by_daytype = add_proportion_confidence_intervals(
+        scenario_decisions_by_daytype
+    )
+    h3_unplanned_by_scenario = add_proportion_confidence_intervals(
+        h3_unplanned_by_scenario
+    )
+    h3_unplanned_by_context = add_proportion_confidence_intervals(
+        h3_unplanned_by_context
+    )
+    h3_unplanned_by_scenario_context = add_proportion_confidence_intervals(
+        h3_unplanned_by_scenario_context
+    )
+    h4_planned_by_scenario = add_proportion_confidence_intervals(
+        h4_planned_by_scenario
+    )
+    h4_planned_by_context = add_proportion_confidence_intervals(
+        h4_planned_by_context
+    )
+    h4_planned_by_scenario_context = add_proportion_confidence_intervals(
+        h4_planned_by_scenario_context
+    )
+    phase_decisions = add_proportion_confidence_intervals(phase_decisions)
+
+    h1_correlation_inference = calculate_h1_correlation_inference(
+        h1_monthly_comparison
+    )
+    h2_construct_sd_intervals = calculate_h2_construct_sd_intervals(
+        h2_initial_constructs,
+        h2_construct_summary,
+    )
+    h2_construct_manova = calculate_h2_construct_manova(h2_initial_constructs)
+    inferential_tests, pairwise_posthoc = calculate_h3_h4_inferential_tests(
+        scenario_day_all
     )
 
     effects_structural = pd.DataFrame(
@@ -1360,6 +2413,11 @@ def main() -> None:
         h1_interval_coverage.to_csv(tables_dir / "h1_interval_coverage.csv", index=False)
     if h1_annual_summary is not None:
         h1_annual_summary.to_csv(tables_dir / "h1_annual_summary.csv", index=False)
+    if not h1_correlation_inference.empty:
+        h1_correlation_inference.to_csv(
+            tables_dir / "h1_correlation_inference.csv",
+            index=False,
+        )
 
     if h2_similarity is not None:
         h2_similarity.to_csv(tables_dir / "h2_schedule_similarity_overall.csv", index=False)
@@ -1369,6 +2427,16 @@ def main() -> None:
         h2_construct_summary.to_csv(tables_dir / "h2_construct_heterogeneity_summary.csv", index=False)
     if h2_phase_activity is not None:
         h2_phase_activity.to_csv(tables_dir / "h2_phase_activity_summary.csv", index=False)
+    if not h2_construct_sd_intervals.empty:
+        h2_construct_sd_intervals.to_csv(
+            tables_dir / "h2_construct_sd_confidence_intervals.csv",
+            index=False,
+        )
+    if not h2_construct_manova.empty:
+        h2_construct_manova.to_csv(
+            tables_dir / "h2_construct_manova_by_base_seed.csv",
+            index=False,
+        )
 
     scenario_day_all.to_csv(tables_dir / "h3_h4_daily_analysis_dataset.csv", index=False)
     context_all.to_csv(tables_dir / "h3_h4_daily_context_classification.csv", index=False)
@@ -1383,16 +2451,27 @@ def main() -> None:
     phase_decisions.to_csv(tables_dir / "phase_decisions_all_categories.csv", index=False)
     effects_structural.to_csv(tables_dir / "descriptive_effect_sizes_structural_scenarios.csv", index=False)
     construct_trajectories_summary.to_csv(tables_dir / "construct_trajectories_summary_h3_h4.csv", index=False)
+    inferential_tests.to_csv(
+        tables_dir / "inferential_tests_h3_h4.csv",
+        index=False,
+    )
+    pairwise_posthoc.to_csv(
+        tables_dir / "pairwise_posthoc_h3_h4.csv",
+        index=False,
+    )
 
     write_figures(
         figures_dir=figures_dir,
-        h1_summary_metrics=h1_summary_metrics,
+        h1_correlation_inference=h1_correlation_inference,
         h2_construct_summary=h2_construct_summary,
+        h2_construct_sd_intervals=h2_construct_sd_intervals,
         scenario_decisions_by_daytype=scenario_decisions_by_daytype,
         h3_unplanned_by_context=h3_unplanned_by_context,
         h4_planned_by_scenario=h4_planned_by_scenario,
         h4_planned_by_context=h4_planned_by_context,
         construct_trajectories_summary=construct_trajectories_summary,
+        inferential_tests=inferential_tests,
+        pairwise_posthoc=pairwise_posthoc,
     )
     copy_source_figures(args.h1_dir, args.h2_dir, figures_dir)
 
@@ -1400,13 +2479,18 @@ def main() -> None:
         docs_dir=docs_dir,
         data_audit=data_audit,
         h1_summary_metrics=h1_summary_metrics,
+        h1_correlation_inference=h1_correlation_inference,
         h2_similarity=h2_similarity,
         h2_phase_counts=h2_phase_counts,
+        h2_construct_sd_intervals=h2_construct_sd_intervals,
+        h2_construct_manova=h2_construct_manova,
         h3_unplanned_by_scenario=h3_unplanned_by_scenario,
         h3_unplanned_by_context=h3_unplanned_by_context,
         h4_planned_by_scenario=h4_planned_by_scenario,
         h4_planned_by_context=h4_planned_by_context,
         effects_structural=effects_structural,
+        inferential_tests=inferential_tests,
+        pairwise_posthoc=pairwise_posthoc,
         construct_trajectories_summary=construct_trajectories_summary,
     )
 
@@ -1427,8 +2511,10 @@ def main() -> None:
         "analysis_decisions": {
             "edge_case_rules": True,
             "report_all_decision_categories_for_h3_h4": True,
-            "analysis_type": "descriptive",
-            "inferential_tests": False,
+            "analysis_type": "descriptive_and_inferential",
+            "inferential_tests": True,
+            "confidence_interval_level": 0.95,
+            "multiple_comparison_correction": "Bonferroni",
         },
         "input_sources": {
             "h1_dir": str(args.h1_dir),
@@ -1456,7 +2542,7 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    print("Final descriptive H1-H4 analysis completed.")
+    print("Final descriptive and inferential H1-H4 analysis completed.")
     print(f"Output directory: {args.output_dir}")
     print(
         "H3 extra_activity on unplanned days: "
