@@ -1,5 +1,7 @@
 # A Theory-Informed Agent-Based Model of Context-Dependent Physical Activity Decisions
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21341956.svg)](https://doi.org/10.5281/zenodo.21341956)
+
 This repository contains the agent-based simulation framework developed as part of a master's thesis at the Institute of Sport Science, University of Bern.
 
 The model provides a modular virtual environment for representing heterogeneous synthetic agents, daily contextual conditions, and context-dependent physical activity decisions. It was developed as a methodological foundation for the future virtual pretesting of mobile health interventions.
@@ -59,9 +61,11 @@ MScThesis/
 │   ├── BehaviorProbability_Prompt.md
 │   ├── PADecision_Prompt.md
 │   ├── AssessmentModel_Prompt.md
+│   ├── GUI_pa_simulation.py
 │   └── run_full_pa_simulation.py
 ├── CITATION.cff                 Software citation metadata
 ├── LICENSE                      GNU General Public License v3.0
+├── requirements.txt             Python dependencies
 └── README.md
 ```
 
@@ -70,6 +74,12 @@ Generated simulation and analysis outputs are not version-controlled.
 ## Software Requirements
 
 The project was developed and analyzed using Python 3.11.
+
+Install the required Python packages from the repository root:
+
+```powershell
+python -m pip install -r requirements.txt
+```
 
 A valid API key for the OpenAI-compatible language model endpoint used by the University of Bern is required for full simulations involving the large-language-model-supported components.
 
@@ -81,9 +91,23 @@ UNI_LLM_API_KEY
 
 API keys and other credentials must not be committed to the repository.
 
-## Running the Full Simulation
+## Running the Simulation
 
-From the repository root:
+### Recommended: Graphical User Interface
+
+The simulation can be configured and started through the graphical user interface without manually entering the simulation parameters as terminal arguments.
+
+From the repository root, start the GUI with:
+
+```powershell
+python Simulation/GUI_pa_simulation.py
+```
+
+The GUI provides fields for the number of personas, number of days, start date, seeds, model parameters, weekly activity inputs, distances, output location, dry-run mode, and resource tracking. It validates the entered values and starts the full simulation using the selected configuration.
+
+### Alternative: Command-Line Interface
+
+For scripted or reproducible runs, the full simulation can also be started directly from the terminal:
 
 ```powershell
 python Simulation/run_full_pa_simulation.py `
@@ -163,9 +187,13 @@ Outputs involving a large language model may additionally depend on the model en
 
 ## Citation
 
-A permanent Zenodo DOI will be added following publication of version 1.0.0.
+Version 1.0.0 is archived on Zenodo:
 
-Citation metadata are provided in `CITATION.cff`.
+**Reinalter R. A Theory-Informed Agent-Based Model of Context-Dependent Physical Activity Decisions. Version 1.0.0. Zenodo. 2026. doi:10.5281/zenodo.21341956**
+
+https://doi.org/10.5281/zenodo.21341956
+
+Machine-readable citation metadata are provided in `CITATION.cff`.
 
 ## License
 

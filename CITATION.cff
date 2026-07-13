@@ -1,9 +1,10 @@
-﻿cff-version: 1.2.0
+cff-version: 1.2.0
 message: "If you use this software, please cite it as described below."
 type: software
 title: "A Theory-Informed Agent-Based Model of Context-Dependent Physical Activity Decisions"
 version: "1.0.0"
 date-released: 2026-07-13
+doi: "10.5281/zenodo.21341956"
 
 authors:
   - family-names: "Reinalter"
@@ -28,5 +29,5 @@ keywords:
   - large language models
 
 repository-code: "https://github.com/Rapha1337/MScThesis"
-url: "https://github.com/Rapha1337/MScThesis"
+url: "https://doi.org/10.5281/zenodo.21341956"
 license: GPL-3.0-only
