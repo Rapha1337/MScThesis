@@ -31,6 +31,7 @@ import json
 import math
 import shutil
 import zipfile
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
@@ -39,7 +40,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy import stats
-from statsmodels.multivariate.manova import MANOVA
+import statsmodels.formula.api as smf
 from statsmodels.stats.multitest import multipletests
 from statsmodels.stats.proportion import proportion_confint
 
@@ -894,15 +895,23 @@ def calculate_h2_construct_sd_intervals(
     return pd.DataFrame(rows)
 
 
-def calculate_h2_construct_manova(
+def calculate_h2_construct_mixed_effects(
     initial_constructs: pd.DataFrame | None,
 ) -> pd.DataFrame:
-    """Exploratory MANOVA of the initial construct profile by base seed.
+    """Estimate between-agent heterogeneity with a random-intercept model.
 
-    This checks whether the joint nine-construct profile differs systematically
-    across the ten base-seed groups. Wilks' lambda is treated as the primary
-    multivariate statistic; the other conventional statistics are retained for
-    transparency.
+    Model:
+        construct_value ~ C(construct) + (1 | agent)
+
+    The fixed construct effect accounts for systematic differences in mean
+    levels between the nine constructs. The random intercept estimates the
+    remaining between-agent variance in the agents' average psychological
+    construct levels.
+
+    The random-intercept model is fitted with maximum likelihood and compared
+    with a fixed-effects-only OLS model. Because the null hypothesis places the
+    variance component on the boundary at zero, the primary p value uses the
+    conventional 50:50 mixture correction: 0.5 * P(chi-square_1 >= LRT).
     """
     if initial_constructs is None or initial_constructs.empty:
         return pd.DataFrame()
@@ -918,56 +927,165 @@ def calculate_h2_construct_manova(
         "intrinsic_motivation",
         "motivational_competence",
     ]
-    required = ["base_seed", *constructs]
-    if any(column not in initial_constructs.columns for column in required):
-        return pd.DataFrame()
-
-    working = initial_constructs[required].dropna().copy()
-    if working.empty or working["base_seed"].nunique() < 2:
-        return pd.DataFrame()
-
-    formula = " + ".join(constructs) + " ~ C(base_seed)"
-    try:
-        result = MANOVA.from_formula(formula, data=working).mv_test()
-        stat_table = result.results["C(base_seed)"]["stat"].copy()
-    except Exception as exc:
+    missing_constructs = [
+        construct for construct in constructs
+        if construct not in initial_constructs.columns
+    ]
+    if missing_constructs:
         return pd.DataFrame(
             [
                 {
-                    "effect": "base_seed",
-                    "test": "MANOVA failed",
-                    "error": str(exc),
+                    "analysis": "H2_between_agent_heterogeneity",
+                    "model": "Linear mixed-effects model",
+                    "error": f"Missing construct columns: {missing_constructs}",
                 }
             ]
         )
 
-    rows: list[dict[str, Any]] = []
-    test_name_map = {
-        "Wilks' lambda": "Wilks' lambda",
-        "Pillai's trace": "Pillai's trace",
-        "Hotelling-Lawley trace": "Hotelling-Lawley trace",
-        "Roy's greatest root": "Roy's greatest root",
-    }
-    for index_name, row in stat_table.iterrows():
-        p_value = float(row["Pr > F"])
-        rows.append(
-            {
-                "effect": "base_seed",
-                "test": test_name_map.get(str(index_name), str(index_name)),
-                "value": float(row["Value"]),
-                "numerator_df": float(row["Num DF"]),
-                "denominator_df": float(row["Den DF"]),
-                "f_value": float(row["F Value"]),
-                "p_value": p_value,
-                "significance": p_value_to_stars(p_value),
-                "n_agents": int(len(working)),
-                "n_groups": int(working["base_seed"].nunique()),
-                "n_dependent_variables": len(constructs),
-                "primary_test": str(index_name) == "Wilks' lambda",
-            }
-        )
-    return pd.DataFrame(rows)
+    working = initial_constructs.copy()
 
+    # Prefer an identifier that is unique across all base seeds.
+    if "unique_agent_id" in working.columns:
+        agent_id_column = "unique_agent_id"
+    elif "persona_seed" in working.columns:
+        agent_id_column = "persona_seed"
+    elif "psychological_seed" in working.columns:
+        agent_id_column = "psychological_seed"
+    elif {"base_seed", "persona_index"}.issubset(working.columns):
+        agent_id_column = "_agent_id"
+        working[agent_id_column] = (
+            working["base_seed"].astype(str)
+            + "_"
+            + working["persona_index"].astype(str)
+        )
+    elif "persona_id" in working.columns and working["persona_id"].is_unique:
+        agent_id_column = "persona_id"
+    else:
+        return pd.DataFrame(
+            [
+                {
+                    "analysis": "H2_between_agent_heterogeneity",
+                    "model": "Linear mixed-effects model",
+                    "error": "No unique agent identifier could be determined.",
+                }
+            ]
+        )
+
+    working = working[[agent_id_column, *constructs]].dropna().copy()
+    if working.empty or working[agent_id_column].nunique() < 2:
+        return pd.DataFrame()
+
+    long_data = working.melt(
+        id_vars=[agent_id_column],
+        value_vars=constructs,
+        var_name="construct",
+        value_name="construct_value",
+    )
+    long_data[agent_id_column] = long_data[agent_id_column].astype(str)
+    long_data["construct"] = pd.Categorical(
+        long_data["construct"],
+        categories=constructs,
+        ordered=True,
+    )
+
+    fixed_formula = "construct_value ~ C(construct)"
+    fixed_only_result = smf.ols(fixed_formula, data=long_data).fit()
+
+    mixed_result = None
+    optimizer_used = None
+    selected_fit_warnings: list[str] = []
+    fit_errors: list[str] = []
+    for optimizer in ("bfgs", "powell", "nm", "cg"):
+        try:
+            model = smf.mixedlm(
+                fixed_formula,
+                data=long_data,
+                groups=long_data[agent_id_column],
+                re_formula="1",
+            )
+            with warnings.catch_warnings(record=True) as caught_warnings:
+                warnings.simplefilter("always")
+                candidate = model.fit(
+                    reml=False,
+                    method=optimizer,
+                    maxiter=5000,
+                    disp=False,
+                )
+            if np.isfinite(candidate.llf):
+                mixed_result = candidate
+                optimizer_used = optimizer
+                selected_fit_warnings = [
+                    str(item.message) for item in caught_warnings
+                ]
+                break
+        except Exception as exc:
+            fit_errors.append(f"{optimizer}: {exc}")
+
+    if mixed_result is None:
+        return pd.DataFrame(
+            [
+                {
+                    "analysis": "H2_between_agent_heterogeneity",
+                    "model": "Linear mixed-effects model",
+                    "error": "; ".join(fit_errors) or "Model fitting failed.",
+                }
+            ]
+        )
+
+    random_intercept_variance = float(mixed_result.cov_re.iloc[0, 0])
+    random_intercept_variance = max(random_intercept_variance, 0.0)
+    random_intercept_sd = math.sqrt(random_intercept_variance)
+    residual_variance = float(mixed_result.scale)
+    variance_total = random_intercept_variance + residual_variance
+    icc = (
+        random_intercept_variance / variance_total
+        if variance_total > 0
+        else np.nan
+    )
+
+    likelihood_ratio = max(
+        0.0,
+        2.0 * (float(mixed_result.llf) - float(fixed_only_result.llf)),
+    )
+    standard_chi_square_p = float(stats.chi2.sf(likelihood_ratio, df=1))
+    boundary_corrected_p = (
+        0.5 * standard_chi_square_p
+        if likelihood_ratio > 0
+        else 1.0
+    )
+
+    return pd.DataFrame(
+        [
+            {
+                "analysis": "H2_between_agent_heterogeneity",
+                "model": "construct_value ~ C(construct) + (1 | agent)",
+                "fixed_effect": "construct",
+                "random_effect": "agent random intercept",
+                "agent_id_column": agent_id_column,
+                "n_agents": int(working[agent_id_column].nunique()),
+                "n_constructs": len(constructs),
+                "n_observations": int(len(long_data)),
+                "random_intercept_variance": random_intercept_variance,
+                "random_intercept_sd": random_intercept_sd,
+                "residual_variance": residual_variance,
+                "icc": float(icc),
+                "mixed_model_log_likelihood": float(mixed_result.llf),
+                "fixed_only_log_likelihood": float(fixed_only_result.llf),
+                "likelihood_ratio_chi2": likelihood_ratio,
+                "degrees_of_freedom": 1,
+                "p_value": boundary_corrected_p,
+                "standard_chi_square_p_value": standard_chi_square_p,
+                "significance": p_value_to_stars(boundary_corrected_p),
+                "converged": bool(mixed_result.converged),
+                "optimizer": optimizer_used,
+                "fit_warnings": "; ".join(selected_fit_warnings),
+                "inference_note": (
+                    "Primary p value uses the 50:50 boundary correction for "
+                    "testing a variance component against zero."
+                ),
+            }
+        ]
+    )
 
 def binary_outcome_values(frame: pd.DataFrame, outcome: str) -> np.ndarray:
     if outcome == "planned":
@@ -1866,7 +1984,7 @@ def write_docs(
     h2_similarity: pd.DataFrame | None,
     h2_phase_counts: pd.DataFrame | None,
     h2_construct_sd_intervals: pd.DataFrame,
-    h2_construct_manova: pd.DataFrame,
+    h2_construct_mixed_effects: pd.DataFrame,
     h3_unplanned_by_scenario: pd.DataFrame,
     h3_unplanned_by_context: pd.DataFrame,
     h4_planned_by_scenario: pd.DataFrame,
@@ -1896,7 +2014,7 @@ def write_docs(
    - one-way ANOVA for the three realised context classes;
    - Bonferroni-adjusted pairwise Welch t tests after a significant omnibus ANOVA;
    - effect sizes (Cohen's d, eta squared, and omega squared);
-   - an exploratory MANOVA testing the joint initial construct profile across base-seed groups.
+   - a linear mixed-effects model testing between-agent variation after accounting for systematic differences between constructs.
 
 4. Significance notation in figures:
    - * p < .05
@@ -1924,13 +2042,13 @@ def write_docs(
         if not h2_construct_sd_intervals.empty
         else "H2 construct SD confidence intervals not available."
     )
-    h2_manova_text = (
+    h2_mixed_effects_text = (
         table_to_markdown(
-            prepare_inferential_table_for_markdown(h2_construct_manova),
+            prepare_inferential_table_for_markdown(h2_construct_mixed_effects),
             float_fmt="{:.4f}",
         )
-        if not h2_construct_manova.empty
-        else "H2 MANOVA not available."
+        if not h2_construct_mixed_effects.empty
+        else "H2 linear mixed-effects model not available."
     )
     inferential_text = (
         table_to_markdown(
@@ -1973,9 +2091,9 @@ Construct SD confidence intervals:
 
 {h2_ci_text}
 
-Exploratory MANOVA by base seed:
+Linear mixed-effects model:
 
-{h2_manova_text}
+{h2_mixed_effects_text}
 
 ## H3: Decisions on unplanned days
 
@@ -2308,7 +2426,7 @@ def main() -> None:
         h2_initial_constructs,
         h2_construct_summary,
     )
-    h2_construct_manova = calculate_h2_construct_manova(h2_initial_constructs)
+    h2_construct_mixed_effects = calculate_h2_construct_mixed_effects(h2_initial_constructs)
     inferential_tests, pairwise_posthoc = calculate_h3_h4_inferential_tests(
         scenario_day_all
     )
@@ -2432,9 +2550,9 @@ def main() -> None:
             tables_dir / "h2_construct_sd_confidence_intervals.csv",
             index=False,
         )
-    if not h2_construct_manova.empty:
-        h2_construct_manova.to_csv(
-            tables_dir / "h2_construct_manova_by_base_seed.csv",
+    if not h2_construct_mixed_effects.empty:
+        h2_construct_mixed_effects.to_csv(
+            tables_dir / "h2_construct_mixed_effects.csv",
             index=False,
         )
 
@@ -2483,7 +2601,7 @@ def main() -> None:
         h2_similarity=h2_similarity,
         h2_phase_counts=h2_phase_counts,
         h2_construct_sd_intervals=h2_construct_sd_intervals,
-        h2_construct_manova=h2_construct_manova,
+        h2_construct_mixed_effects=h2_construct_mixed_effects,
         h3_unplanned_by_scenario=h3_unplanned_by_scenario,
         h3_unplanned_by_context=h3_unplanned_by_context,
         h4_planned_by_scenario=h4_planned_by_scenario,
@@ -2515,6 +2633,8 @@ def main() -> None:
             "inferential_tests": True,
             "confidence_interval_level": 0.95,
             "multiple_comparison_correction": "Bonferroni",
+            "h2_inferential_model": "construct_value ~ C(construct) + (1 | agent)",
+            "h2_variance_component_test": "boundary-corrected likelihood-ratio test",
         },
         "input_sources": {
             "h1_dir": str(args.h1_dir),
@@ -2544,6 +2664,15 @@ def main() -> None:
 
     print("Final descriptive and inferential H1-H4 analysis completed.")
     print(f"Output directory: {args.output_dir}")
+    if not h2_construct_mixed_effects.empty and "error" not in h2_construct_mixed_effects.columns:
+        h2_model_row = h2_construct_mixed_effects.iloc[0]
+        print(
+            "H2 mixed-effects model: "
+            f"agent variance={h2_model_row['random_intercept_variance']:.6f}, "
+            f"agent SD={h2_model_row['random_intercept_sd']:.3f}, "
+            f"LRT chi2(1)={h2_model_row['likelihood_ratio_chi2']:.2f}, "
+            f"p={h2_model_row['p_value']:.3g}"
+        )
     print(
         "H3 extra_activity on unplanned days: "
         f"Supportive={h3_supportive['extra_activity_pct']:.1f}%, "
