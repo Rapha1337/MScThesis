@@ -1,153 +1,178 @@
-# MSc Thesis: Synthetic Agent Simulation for mHealth Intervention Research
+# A Theory-Informed Agent-Based Model of Context-Dependent Physical Activity Decisions
 
-This repository contains the code for a **virtual simulation environment used to generate synthetic behavioral data** in the context of a mobile health (mHealth) intervention study.
+This repository contains the agent-based simulation framework developed as part of a master's thesis at the Institute of Sport Science, University of Bern.
 
-The project is part of a **Master’s thesis at the University of Bern** and aims to investigate whether **synthetic datasets generated through agent-based simulations can be used to approximate intervention outcomes in behavioral science research**.
+The model provides a modular virtual environment for representing heterogeneous synthetic agents, daily contextual conditions, and context-dependent physical activity decisions. It was developed as a methodological foundation for the future virtual pretesting of mobile health interventions.
 
-The simulation framework models **virtual participants (agents)** derived from real pre-test data and simulates their behavior across multiple time points.
+## Project Overview
 
----
+The model combines:
 
-## Project Idea
+- heterogeneous synthetic agents
+- annual and weekly activity schedules
+- hourly environmental conditions
+- spatial accessibility
+- energy levels
+- psychological constructs
+- large-language-model-supported physical activity decisions
+- longitudinal psychological state updates
 
-The overarching study collects **real pre-test data** from participants of the AIcoPA project: [AIcoPA on OSF](https://osf.io/w45tn/overview).
+The model is intended as a proof of concept. It does not predict the behavior of real individuals and has not yet been empirically calibrated or externally validated.
 
-Instead of waiting for the full longitudinal dataset (post-test and follow-up), this project generates **synthetic behavioral trajectories** based on these initial data.
+## Simulation Architecture
 
-The workflow is:
+The daily physical activity decision pipeline consists of three consecutive stages:
 
-1. Identify participant **clusters** using pre-test data.
-2. Derive **personas** (user archetypes) from these clusters.
-3. Create **synthetic agents** representing these personas.
-4. Simulate how these agents respond to environmental conditions and potentially an intervention.
-5. Generate **synthetic longitudinal datasets**.
+1. **Behavior probability estimation**  
+   The first large-language-model-supported component estimates behavioral tendency probabilities from the agent's current psychological state.
 
-These synthetic datasets represent **simulated responses of participants over time** (e.g., post-test and follow-up).
+2. **Context-dependent physical activity decision**  
+   The second component combines the behavioral tendencies with the generated daily context and planned physical activity. It produces one final daily decision, a short rationale, and a diary entry.
 
-If the real data become available later, they can be used to **validate or falsify the simulated results**.
+3. **Psychological state assessment**  
+   The third component assesses evidence contained in the diary entry and updates the agent's psychological constructs within a closed feedback loop.
 
----
+The possible daily decision categories are:
 
-## Project Phases
+- `do_planned_activity`
+- `adapt_activity`
+- `skip_activity`
+- `extra_activity`
 
-### Phase 1 — Cluster Analysis and Persona Creation
+## Research Questions
 
-Pre-test data collected in the overarching study include:
+The accompanying thesis examined whether the model could:
 
-- amount physical activity
-- different psychosocial constructs
-- questionnaire data based on sport and health psychology theories
+1. represent relevant environmental conditions;
+2. generate heterogeneous agents despite identical high-level persona inputs;
+3. produce decisions consistent with supportive contextual conditions; and
+4. produce decisions consistent with hindering contextual conditions.
 
-Using these variables, a **cluster analysis** is performed to identify groups of participants with similar characteristics.
+## Repository Structure
 
-From these clusters, **personas (archetypical user profiles)** are derived.
+```text
+MScThesis/
+├── Analysis/                    Final analysis and validation scripts
+├── Simulation/                  Agent-based simulation framework
+│   ├── constraints/             Contextual constraint components
+│   ├── tests/                   Simulation tests
+│   ├── BehaviorProbability_Prompt.md
+│   ├── PADecision_Prompt.md
+│   ├── AssessmentModel_Prompt.md
+│   └── run_full_pa_simulation.py
+├── CITATION.cff                 Software citation metadata
+├── LICENSE                      GNU General Public License v3.0
+└── README.md
+```
 
-Example persona attributes:
+Generated simulation and analysis outputs are not version-controlled.
 
-- age
-- baseline activity level
-- motivational profile
-- psychosocial constructs
+## Software Requirements
 
-These personas serve as the **basis for synthetic agents**.
+The project was developed and analyzed using Python 3.11.
 
-### Phase 2 — Virtual Simulation Environment
+A valid API key for the OpenAI-compatible language model endpoint used by the University of Bern is required for full simulations involving the large-language-model-supported components.
 
-A **simulation environment** is created where synthetic agents interact with environmental conditions.
+The key must be provided through the following environment variable:
 
-The environment is implemented in **Python using the Gymnasium framework**.
+```text
+UNI_LLM_API_KEY
+```
 
-#### Environment Components
+API keys and other credentials must not be committed to the repository.
 
-**Global Environment Parameters**
+## Running the Full Simulation
 
-These parameters affect all agents.
+From the repository root:
 
-Examples:
+```powershell
+python Simulation/run_full_pa_simulation.py `
+  --n-personas 1 `
+  --n-days 365 `
+  --start-date 2026-01-01 `
+  --base-seed 137 `
+  --output-dir Simulation/output/example_run
+```
 
-- time of day
-- weather
-- seasonal conditions
+The main configurable parameters include:
 
-**Agent Parameters**
+- number of personas
+- number of simulated days
+- start date
+- base seed
+- weekly physical activity hours
+- weekly work, social, and care-work hours
+- distances to relevant points of interest
+- language model and generation parameters
+- output directory
+- checkpoint and resume behavior
 
-Each agent represents a persona and has individual attributes.
+A simulation can be resumed from an existing checkpoint by adding:
 
-Examples:
+```powershell
+--resume
+```
 
-- age
-- activity level
-- behavioral tendencies
-- psychosocial profile
+A dry run without external language-model calls can be performed using:
 
-Agents respond to these parameters and generate **individual behavioral trajectories**.
+```powershell
+--dry-run
+```
 
-### Phase 3 — Simulation of App Intervention
+## Running the Analyses
 
-In an extended phase, agents may interact with the **logic of the mobile health application**.
+### Environmental Validation
 
-Possible simulated features:
+```powershell
+python Analysis/h1_weather_validation.py
+```
 
-- activity suggestions
-- diary entries
-- psychological assessments
-- activity tracking
+### Agent Heterogeneity
 
-This phase allows simulation of how **different user types interact with the intervention** and how outcomes may differ.
+```powershell
+python Analysis/h2_agent_heterogeneity.py
+```
 
----
+### Final H1-H4 Analysis
 
-## Research Goal
+```powershell
+python Analysis/final_h1_h4_analysis.py `
+  --h1-dir Analysis/outputs/h1_weather_final `
+  --h2-dir Analysis/outputs/h2_agent_heterogeneity_final `
+  --supportive Simulation/output/365x1_SupportiveScenario `
+  --hindering Simulation/output/365x1_HinderingScenario `
+  --output-dir Analysis/outputs/final_h1_h4 `
+  --overwrite
+```
 
-The thesis investigates whether synthetic data generation using agent-based simulations can support behavioral science research.
+The final analysis script calculates the descriptive and inferential results reported in the thesis.
 
-**Key questions include:**
+## Testing
 
-- Can personas derived from real pre-test data produce realistic simulated behavior?
+Run the test suite from the repository root:
 
-- Can synthetic trajectories approximate real intervention outcomes?
+```powershell
+python -m pytest
+```
 
-- Can synthetic datasets support early hypothesis testing?
+## Reproducibility
 
----
+Random seeds are used for the generation of agents, schedules, environmental conditions, and initial psychological states. Reusing the same configuration and seeds reproduces the deterministic simulation components.
 
-## Technology Stack
+Outputs involving a large language model may additionally depend on the model endpoint, model version, and inference implementation available at the time of execution.
 
-**Languages**
+## Citation
 
-- **Python** — main simulation environment
-- **R** — potential use for cluster analysis
+A permanent Zenodo DOI will be added following publication of version 1.0.0.
 
-**Libraries / Frameworks**
+Citation metadata are provided in `CITATION.cff`.
 
-- **Gymnasium** — simulation environment
-- **NumPy / Pandas** — data processing
-- **Scikit-learn or R packages** — cluster analysis (to be determined)
+## License
 
----
-
-## Status
-
-This repository currently focuses on the simulation code.
-In the future, it may also include additional code related to the full MSc thesis workflow, such as clustering, preprocessing, analysis, and validation.
-
----
+This project is licensed under the GNU General Public License v3.0. See the `LICENSE` file for details.
 
 ## Author
 
 Raphael Reinalter  
-MSc Thesis Project  
 Institute of Sport Science  
 University of Bern, Switzerland
-
----
-
-## Current PA Decision Pipeline Note
-
-The current full PA simulation workflow (`Simulation/run_full_pa_simulation.py`) uses a two-stage LLM decision pipeline:
-
-1. LLM1 receives only the current normalized psychological constructs and returns psychological tendency probabilities for `do_planned_activity`, `adapt_activity`, `skip_activity`, and `extra_activity`.
-2. The simulation constrains only which decision labels are valid based on whether the generated day contains planned PA.
-3. LLM2 receives the generated daily context, planned PA summary, LLM1 tendency probabilities, and valid decision categories, then makes the final context-sensitive PA decision.
-
-The active workflow no longer performs seeded categorical PA-decision sampling before LLM2. Seeded sampling helpers in the code are retained only as deprecated legacy compatibility helpers.
