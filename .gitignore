@@ -1,1 +1,7 @@
-/Analysis/outputs/
+/Analysis/outputs/HEAD@
+
+# Python-generated files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+@
