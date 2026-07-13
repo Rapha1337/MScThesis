@@ -1,0 +1,16 @@
+# Core simulation and analysis dependencies
+gymnasium
+matplotlib
+numpy
+openai
+osmnx
+pandas
+python-dotenv
+scipy
+statsmodels
+
+# Resource-use tracking
+codecarbon
+
+# Test suite
+pytest
