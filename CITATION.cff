@@ -1,0 +1,32 @@
+﻿cff-version: 1.2.0
+message: "If you use this software, please cite it as described below."
+type: software
+title: "A Theory-Informed Agent-Based Model of Context-Dependent Physical Activity Decisions"
+version: "1.0.0"
+date-released: 2026-07-13
+
+authors:
+  - family-names: "Reinalter"
+    given-names: "Raphael"
+    affiliation: "Institute of Sport Science, University of Bern"
+
+abstract: >
+  This repository contains a theory-informed and modular agent-based
+  simulation framework developed as part of a master's thesis at the
+  University of Bern. The framework integrates heterogeneous synthetic
+  agents, hourly activity schedules, environmental conditions, spatial
+  accessibility, energy levels, psychological constructs, and a
+  large-language-model-supported decision pipeline. It generates daily
+  physical activity decisions, diary entries, and longitudinal updates
+  of psychological states. The repository also contains the analysis
+  scripts, prompts, and tests used in the thesis.
+
+keywords:
+  - agent-based modeling
+  - physical activity
+  - mobile health
+  - large language models
+
+repository-code: "https://github.com/Rapha1337/MScThesis"
+url: "https://github.com/Rapha1337/MScThesis"
+license: GPL-3.0-only
