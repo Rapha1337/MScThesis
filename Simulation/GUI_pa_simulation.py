@@ -22,6 +22,7 @@ ENV_PATH = SIMULATION_DIR / ".env"
 load_dotenv(ENV_PATH)
 
 from run_full_pa_simulation import DEFAULT_OUTPUT_DIR  # noqa: E402
+from empirical_personas import load_empirical_personas  # noqa: E402
 from run_llm_pa_decision import LLM1_MAX_TOKENS, LLM2_MAX_TOKENS, MODEL_NAME, TEMPERATURE, TOP_P  # noqa: E402
 from state_assessment import DEFAULT_MAX_TOKENS as STATE_ASSESSMENT_MAX_TOKENS  # noqa: E402
 
@@ -52,6 +53,7 @@ DEFAULTS: dict[str, object] = {
     "workplace_distance_km": "",
     "indoor_activity_distance_km": "",
     "outdoor_activity_distance_km": "",
+    "persona_input_file": "",
 }
 
 
@@ -99,6 +101,7 @@ class ValidatedConfig:
     workplace_distance_km: list[float] | None
     indoor_activity_distance_km: list[float] | None
     outdoor_activity_distance_km: list[float] | None
+    persona_input_file: Path | None = None
 
 
 def parse_required_int(value: str, field_name: str, minimum: int | None = None) -> int:
@@ -228,6 +231,13 @@ class PASimulationGUI:
         row = self._add_entry(frame, row, "Startdatum (YYYY-MM-DD, z. B. 2026-03-02)", "start_date")
         row = self._add_entry(frame, row, "Basis-Seed (ganze Zahl ≥ 0)", "base_seed")
         row = self._add_entry(frame, row, "Output-Pfad (existierender oder neu anzulegender Ordner)", "output_dir", browse=True)
+        row = self._add_entry(
+            frame,
+            row,
+            "Empirische Persona-CSV (optional; Anzahl Zeilen = Anzahl Personas)",
+            "persona_input_file",
+            browse_file=True,
+        )
 
         ttk.Label(frame, text="LLM-Parameter", font=("TkDefaultFont", 11, "bold")).grid(row=row, column=0, columnspan=3, sticky="w", pady=(10, 4)); row += 1
         row = self._add_model_combo(frame, row)
@@ -267,7 +277,15 @@ class PASimulationGUI:
         canvas.bind_all("<Button-4>", lambda _e: canvas.yview_scroll(-1, "units"))
         canvas.bind_all("<Button-5>", lambda _e: canvas.yview_scroll(1, "units"))
 
-    def _add_entry(self, parent: ttk.Frame, row: int, label: str, key: str, browse: bool = False) -> int:
+    def _add_entry(
+        self,
+        parent: ttk.Frame,
+        row: int,
+        label: str,
+        key: str,
+        browse: bool = False,
+        browse_file: bool = False,
+    ) -> int:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=4, pady=2)
         var = tk.StringVar(value=str(DEFAULTS[key])); self.vars[key] = var
         entry = ttk.Entry(parent, textvariable=var)
@@ -275,6 +293,8 @@ class PASimulationGUI:
         self.widgets[key] = entry
         if browse:
             ttk.Button(parent, text="Browse", command=lambda: self._browse_dir(key)).grid(row=row, column=2, padx=4)
+        elif browse_file:
+            ttk.Button(parent, text="Browse", command=lambda: self._browse_file(key)).grid(row=row, column=2, padx=4)
         return row + 1
 
     def _add_model_combo(self, parent: ttk.Frame, row: int) -> int:
@@ -287,6 +307,14 @@ class PASimulationGUI:
 
     def _browse_dir(self, key: str) -> None:
         selected = filedialog.askdirectory(initialdir=str(self.vars[key].get() or SIMULATION_DIR))
+        if selected:
+            self.vars[key].set(selected)
+
+    def _browse_file(self, key: str) -> None:
+        selected = filedialog.askopenfilename(
+            initialdir=str(ROOT_DIR),
+            filetypes=(("CSV files", "*.csv"), ("All files", "*.*")),
+        )
         if selected:
             self.vars[key].set(selected)
 
@@ -335,6 +363,23 @@ class PASimulationGUI:
             llm1_max_tokens = parse_required_int(str(self.vars["llm1_max_tokens"].get()), "LLM1 Max Tokens", 1)
             llm2_max_tokens = parse_required_int(str(self.vars["llm2_max_tokens"].get()), "LLM2 Max Tokens", 1)
             state_assessment_max_tokens = parse_required_int(str(self.vars["state_assessment_max_tokens"].get()), "State Assessment Max Tokens", 1)
+            persona_input_raw = str(self.vars["persona_input_file"].get()).strip()
+            persona_input_file = Path(persona_input_raw) if persona_input_raw else None
+            if persona_input_file is not None:
+                if not persona_input_file.is_file():
+                    raise GUIValidationError(
+                        "Empirische Persona-CSV",
+                        persona_input_raw,
+                        "existierende CSV-Datei",
+                    )
+                profile_count = len(load_empirical_personas(persona_input_file))
+                if profile_count != n_personas:
+                    raise GUIValidationError(
+                        "Empirische Persona-CSV",
+                        persona_input_raw,
+                        f"CSV mit genau {n_personas} vollständigen Persona-Zeilen",
+                        extra=f"Gefundene Profile: {profile_count}",
+                    )
             return ValidatedConfig(
                 n_personas=n_personas,
                 n_days=n_days,
@@ -361,6 +406,7 @@ class PASimulationGUI:
                 workplace_distance_km=validate_optional_numeric_list(str(self.vars["workplace_distance_km"].get()), "Arbeitsplatz-Entfernung in km", n_personas),
                 indoor_activity_distance_km=validate_optional_numeric_list(str(self.vars["indoor_activity_distance_km"].get()), "Indoor-Aktivitätsentfernung in km", n_personas),
                 outdoor_activity_distance_km=validate_optional_numeric_list(str(self.vars["outdoor_activity_distance_km"].get()), "Outdoor-Aktivitätsentfernung in km", n_personas),
+                persona_input_file=persona_input_file,
             )
         except GUIValidationError as exc:
             self.is_running = False
@@ -370,7 +416,7 @@ class PASimulationGUI:
 
     def _focus_invalid_widget(self, field_name: str) -> None:
         field_to_key = {
-            "Anzahl Personas": "n_personas", "Anzahl Tage": "n_days", "Startdatum": "start_date", "Basis-Seed": "base_seed", "Output-Pfad": "output_dir", "Modell": "model", "Temperature": "temperature", "Top P": "top_p", "LLM-Seed": "llm_seed", "LLM1 Max Tokens": "llm1_max_tokens", "LLM2 Max Tokens": "llm2_max_tokens", "State Assessment Max Tokens": "state_assessment_max_tokens", "PA-Stunden pro Woche": "physical_activity_hours_per_week", "Soziale Stunden pro Woche": "social_hours_per_week", "Care-Arbeit pro Woche": "care_work_hours_per_week", "Arbeitsstunden pro Woche": "work_hours_per_week", "Arbeitsplatz-Entfernung in km": "workplace_distance_km", "Indoor-Aktivitätsentfernung in km": "indoor_activity_distance_km", "Outdoor-Aktivitätsentfernung in km": "outdoor_activity_distance_km",
+            "Anzahl Personas": "n_personas", "Anzahl Tage": "n_days", "Startdatum": "start_date", "Basis-Seed": "base_seed", "Output-Pfad": "output_dir", "Empirische Persona-CSV": "persona_input_file", "Modell": "model", "Temperature": "temperature", "Top P": "top_p", "LLM-Seed": "llm_seed", "LLM1 Max Tokens": "llm1_max_tokens", "LLM2 Max Tokens": "llm2_max_tokens", "State Assessment Max Tokens": "state_assessment_max_tokens", "PA-Stunden pro Woche": "physical_activity_hours_per_week", "Soziale Stunden pro Woche": "social_hours_per_week", "Care-Arbeit pro Woche": "care_work_hours_per_week", "Arbeitsstunden pro Woche": "work_hours_per_week", "Arbeitsplatz-Entfernung in km": "workplace_distance_km", "Indoor-Aktivitätsentfernung in km": "indoor_activity_distance_km", "Outdoor-Aktivitätsentfernung in km": "outdoor_activity_distance_km",
         }
         widget = self.widgets.get(field_to_key.get(field_name, ""))
         if widget is None:
@@ -402,6 +448,8 @@ class PASimulationGUI:
             cmd.extend([flag, str(value)])
         if config.llm_seed is not None:
             cmd.extend(["--llm-seed", str(config.llm_seed)])
+        if config.persona_input_file is not None:
+            cmd.extend(["--persona-input-file", str(config.persona_input_file)])
         list_args = {
             "--physical-activity-hours-per-week": config.physical_activity_hours_per_week,
             "--social-hours-per-week": config.social_hours_per_week,
