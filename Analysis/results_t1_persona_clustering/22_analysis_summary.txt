@@ -1,0 +1,24 @@
+AIcoPA T1 persona clustering v1.1
+
+Input file: C:/Users/rre00/OneDrive - Universitaet Bern/Universität/Master/FS_26/Masterarbeit/Github_MA/MScThesis/analysis/data/AIcoPA_T1_complete_responses_anonym_20260916.xlsx
+Imported records: n = 147
+Primary complete-case sample: n = 144
+Candidate k values: 2, 3, 4, 5, 6, 7, 8
+Minimum permitted cluster size: 5
+
+Selected primary k: 4
+Cluster sizes: 67/12/49/16
+Average silhouette: 0.4249
+Interpretation: weak cluster structure
+Mean 80% subsampling ARI: 0.9275
+95% subsampling ARI interval: 0.7876 to 1.0000
+
+Primary variables:
+occupational_status, workload_hours_per_week, holiday_weeks, stress_weeks, care_work_hours_per_week, social_hours_per_week, pa_mvpa_hours_per_week
+
+Sensitivity without PA: k = 4, silhouette = 0.4524
+Phase-compatible sensitivity: n = 135, k = 4, silhouette = 0.4150
+
+Interpretive limitation: occupational status is a primary clustering variable. These are occupation-informed profiles, not latent types discovered independently of occupation.
+Medoids are representative in primary clustering variables only. Review 14_medoid_representativeness_check.csv before transferring all remaining psychological, routine, and environmental values to the simulation.
+The raw category 'Sonstiges' is heterogeneous. Describe its free-text responses carefully or recode them using a prespecified rule.

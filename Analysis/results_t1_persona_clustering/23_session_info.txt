@@ -1,0 +1,23 @@
+R version 4.5.0 (2025-04-11 ucrt)
+Platform: x86_64-w64-mingw32/x64
+Running under: Windows 11 x64 (build 26200)
+
+Matrix products: default
+  LAPACK version 3.12.1
+
+locale:
+[1] LC_COLLATE=German_Switzerland.utf8  LC_CTYPE=German_Switzerland.utf8   
+[3] LC_MONETARY=German_Switzerland.utf8 LC_NUMERIC=C                       
+[5] LC_TIME=German_Switzerland.utf8    
+
+time zone: Europe/Zurich
+tzcode source: internal
+
+attached base packages:
+[1] stats     graphics  grDevices utils     datasets  methods   base     
+
+loaded via a namespace (and not attached):
+ [1] compiler_4.5.0   magrittr_2.0.3   cli_3.6.5        tools_4.5.0     
+ [5] pillar_1.10.2    glue_1.8.0       tibble_3.2.1     cellranger_1.1.0
+ [9] vctrs_0.6.5      readxl_1.5.0.1   lifecycle_1.0.4  pkgconfig_2.0.3 
+[13] rlang_1.1.6      cluster_2.1.8.3 
