@@ -6,7 +6,7 @@ import json
 import random
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -27,9 +27,14 @@ from agent_context_export import (  # noqa: E402
     _normalize_input_parameters,
     _student_parameters_from_inputs,
 )
+from empirical_personas import (  # noqa: E402
+    EmpiricalPersonaWrapper,
+    load_empirical_personas,
+)
 from psychological_state import (  # noqa: E402
     BACKEND_CONSTRUCT_RANGES,
     build_psychological_state,
+    build_psychological_state_from_values,
 )
 from resource_usage import ResourceUsageEngine  # noqa: E402
 from run_llm_pa_decision import (  # noqa: E402
@@ -214,6 +219,7 @@ class FullSimulationConfig:
     resume: bool = False
     top_p: float = TOP_P
     llm_seed: int | None = None
+    persona_input_file: Path | None = None
 
 
 @dataclass
@@ -226,6 +232,7 @@ class PersonaRuntimeState:
     selected_schedule_parameters: dict[str, Any]
     runner: SimulationRunner
     psychological_state: dict[str, Any]
+    profile_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -297,6 +304,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--workplace-distance-km", default=None)
     parser.add_argument("--indoor-activity-distance-km", default=None)
     parser.add_argument("--outdoor-activity-distance-km", default=None)
+    parser.add_argument(
+        "--persona-input-file",
+        type=Path,
+        default=None,
+        help=(
+            "CSV containing complete empirical persona rows, for example the "
+            "primary medoid output from the T1 clustering analysis."
+        ),
+    )
     parser.add_argument("--daily-log-path", type=Path, default=None)
     return parser.parse_args(argv)
 
@@ -422,6 +438,9 @@ def config_from_args(args: argparse.Namespace) -> FullSimulationConfig:
         enable_codecarbon=bool(args.enable_codecarbon),
         verbose_llm_debug=bool(args.verbose_llm_debug),
         resume=bool(getattr(args, "resume", False)),
+        persona_input_file=(
+            Path(args.persona_input_file) if args.persona_input_file is not None else None
+        ),
     )
 
 
@@ -496,7 +515,7 @@ def _psychological_state_with_updated_constructs(
 
 def _schedule_parameters_payload(persona: Any, seed: int) -> dict[str, Any]:
     schedule_parameters = persona.to_structure_parameters(seed=seed)
-    return {
+    payload = {
         "name": schedule_parameters.name,
         "schedule_rigidity": schedule_parameters.schedule_rigidity,
         "phase_variability": schedule_parameters.phase_variability,
@@ -515,6 +534,17 @@ def _schedule_parameters_payload(persona: Any, seed: int) -> dict[str, Any]:
         "social_hours_week": schedule_parameters.social_hours_week,
         "carework_hours_week": schedule_parameters.carework_hours_week,
     }
+    profile = getattr(persona, "profile", None)
+    if profile is not None:
+        payload.update(
+            {
+                "schedule_model": "empirical_occupation_v1_1",
+                "occupation_type": profile.occupation_type,
+                "occupational_status": profile.occupational_status,
+                "primary_workload_hours_week": persona.work_hours_week,
+            }
+        )
+    return payload
 
 
 def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeState]:
@@ -523,14 +553,17 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
 
     rng = random.Random(config.base_seed)
     normalized_inputs = _normalize_input_parameters(DEFAULT_INPUT_PARAMETERS)
-    default_input_parameters = {
-        key: normalized_inputs[key]
-        for key in PERSONA_INPUT_INTERNAL_TO_METADATA
-    }
-    default_poi_distances = {
-        key: normalized_inputs[key]
-        for key in POI_DISTANCE_INTERNAL_TO_METADATA
-    }
+    empirical_profiles = (
+        load_empirical_personas(config.persona_input_file)
+        if config.persona_input_file is not None
+        else []
+    )
+    if empirical_profiles and len(empirical_profiles) != config.n_personas:
+        raise ValueError(
+            "The empirical persona input file contains "
+            f"{len(empirical_profiles)} profiles, but n_personas={config.n_personas}. "
+            "Set --n-personas to the number of medoid rows."
+        )
     start_month = int(config.start_date.month)
     start_day_offset = min(int(config.start_date.day) - 1, 29)
     horizon_hours = max(24 * 365, 24 * (start_day_offset + config.n_days + 1))
@@ -538,7 +571,21 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
     states: list[PersonaRuntimeState] = []
     for idx in range(config.n_personas):
         persona_seed = rng.randint(0, 2**31 - 1)
-        persona_id = f"StudentPersona_{idx + 1:02d}"
+        profile = empirical_profiles[idx] if empirical_profiles else None
+        persona_id = profile.persona_id if profile is not None else f"StudentPersona_{idx + 1:02d}"
+        if profile is not None:
+            profile_wrapper = profile.to_wrapper()
+            default_input_parameters = profile_wrapper.schedule_input_parameters()
+            default_poi_distances = profile_wrapper.accessibility_input_parameters()
+        else:
+            default_input_parameters = {
+                key: normalized_inputs[key]
+                for key in PERSONA_INPUT_INTERNAL_TO_METADATA
+            }
+            default_poi_distances = {
+                key: normalized_inputs[key]
+                for key in POI_DISTANCE_INTERNAL_TO_METADATA
+            }
         input_parameters, poi_distances = apply_persona_cli_overrides(
             default_input_parameters,
             default_poi_distances,
@@ -547,7 +594,22 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
         )
         simulation_inputs = {**normalized_inputs, **input_parameters, **poi_distances}
         simulation_inputs["day_index"] = 0
-        persona = _student_parameters_from_inputs(persona_id, simulation_inputs)
+        if profile is not None:
+            persona = EmpiricalPersonaWrapper(
+                name=persona_id,
+                profile=profile,
+                fitness_hours_week=float(simulation_inputs["fitness_hours_week"]),
+                social_hours_week=float(simulation_inputs["social_hours_week"]),
+                work_hours_week=float(simulation_inputs["work_hours_week"]),
+                carework_hours_week=float(simulation_inputs["carework_hours_week"]),
+                workplace_distance_km=float(simulation_inputs["workplace_distance_km"]),
+                indoor_activity_distance_km=float(simulation_inputs["indoor_activity_distance_km"]),
+                outdoor_activity_distance_km=float(simulation_inputs["outdoor_activity_distance_km"]),
+                seed_variation=False,
+                variation_strength=0.0,
+            )
+        else:
+            persona = _student_parameters_from_inputs(persona_id, simulation_inputs)
         accessibility_model = _build_accessibility_model_from_parameters(persona.accessibility_input_parameters())
         env = TimeWeatherEnv(
             month=start_month,
@@ -565,6 +627,20 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
         )
         runner.reset_world()
         psychological_seed = _psychological_seed_from_persona_seed(persona_seed)
+        if profile is not None:
+            psychological_state = build_psychological_state_from_values(
+                profile.psychological_constructs,
+                source="AIcoPA_T1_primary_PAM_medoid",
+            )
+            profile_metadata = {
+                **profile.metadata(),
+                "initial_psychological_constructs_normalized": dict(
+                    profile.psychological_constructs
+                ),
+            }
+        else:
+            psychological_state = build_psychological_state(psychological_seed)
+            profile_metadata = {}
         states.append(
             PersonaRuntimeState(
                 persona_id=persona_id,
@@ -574,7 +650,8 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
                 poi_distances_km=_json_ready(_metadata_poi_distances(simulation_inputs)),
                 selected_schedule_parameters=_json_ready(_schedule_parameters_payload(persona, persona_seed)),
                 runner=runner,
-                psychological_state=build_psychological_state(psychological_seed),
+                psychological_state=psychological_state,
+                profile_metadata=_json_ready(profile_metadata),
             )
         )
     return states
@@ -1190,6 +1267,9 @@ def _run_config_comparison_payload(config: FullSimulationConfig, daily_log_path:
         "include_full_hourly_context": config.include_full_hourly_context,
         "daily_log_path": str(daily_log_path),
         "cli_overrides": config.cli_overrides or {},
+        "persona_input_file": (
+            str(config.persona_input_file) if config.persona_input_file is not None else None
+        ),
     }
 
 
@@ -1340,6 +1420,9 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
         "enable_resource_tracking": config.enable_resource_tracking,
         "enable_codecarbon": config.enable_codecarbon,
         "resume": config.resume,
+        "persona_input_file": (
+            str(config.persona_input_file) if config.persona_input_file is not None else None
+        ),
     }
     if not config.resume:
         _write_json(config.output_dir / "run_config.json", run_config_payload)
@@ -1387,6 +1470,8 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     "input_parameters": dict(state.input_parameters),
                     "poi_distances_km": dict(state.poi_distances_km),
                     "selected_schedule_parameters": dict(state.selected_schedule_parameters),
+                    "profile_metadata": dict(state.profile_metadata),
+                    "initial_psychological_state": dict(state.psychological_state),
                 }
                 for state in persona_states
             ]
@@ -1610,6 +1695,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                         "input_parameters": dict(state.input_parameters),
                         "poi_distances_km": dict(state.poi_distances_km),
                         "selected_schedule_parameters": dict(state.selected_schedule_parameters),
+                        "profile_metadata": dict(state.profile_metadata),
                     },
                     "pa_decision": dict(pipeline_record["pa_decision"]),
                     "closed_loop_update": closed_loop_update,
