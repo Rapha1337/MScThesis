@@ -600,10 +600,29 @@ def distribute_weekly_budgets_to_days(
         rng = random.Random()
 
     distribution: dict[int, list[WeeklyActivityBudget]] = {d: [] for d in range(7)}
-    heavy_subtypes = {"university", "paid_work", "studying", "carework", "physical_activity"}
+    heavy_subtypes = {
+        "university",
+        "paid_work",
+        "mixed_study_work",
+        "school",
+        "workplace",
+        "studying",
+        "carework",
+        "physical_activity",
+    }
     heavy_load_by_day: dict[int, int] = {d: 0 for d in range(7)}
 
-    budget_order = {"university": 0, "paid_work": 1, "studying": 2, "carework": 3, "physical_activity": 4, "social_time": 5}
+    budget_order = {
+        "university": 0,
+        "paid_work": 0,
+        "mixed_study_work": 0,
+        "school": 0,
+        "workplace": 0,
+        "studying": 1,
+        "carework": 2,
+        "physical_activity": 3,
+        "social_time": 4,
+    }
     budgets = sorted(structure.budgets, key=lambda b: budget_order.get(b.subtype or b.activity_type.value, 99))
 
     for budget in budgets:
@@ -652,9 +671,9 @@ def distribute_weekly_budgets_to_days(
 # 9) Daily schedule generation
 # ---------------------------------------------------------------------
 def _activity_window(subtype: str, phase: YearPhase, weekday: int) -> tuple[int, int]:
-    if subtype == "university":
+    if subtype in {"university", "school", "mixed_study_work"}:
         return (8, 16)
-    if subtype == "paid_work":
+    if subtype in {"paid_work", "workplace"}:
         return (8, 17)
     if subtype == "studying":
         return (17, 21) if phase == YearPhase.SEMESTER else (9, 18)
@@ -672,9 +691,9 @@ def _activity_window(subtype: str, phase: YearPhase, weekday: int) -> tuple[int,
 
 
 def _fallback_windows_for_subtype(subtype: str, phase: YearPhase, weekday: int) -> list[tuple[int, int]]:
-    if subtype == "paid_work":
+    if subtype in {"paid_work", "workplace"}:
         return [(8, 17), (9, 18), (13, 21)]
-    if subtype == "university":
+    if subtype in {"university", "school", "mixed_study_work"}:
         return [(8, 16), (9, 17)]
     if subtype == "studying":
         if phase == YearPhase.SEMESTER:
@@ -780,7 +799,10 @@ def _placement_priority(budget: WeeklyActivityBudget) -> int:
 
     priority = {
         "university": 0,
-        "paid_work": 1,
+        "paid_work": 0,
+        "mixed_study_work": 0,
+        "school": 0,
+        "workplace": 0,
         "physical_activity": 2,
         "studying": 3,
         "social_time": 4,
