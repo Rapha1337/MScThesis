@@ -395,7 +395,6 @@ class SimulationRunner:
         that case the runner uses the current simulated week/hour together with
         the requested weekday.
         """
-        event_constraints: list[Any] = []
         week_index, derived_weekday, hour = self._derive_time_indices()
         requested_weekday = derived_weekday if weekday is None else int(weekday)
         if weekday is None:
@@ -403,6 +402,36 @@ class SimulationRunner:
         else:
             day_start_sim_hour = week_index * 7 * 24 + requested_weekday * 24
 
+        return self.get_day_context_for_schedule(
+            week_index=week_index,
+            weekday=requested_weekday,
+            hour=hour,
+            day_start_sim_hour=day_start_sim_hour,
+        )
+
+    def get_day_context_for_schedule(
+        self,
+        *,
+        week_index: int,
+        weekday: int,
+        hour: int = 0,
+        day_start_sim_hour: int = 0,
+    ) -> dict:
+        """Build a day context for explicit annual-week/weekday coordinates.
+
+        This is the public calendar-aware path. ``get_day_context`` remains a
+        legacy clock-derived wrapper for callers that advance ``_sim_hour``.
+        The environment sampling offset is deliberately separate from schedule
+        coordinates, so a date-specific environment can start locally at zero.
+        """
+        week_index = int(week_index)
+        requested_weekday = int(weekday)
+        if not 0 <= requested_weekday <= 6:
+            raise ValueError("weekday must be between 0 (Monday) and 6 (Sunday)")
+        if self.use_year_structure and not 0 <= week_index < self.n_weeks:
+            raise ValueError(f"week_index must be between 0 and {self.n_weeks - 1}")
+
+        event_constraints: list[Any] = []
         if self.use_year_structure:
             active_events = self._get_active_events_for_day(week_index, requested_weekday)
             event_constraints = self._events_to_constraints(active_events, week_index, requested_weekday)
@@ -450,7 +479,7 @@ class SimulationRunner:
             day_start_sim_hour=day_start_sim_hour,
         )
 
-        return build_agent_context(
+        context = build_agent_context(
             persona_name=self.persona.name,
             phase=phase,
             weekday=requested_weekday,
@@ -463,6 +492,8 @@ class SimulationRunner:
             hourly_energy_24h=hourly_energy_24h,
             hourly_environment_24h=hourly_environment_24h,
         )
+        context["week_index"] = week_index
+        return context
 
 
 if __name__ == "__main__":
