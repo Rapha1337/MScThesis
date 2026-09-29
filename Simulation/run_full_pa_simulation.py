@@ -187,6 +187,7 @@ LONGITUDINAL_CONSTRUCT_COLUMNS: tuple[str, ...] = (
     "persona_id",
     "day_index",
     "calendar_date",
+    "week_index",
     "construct",
     "value_before",
     "value_after",
@@ -664,21 +665,19 @@ def build_global_environment_by_date(
     _install_lightweight_optional_dependency_stubs()
     from env_time_weather import TimeWeatherEnv
 
-    start_day_offset = min(int(config.start_date.day) - 1, 29)
-    horizon_hours = max(24 * 365, 24 * (start_day_offset + config.n_days + 1))
     environment_by_date: dict[str, list[dict[str, Any]]] = {}
 
     for day_index in range(config.n_days):
         calendar_date = config.start_date + timedelta(days=day_index)
         env = TimeWeatherEnv(
-            month=int(config.start_date.month),
+            month=int(calendar_date.month),
             sample_rate_hours=1,
-            horizon_hours=horizon_hours,
+            horizon_hours=24,
             bern_map=_LightweightBernMap(),
         )
         env.reset(seed=config.base_seed + day_index)
         hourly_environment = env.build_hourly_environment_24h(
-            start_t=24 * (start_day_offset + day_index)
+            start_t=0
         )
         environment_by_date[calendar_date.isoformat()] = [
             {
@@ -726,9 +725,11 @@ def build_llm_ready_context_for_day(
     start_day_offset: int,
     global_hourly_environment: Sequence[Mapping[str, Any]],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    absolute_day_index = int(start_day_offset) + int(day_index)
-    state.runner._sim_hour = absolute_day_index * 24
-    diagnostic_context = state.runner.get_day_context()
+    week_index, weekday = calendar_schedule_coordinates(calendar_date)
+    diagnostic_context = state.runner.get_day_context_for_schedule(
+        week_index=week_index,
+        weekday=weekday,
+    )
     hourly_context = list(diagnostic_context.get("hourly_context_24h", []))
     if len(hourly_context) != 24:
         raise ValueError(
@@ -745,6 +746,7 @@ def build_llm_ready_context_for_day(
         "seed": int(state.seed),
         "day_index": int(day_index),
         "calendar_date": calendar_date.isoformat(),
+        "week_index": week_index,
         "phase": diagnostic_context.get("phase"),
         "phase_llm": diagnostic_context.get("phase_llm"),
         "weekday": diagnostic_context.get("weekday"),
@@ -756,6 +758,16 @@ def build_llm_ready_context_for_day(
         ],
     }
     return _json_ready(llm_context), _json_ready(diagnostic_context)
+
+
+def calendar_schedule_coordinates(calendar_date: date) -> tuple[int, int]:
+    """Return ``(week_index, weekday)`` for a date in the 52-week model.
+
+    ISO weeks are one-based, while YearStructure weeks are zero-based. ISO week
+    53 is deterministically folded into the final internal week.
+    """
+    iso_week = calendar_date.isocalendar().week
+    return min(int(iso_week), 52) - 1, int(calendar_date.weekday())
 
 
 def _compact_planned_pa_schedule_entry(entry: Mapping[str, Any]) -> dict[str, Any]:
@@ -1062,6 +1074,7 @@ def _write_longitudinal_construct_rows(path: Path, record: Mapping[str, Any]) ->
                     "persona_id": record["persona_id"],
                     "day_index": int(record["day_index"]),
                     "calendar_date": record["calendar_date"],
+                    "week_index": int(record["week_index"]),
                     "construct": construct,
                     "value_before": value_before,
                     "value_after": value_after,
@@ -1618,6 +1631,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     "psychological_seed": int(state.psychological_seed),
                     "day_index": int(day_index),
                     "calendar_date": calendar_date.isoformat(),
+                    "week_index": llm_context.get("week_index"),
                     "phase": llm_context.get("phase"),
                     "weekday": llm_context.get("weekday"),
                     "psychological_constructs_before_update": constructs_before,

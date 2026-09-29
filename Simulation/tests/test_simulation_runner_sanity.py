@@ -25,6 +25,22 @@ class FakeEnv:
         return None, 0.0, False, False, {"action": action, "state": "stepped"}
 
 
+def test_explicit_schedule_context_does_not_mutate_legacy_clock() -> None:
+    runner = SimulationRunner(
+        persona=StudentHoursWrapper(name="calendar-api"),
+        phase=YearPhase.NORMAL,
+        env=FakeEnv(),
+        seed=37,
+    )
+    runner._sim_hour = 123
+
+    context = runner.get_day_context_for_schedule(week_index=27, weekday=3)
+
+    assert context["week_index"] == 27
+    assert context["weekday"] == 3
+    assert runner._sim_hour == 123
+
+
 def _to_tuple(schedule: list[dict]) -> tuple:
     return tuple((ep["hour"], ep["activity_type"], ep["subtype"], ep["flexibility"]) for ep in schedule)
 
