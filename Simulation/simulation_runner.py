@@ -17,7 +17,7 @@ from schedule_model_student import (
     distribute_weekly_budgets_to_days,
     generate_full_day_schedule,
 )
-from year_structure import YearStructureGenerator
+from year_structure import YearStructureConfig, YearStructureGenerator
 
 if TYPE_CHECKING:
     from env_time_weather import TimeWeatherEnv
@@ -55,7 +55,11 @@ class SimulationRunner:
         self._constrained_day_schedule_cache: dict[tuple[int, int], list[DayEpisode]] = {}
 
         if self.use_year_structure:
-            self.year_structure = YearStructureGenerator().generate_year(
+            year_config: YearStructureConfig | None = None
+            config_factory = getattr(self.persona, "year_structure_config", None)
+            if callable(config_factory):
+                year_config = config_factory(n_weeks=self.n_weeks)
+            self.year_structure = YearStructureGenerator(year_config).generate_year(
                 persona_id=self.persona.name,
                 persona_seed=self.seed,
                 parameters=self.persona,
@@ -168,7 +172,14 @@ class SimulationRunner:
         if not has_public_holiday:
             return day_schedule
 
-        work_like_subtypes = {"university", "paid_work", "studying"}
+        work_like_subtypes = {
+            "university",
+            "paid_work",
+            "mixed_study_work",
+            "school",
+            "workplace",
+            "studying",
+        }
         work_like_activity_values = {"work", "studying"}
 
         updated_schedule: list[DayEpisode] = []

@@ -19,7 +19,7 @@ The model combines:
 - large-language-model-supported physical activity decisions
 - longitudinal psychological state updates
 
-The model is intended as a proof of concept. It does not predict the behavior of real individuals and has not yet been empirically calibrated or externally validated.
+The model is intended as a proof of concept. Version 1.1 can initialize representative personas from observed AIcoPA T1 profiles. This empirical parameterization does not constitute external validation and the model does not predict the behavior of real individuals.
 
 ## Simulation Architecture
 
@@ -142,6 +142,36 @@ A dry run without external language-model calls can be performed using:
 ```powershell
 --dry-run
 ```
+
+### Empirical T1 Medoid Personas (Version 1.1)
+
+The primary T1 clustering analysis writes one observed PAM medoid per cluster to:
+
+```text
+Analysis/results_t1_persona_clustering/11_primary_medoid_personas.csv
+```
+
+Run the four empirical profiles with:
+
+```powershell
+python Simulation/run_full_pa_simulation.py `
+  --n-personas 4 `
+  --n-days 365 `
+  --start-date 2026-01-01 `
+  --base-seed 137 `
+  --persona-input-file Analysis/results_t1_persona_clustering/11_primary_medoid_personas.csv `
+  --output-dir Simulation/output/t1_medoids_v1_1
+```
+
+The empirical path uses each medoid's observed combination of:
+
+- normalized psychological construct values;
+- occupational status and weekly workload;
+- MVPA, social, and care-work hours;
+- normal, high-stress, and holiday weeks; and
+- distances to workplace/study, indoor activity, and outdoor activity.
+
+The reported daily routine variables are retained in persona metadata for traceability but are not currently used to place schedule blocks. Some medoid rows contain daily time reports that are not arithmetically compatible with the reported weekly workload. Primary obligations are therefore distributed from the weekly workload and occupation type. The legacy synthetic student initialization remains the default when `--persona-input-file` is omitted.
 
 ## Running the Analyses
 
