@@ -131,6 +131,11 @@ The main configurable parameters include:
 - output directory
 - checkpoint and resume behavior
 
+`--start-date` anchors the simulation's calendar date, real weekday, position
+in the 52-week annual `YearStructure`, and environmental month/season. ISO
+weeks 1–52 map to zero-based annual indices 0–51; the occasional ISO week 53
+is deterministically folded into index 51 to preserve the 52-week model.
+
 A simulation can be resumed from an existing checkpoint by adding:
 
 ```powershell

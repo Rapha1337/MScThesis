@@ -55,6 +55,7 @@ from run_llm_pa_decision import (  # noqa: E402
 )
 from schedule_model_student import YearPhase  # noqa: E402
 from simulation_runner import SimulationRunner  # noqa: E402
+from year_structure import calendar_date_to_schedule_coordinates  # noqa: E402
 from state_assessment import (  # noqa: E402
     ACTIVE_CONSTRUCTS,
     DEFAULT_MAX_TOKENS as STATE_ASSESSMENT_MAX_TOKENS,
@@ -565,8 +566,7 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
             "Set --n-personas to the number of medoid rows."
         )
     start_month = int(config.start_date.month)
-    start_day_offset = min(int(config.start_date.day) - 1, 29)
-    horizon_hours = max(24 * 365, 24 * (start_day_offset + config.n_days + 1))
+    horizon_hours = max(24 * 365, 24 * (config.n_days + 1))
 
     states: list[PersonaRuntimeState] = []
     for idx in range(config.n_personas):
@@ -664,21 +664,20 @@ def build_global_environment_by_date(
     _install_lightweight_optional_dependency_stubs()
     from env_time_weather import TimeWeatherEnv
 
-    start_day_offset = min(int(config.start_date.day) - 1, 29)
-    horizon_hours = max(24 * 365, 24 * (start_day_offset + config.n_days + 1))
+    horizon_hours = max(24 * 365, 48)
     environment_by_date: dict[str, list[dict[str, Any]]] = {}
 
     for day_index in range(config.n_days):
         calendar_date = config.start_date + timedelta(days=day_index)
         env = TimeWeatherEnv(
-            month=int(config.start_date.month),
+            month=int(calendar_date.month),
             sample_rate_hours=1,
             horizon_hours=horizon_hours,
             bern_map=_LightweightBernMap(),
         )
         env.reset(seed=config.base_seed + day_index)
         hourly_environment = env.build_hourly_environment_24h(
-            start_t=24 * (start_day_offset + day_index)
+            start_t=0
         )
         environment_by_date[calendar_date.isoformat()] = [
             {
@@ -723,12 +722,17 @@ def build_llm_ready_context_for_day(
     *,
     day_index: int,
     calendar_date: date,
-    start_day_offset: int,
+    start_day_offset: int | None = None,
     global_hourly_environment: Sequence[Mapping[str, Any]],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    absolute_day_index = int(start_day_offset) + int(day_index)
-    state.runner._sim_hour = absolute_day_index * 24
-    diagnostic_context = state.runner.get_day_context()
+    # ``start_day_offset`` is retained as a compatibility keyword only. The
+    # calendar date is now the single source of truth for schedule coordinates.
+    week_index, weekday = calendar_date_to_schedule_coordinates(calendar_date)
+    diagnostic_context = state.runner.get_day_context_for_schedule(
+        week_index=week_index,
+        weekday=weekday,
+        day_start_sim_hour=0,
+    )
     hourly_context = list(diagnostic_context.get("hourly_context_24h", []))
     if len(hourly_context) != 24:
         raise ValueError(
@@ -745,6 +749,7 @@ def build_llm_ready_context_for_day(
         "seed": int(state.seed),
         "day_index": int(day_index),
         "calendar_date": calendar_date.isoformat(),
+        "week_index": week_index,
         "phase": diagnostic_context.get("phase"),
         "phase_llm": diagnostic_context.get("phase_llm"),
         "weekday": diagnostic_context.get("weekday"),
@@ -1477,7 +1482,6 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
             ]
         }
         _write_json(persona_metadata_path, persona_metadata)
-        start_day_offset = min(int(config.start_date.day) - 1, 29)
         compact_contexts: list[dict[str, Any]] = []
         previous_diary_entries_by_persona: dict[str, list[dict[str, Any]]] = {
             state.persona_id: [] for state in persona_states
@@ -1513,7 +1517,6 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     state,
                     day_index=day_index,
                     calendar_date=calendar_date,
-                    start_day_offset=start_day_offset,
                     global_hourly_environment=global_environment_by_date[
                         calendar_date.isoformat()
                     ],
@@ -1618,6 +1621,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     "psychological_seed": int(state.psychological_seed),
                     "day_index": int(day_index),
                     "calendar_date": calendar_date.isoformat(),
+                    "week_index": llm_context.get("week_index"),
                     "phase": llm_context.get("phase"),
                     "weekday": llm_context.get("weekday"),
                     "psychological_constructs_before_update": constructs_before,
