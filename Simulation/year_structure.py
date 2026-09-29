@@ -1,12 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from datetime import date
 import random
 
 from intensity import CANONICAL_INTENSITIES, normalize_intensity
 
 ALLOWED_PHASES = {"normal", "high_stress", "holiday"}
 ALLOWED_INTENSITIES = CANONICAL_INTENSITIES
+
+
+def calendar_date_to_schedule_coordinates(calendar_date: date) -> tuple[int, int]:
+    """Return the date's zero-based 52-week index and Python weekday.
+
+    ISO weeks 1..52 map to indices 0..51. ISO week 53 is folded into index
+    51 because :class:`YearStructure` intentionally contains exactly 52 weeks.
+    Weekdays use Monday=0 through Sunday=6.
+    """
+    iso_week = calendar_date.isocalendar().week
+    return min(iso_week, 52) - 1, calendar_date.weekday()
 
 
 @dataclass
