@@ -688,6 +688,32 @@ def build_psychological_state(seed: int, method: str = "multivariate_normal") ->
     return _format_psychological_state(sampled_values, seed=int(seed), method=method)
 
 
+def build_psychological_state_from_values(
+    values_normalized: dict[str, float],
+    *,
+    source: str = "observed_T1_persona",
+) -> dict[str, Any]:
+    """Build an initial state from one complete observed normalized profile."""
+    missing = [name for name in CONSTRUCT_NAMES if name not in values_normalized]
+    extra = [name for name in values_normalized if name not in CONSTRUCT_NAMES]
+    if missing or extra:
+        raise ValueError(
+            "Observed psychological profile must contain exactly the active constructs; "
+            f"missing={missing}, extra={extra}."
+        )
+
+    state = _format_psychological_state(
+        {name: float(values_normalized[name]) for name in CONSTRUCT_NAMES},
+        seed=0,
+        method="observed_profile",
+    )
+    state["source"] = str(source)
+    state["reference_group"] = "AIcoPA_T1_medoid"
+    state["n"] = 1
+    state["seed"] = None
+    return state
+
+
 def build_default_psychological_state() -> dict[str, Any]:
     """Return a deterministic legacy fallback using the backend construct list."""
     return build_psychological_state(seed=0)
