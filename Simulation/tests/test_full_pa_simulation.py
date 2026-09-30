@@ -1153,6 +1153,13 @@ def test_empirical_pa_v1_2_removes_mvpa_from_schedule_and_records_activity_dose(
     assert manifest["empirical_pa_v1_2_calibration"]["standardized_beta"] == pytest.approx(
         0.16164280788232943
     )
+    assert (
+        manifest["decision_schema"]["decision_source"]
+        == "llm2_contextual_probability_seeded_sampling"
+    )
+    assert manifest["decision_schema"]["llm2_makes_final_contextual_decision"] is False
+    assert manifest["decision_schema"]["llm2_estimates_contextual_pa_probability"] is True
+    assert manifest["decision_schema"]["post_llm2_seeded_sampling_active"] is True
 
     run_config = json.loads(
         (config.output_dir / "run_config.json").read_text(encoding="utf-8")
