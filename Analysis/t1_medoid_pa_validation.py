@@ -78,6 +78,8 @@ def phase_counts_and_representative_phase(profile: Any) -> tuple[dict[str, int],
 def inspect_event_free_seed(
     base_seed: int,
     persona_file: str | Path = DEFAULT_PERSONA_FILE,
+    *,
+    include_pa_schedule: bool = True,
 ) -> dict[str, Any]:
     """Inspect representative phase and events in the initial validation window."""
     profiles = load_empirical_personas(persona_file)
@@ -88,7 +90,7 @@ def inspect_event_free_seed(
     valid = True
     for profile, persona_seed in zip(profiles, seeds, strict=True):
         phase_counts, representative_phase = phase_counts_and_representative_phase(profile)
-        wrapper = profile.to_wrapper()
+        wrapper = profile.to_wrapper(include_pa_schedule=include_pa_schedule)
         structure = YearStructureGenerator(wrapper.year_structure_config()).generate_year(
             persona_id=profile.persona_id,
             persona_seed=persona_seed,
@@ -150,6 +152,7 @@ def select_event_free_seed(
     *,
     first_seed: int = 1,
     max_seed: int = 100_000,
+    include_pa_schedule: bool = True,
 ) -> dict[str, Any]:
     """Return the lowest representative-phase, event-free base seed."""
     if first_seed < 1 or max_seed < first_seed:
@@ -166,7 +169,7 @@ def select_event_free_seed(
             profiles, derive_persona_seeds(base_seed, len(profiles)), strict=True
         ):
             _, representative_phase = phase_counts_and_representative_phase(profile)
-            wrapper = profile.to_wrapper()
+            wrapper = profile.to_wrapper(include_pa_schedule=include_pa_schedule)
             structure = YearStructureGenerator(wrapper.year_structure_config()).generate_year(
                 persona_id=profile.persona_id, persona_seed=persona_seed, parameters=wrapper
             )
@@ -186,7 +189,11 @@ def select_event_free_seed(
             if not candidate_valid:
                 break
         if candidate_valid:
-            result = inspect_event_free_seed(base_seed, persona_file)
+            result = inspect_event_free_seed(
+                base_seed,
+                persona_file,
+                include_pa_schedule=include_pa_schedule,
+            )
             result.update({"search_first_seed": first_seed, "search_max_seed": max_seed})
             return result
     raise RuntimeError(
