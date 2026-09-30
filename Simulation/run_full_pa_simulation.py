@@ -986,12 +986,7 @@ def _dry_pa_decision_runner(pa_decision_input: Mapping[str, Any], **kwargs: Any)
         },
     }
     if empirical_v1_2:
-        if decision_label == "extra_activity":
-            result["duration_min"] = 45
-            result["intensity"] = "moderate"
-        else:
-            result["duration_min"] = 0
-            result["intensity"] = "none"
+        result["duration_min"] = 45 if decision_label == "extra_activity" else 0
     return result
 
 def _context_summary(llm_context: Mapping[str, Any]) -> dict[str, Any]:
@@ -1315,7 +1310,7 @@ def _build_simulation_run_manifest(
                 else "not provided; LLM1 is the sole processor of raw normalized constructs before LLM2 and passes four behavior_policy probabilities."
             ),
             "activity_dose_fields": (
-                ["duration_min", "intensity"] if config.empirical_pa_v1_2 else []
+                ["duration_min"] if config.empirical_pa_v1_2 else []
             ),
             "weekday_convention": "Internal weekday is 0=Monday through 6=Sunday; LLM-facing context also includes weekday_name.",
             "phase_representation": "Internal phase may be holiday for lower-structure vacation blocks; LLM-facing phase_llm translates this as vacation_period. Public holidays require separate event variables.",
