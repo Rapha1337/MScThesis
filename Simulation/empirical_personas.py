@@ -103,7 +103,17 @@ class EmpiricalPersonaProfile:
         return f"T1_Medoid_C{self.cluster}_{self.participant_id}"
 
     def to_wrapper(self, *, include_pa_schedule: bool = True) -> "EmpiricalPersonaWrapper":
-        """Build the schedule wrapper.\n\n        ``include_pa_schedule=False`` is used by the empirical PA v1.2\n        validation path. In that mode observed T1 MVPA remains available in\n        profile metadata for validation, but it does not create PA blocks in\n        the simulated schedule.\n        """\n        return EmpiricalPersonaWrapper(\n            name=self.persona_id,\n            profile=self,\n            fitness_hours_week=self.fitness_hours_week if include_pa_schedule else 0.0,
+        """Build the schedule wrapper.
+
+        ``include_pa_schedule=False`` is used by the empirical PA v1.2
+        validation path. In that mode observed T1 MVPA remains available in
+        profile metadata for validation, but it does not create PA blocks in
+        the simulated schedule.
+        """
+        return EmpiricalPersonaWrapper(
+            name=self.persona_id,
+            profile=self,
+            fitness_hours_week=self.fitness_hours_week if include_pa_schedule else 0.0,
             social_hours_week=self.social_hours_week,
             work_hours_week=self.workload_hours_per_week,
             carework_hours_week=self.carework_hours_week,
@@ -127,7 +137,8 @@ class EmpiricalPersonaProfile:
                 "high_stress": self.stress_weeks,
                 "holiday": self.holiday_weeks,
             },
-            "reported_mvpa_hours_per_week": self.fitness_hours_week,\n            "reported_total_pa_hours_per_week": self.total_pa_hours_week,
+            "reported_mvpa_hours_per_week": self.fitness_hours_week,
+            "reported_total_pa_hours_per_week": self.total_pa_hours_week,
             "observed_daily_routine_not_used_for_scheduling": dict(self.observed_daily_routine),
         }
 
