@@ -704,7 +704,14 @@ def build_pa_decision_input(
     return payload
 
 def build_pa_decision_user_prompt(pa_decision_input: Mapping[str, Any]) -> str:
-    input_json = json.dumps(pa_decision_input, ensure_ascii=False, separators=(",", ":"))
+    prompt_input = copy.deepcopy(dict(pa_decision_input))
+    if pa_decision_input.get("empirical_pa_v1_2"):
+        daily_context = prompt_input.get("daily_context")
+        if isinstance(daily_context, dict):
+            # Keep the deterministic sampling seed as runtime-only metadata.
+            # LLM2 estimates probability from behavior/context and must not see it.
+            daily_context.pop("seed", None)
+    input_json = json.dumps(prompt_input, ensure_ascii=False, separators=(",", ":"))
     if pa_decision_input.get("empirical_pa_v1_2"):
         return f"""
 INPUT:
