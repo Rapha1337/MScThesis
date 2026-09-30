@@ -77,6 +77,7 @@ from state_assessment import (  # noqa: E402
 )
 
 DEFAULT_OUTPUT_DIR = SIMULATION_DIR / "output" / "full_pa_simulation"
+EMPIRICAL_V1_2_BEHAVIOR_PROMPT_PATH = SIMULATION_DIR / "BehaviorProbability_EmpiricalV1_2_Prompt.md"
 SIMULATION_RUN_MANIFEST_FILENAME = "simulation_run_manifest.json"
 RESOURCE_USAGE_FILENAME = "resource_usage.jsonl"
 DEPRECATED_DECISION_CATEGORIES: tuple[str, ...] = (
@@ -1288,7 +1289,11 @@ def _build_simulation_run_manifest(
             "llm3_assessment_policy": "conservative evidence-based scoring with null preserving previous construct values when current diary evidence is insufficient; full-simulation runtime passes the current LLM2 decision label, planned-PA status, and planned PA summary into LLM3.",
         },
         "prompt_files": {
-            "llm1": str((SIMULATION_DIR / "BehaviorProbability_Prompt.md").relative_to(ROOT_DIR)),
+            "llm1": str((
+                EMPIRICAL_V1_2_BEHAVIOR_PROMPT_PATH
+                if config.empirical_pa_v1_2
+                else SIMULATION_DIR / "BehaviorProbability_Prompt.md"
+            ).relative_to(ROOT_DIR)),
             "llm2": str((
                 EMPIRICAL_V1_2_PA_DECISION_PROMPT_PATH
                 if config.empirical_pa_v1_2
@@ -1553,7 +1558,14 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
     resource_tracker.start_run()
 
     try:
-        behavior_system_prompt = "DRY RUN BEHAVIOR PROMPT" if config.dry_run else load_behavior_probability_prompt()
+        if config.dry_run:
+            behavior_system_prompt = "DRY RUN BEHAVIOR PROMPT"
+        elif config.empirical_pa_v1_2:
+            behavior_system_prompt = load_behavior_probability_prompt(
+                EMPIRICAL_V1_2_BEHAVIOR_PROMPT_PATH
+            )
+        else:
+            behavior_system_prompt = load_behavior_probability_prompt()
         if config.dry_run:
             pa_decision_system_prompt = "DRY RUN PA DECISION PROMPT"
         elif config.empirical_pa_v1_2:
