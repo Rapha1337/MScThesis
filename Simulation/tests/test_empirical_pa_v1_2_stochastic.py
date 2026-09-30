@@ -150,3 +150,49 @@ def test_v1_2_prompt_requires_probability_not_binary_choice_and_classifies_norma
     assert "contextual_pa_probability" in prompt
     assert "reproduzierbar" in prompt
     assert "normales oder gemütliches Spazieren ist **light**" in prompt
+
+
+def test_real_llm2_path_parses_contextual_probability_and_returns_sampled_decision(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import json
+    import run_llm_pa_decision as module
+
+    assessment = _assessment(1.0)
+
+    class _FakeMessage:
+        content = json.dumps(assessment)
+
+    class _FakeChoice:
+        message = _FakeMessage()
+        finish_reason = "stop"
+
+    class _FakeResponse:
+        choices = [_FakeChoice()]
+        usage = {"completion_tokens": 1, "prompt_tokens": 1, "total_tokens": 2}
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            del kwargs
+            return _FakeResponse()
+
+    class _FakeClient:
+        chat = type("Chat", (), {"completions": _FakeCompletions()})()
+
+    monkeypatch.setattr(module, "get_client", lambda: _FakeClient())
+
+    result = module.run_pa_decision_llm(
+        _pa_input(extra_probability=0.35),
+        system_prompt="system",
+        output_dir=tmp_path,
+    )
+
+    assert result["decision_label"] == "extra_activity"
+    assert result["duration_min"] == 35
+    assert result["intensity"] == "light"
+    assert result["contextual_pa_probability"] == pytest.approx(1.0)
+    assert result["behavior_policy_pa_prior"] == pytest.approx(0.35)
+    assert result["sampled_decision_label"] == "extra_activity"
+    assert result["decision_sampling_seed"] == sampling_seed(_pa_input(extra_probability=0.35))
+    assert result["llm2_contextual_assessment"]["contextual_pa_probability"] == pytest.approx(1.0)
