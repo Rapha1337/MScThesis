@@ -131,6 +131,11 @@ def daily_rows_from_trace(
                 "total_pa_minutes": total_pa_minutes,
                 "action_planning_value": calibration.get("action_planning_value"),
                 "action_planning_modifier": calibration.get("modifier_beta_times_z"),
+                "behavior_policy_pa_prior": decision.get("behavior_policy_pa_prior"),
+                "contextual_pa_probability": decision.get("contextual_pa_probability"),
+                "decision_sampling_seed": decision.get("decision_sampling_seed"),
+                "decision_sampling_random_value": decision.get("decision_sampling_random_value"),
+                "sampled_decision_probability": decision.get("sampled_decision_probability"),
                 "psychological_constructs_before": json.dumps(
                     record.get("psychological_constructs_before_update", {}),
                     sort_keys=True,
@@ -216,6 +221,21 @@ def summarize_horizons(
                     "decision_count_no_activity": int(
                         group["decision_label"].eq("skip_activity").sum()
                     ),
+                    "mean_behavior_policy_pa_prior": float(
+                        group["behavior_policy_pa_prior"].dropna().mean()
+                    ) if group["behavior_policy_pa_prior"].notna().any() else math.nan,
+                    "mean_contextual_pa_probability": float(
+                        group["contextual_pa_probability"].dropna().mean()
+                    ) if group["contextual_pa_probability"].notna().any() else math.nan,
+                    "mean_context_probability_shift": float(
+                        (
+                            group["contextual_pa_probability"]
+                            - group["behavior_policy_pa_prior"]
+                        ).dropna().mean()
+                    ) if (
+                        group["contextual_pa_probability"].notna()
+                        & group["behavior_policy_pa_prior"].notna()
+                    ).any() else math.nan,
                 }
             )
 
