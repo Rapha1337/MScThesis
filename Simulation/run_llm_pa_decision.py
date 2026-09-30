@@ -1028,18 +1028,23 @@ def run_pa_decision_llm(
                 expected_persona_id=persona_id,
                 expected_day_index=day_index,
             )
-            result = sample_empirical_v1_2_final_decision(
+            sampled_result = sample_empirical_v1_2_final_decision(
                 contextual_assessment,
                 pa_decision_input=pa_decision_input,
             )
             result = validate_pa_decision_output(
-                result,
+                sampled_result,
                 expected_persona_id=persona_id,
                 expected_day_index=day_index,
                 valid_decision_categories=pa_decision_input.get("valid_decision_categories"),
                 has_planned_pa=False,
                 empirical_pa_v1_2=True,
             )
+            result.update({
+                key: sampled_result[key]
+                for key in DETERMINISTIC_PA_DECISION_METADATA_FIELDS
+                if key in sampled_result
+            })
         else:
             result = parse_and_validate_pa_decision(
                 content,
