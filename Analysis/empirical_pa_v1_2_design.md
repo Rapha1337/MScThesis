@@ -106,22 +106,23 @@ This explicitly avoids treating a temperature-0 language model as if repeated
 binary classifications were Bernoulli draws.
 
 LLM2 also provides conditional outputs for both possible sampled outcomes. If
-PA is sampled, the selected branch supplies `duration_min` and `intensity`
-(light, moderate, or vigorous). If no PA is sampled, duration is 0 and intensity
-is none. Ordinary or leisurely walking is classified as light; walking is
-moderate only when explicitly brisk/effortful.
+PA is sampled, the selected branch supplies `duration_min`. If no PA is sampled,
+duration is 0. No additional light/moderate/vigorous classification is introduced
+in v1.2; this keeps the extension closer to the original MA decision model.
 
 The historical `extra_activity` label is retained for code compatibility; in
 v1.2 it simply means that PA is performed today.
 
 ## Validation outcome
 
-The primary simulated outcome is now directly comparable with T1 MVPA:
+The simulated PA outcome is duration-only:
 
-simulated MVPA h/week =
-sum(moderate minutes + vigorous minutes) / 60 / simulated days * 7
+simulated PA h/week =
+sum(minutes of all actually performed PA) / 60 / simulated days * 7
 
-Light activity is retained as simulated total PA but does not count as MVPA.
+This duration-only simulated PA is compared descriptively with both reported T1
+MVPA and reported T1 total PA. The T1 measures remain validation references and
+are not exposed to the simulation.
 
 The 7-, 30-, and 90-day outcomes remain nested prefixes of one continuous
 90-day trajectory. Correlations across the four medoids are descriptive only.
