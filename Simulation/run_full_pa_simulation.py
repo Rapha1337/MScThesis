@@ -31,6 +31,13 @@ from empirical_personas import (  # noqa: E402
     EmpiricalPersonaWrapper,
     load_empirical_personas,
 )
+from empirical_pa_v1_2 import (  # noqa: E402
+    ACTION_PLANNING_BETA,
+    ACTION_PLANNING_CALIBRATION_DESCRIPTION,
+    ACTION_PLANNING_CALIBRATION_N,
+    ACTION_PLANNING_MEAN,
+    ACTION_PLANNING_SD,
+)
 from psychological_state import (  # noqa: E402
     BACKEND_CONSTRUCT_RANGES,
     build_psychological_state,
@@ -1210,6 +1217,7 @@ def _build_simulation_run_manifest(
             "temperature": config.temperature,
             "top_p": config.top_p,
             "llm_seed": config.llm_seed,
+            "empirical_pa_v1_2": bool(config.empirical_pa_v1_2),
         },
         "models": {
             "llm1": config.model,
@@ -1254,17 +1262,48 @@ def _build_simulation_run_manifest(
             "decision_source": DECISION_SOURCE_LLM2_CONTEXTUAL,
             "llm2_makes_final_contextual_decision": True,
             "pre_llm2_seeded_sampling_active": False,
-            "planned_vs_realized_context": "planned_physical_activity records schedule intent; LLM2 daily_context rewrites planned PA hours as planned_physical_activity with origin-based accessibility until LLM2 decides.",
-            "llm2_raw_psychological_construct_values": "not provided; LLM1 is the sole processor of raw normalized constructs before LLM2 and passes four behavior_policy probabilities.",
+            "planned_vs_realized_context": (
+                "empirical PA v1.2: schedules contain no PA blocks; LLM2 decides daily PA from psychological tendencies and contextual opportunities/constraints."
+                if config.empirical_pa_v1_2
+                else "planned_physical_activity records schedule intent; LLM2 daily_context rewrites planned PA hours as planned_physical_activity with origin-based accessibility until LLM2 decides."
+            ),
+            "llm2_raw_psychological_construct_values": (
+                "not provided; in empirical PA v1.2 individual action planning is neutralized for LLM1 and reintroduced once through the held-out empirical beta calibration before LLM2."
+                if config.empirical_pa_v1_2
+                else "not provided; LLM1 is the sole processor of raw normalized constructs before LLM2 and passes four behavior_policy probabilities."
+            ),
+            "activity_dose_fields": (
+                ["duration_min", "intensity"] if config.empirical_pa_v1_2 else []
+            ),
             "weekday_convention": "Internal weekday is 0=Monday through 6=Sunday; LLM-facing context also includes weekday_name.",
             "phase_representation": "Internal phase may be holiday for lower-structure vacation blocks; LLM-facing phase_llm translates this as vacation_period. Public holidays require separate event variables.",
             "llm3_assessment_policy": "conservative evidence-based scoring with null preserving previous construct values when current diary evidence is insufficient; full-simulation runtime passes the current LLM2 decision label, planned-PA status, and planned PA summary into LLM3.",
         },
         "prompt_files": {
             "llm1": str((SIMULATION_DIR / "BehaviorProbability_Prompt.md").relative_to(ROOT_DIR)),
-            "llm2": str((SIMULATION_DIR / "PADecision_Prompt.md").relative_to(ROOT_DIR)),
-            "few_shot": str((SIMULATION_DIR / "PADecision_FewShot.md").relative_to(ROOT_DIR)),
+            "llm2": str((
+                EMPIRICAL_V1_2_PA_DECISION_PROMPT_PATH
+                if config.empirical_pa_v1_2
+                else SIMULATION_DIR / "PADecision_Prompt.md"
+            ).relative_to(ROOT_DIR)),
+            "few_shot": str((
+                EMPIRICAL_V1_2_PA_DECISION_FEWSHOT_PATH
+                if config.empirical_pa_v1_2
+                else SIMULATION_DIR / "PADecision_FewShot.md"
+            ).relative_to(ROOT_DIR)),
         },
+        "empirical_pa_v1_2_calibration": (
+            {
+                "description": ACTION_PLANNING_CALIBRATION_DESCRIPTION,
+                "standardized_beta": ACTION_PLANNING_BETA,
+                "action_planning_mean": ACTION_PLANNING_MEAN,
+                "action_planning_sd": ACTION_PLANNING_SD,
+                "calibration_n": ACTION_PLANNING_CALIBRATION_N,
+                "observed_t1_mvpa_role": "validation_only",
+            }
+            if config.empirical_pa_v1_2
+            else None
+        ),
         "output_files": dict(output_files),
         "notes": {"diary_entries_are_simulation_artifacts": True},
     }
