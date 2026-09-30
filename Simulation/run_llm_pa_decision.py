@@ -25,6 +25,12 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from resource_usage import extract_token_usage  # noqa: E402
+from empirical_pa_v1_2 import (  # noqa: E402
+    EMPIRICAL_PA_V1_2_MODE,
+    calibrate_unplanned_behavior_policy,
+    extract_action_planning,
+    neutralize_action_planning_for_llm1,
+)
 from run_behavior_probability_estimation import (  # noqa: E402
     DEFAULT_PROMPT_PATH as DEFAULT_BEHAVIOR_PROMPT_PATH,
     load_behavior_probability_prompt,
@@ -36,6 +42,8 @@ DEFAULT_CONTEXT_PATH = SIMULATION_DIR / "output" / "llm_day_contexts_heterogeneo
 FALLBACK_CONTEXT_PATH = SIMULATION_DIR / "output" / "llm_day_contexts.json"
 DEFAULT_PA_DECISION_PROMPT_PATH = SIMULATION_DIR / "PADecision_Prompt.md"
 DEFAULT_PA_DECISION_FEWSHOT_PATH = SIMULATION_DIR / "PADecision_FewShot.md"
+EMPIRICAL_V1_2_PA_DECISION_PROMPT_PATH = SIMULATION_DIR / "PADecision_EmpiricalV1_2_Prompt.md"
+EMPIRICAL_V1_2_PA_DECISION_FEWSHOT_PATH = SIMULATION_DIR / "PADecision_EmpiricalV1_2_FewShot.md"
 OUTPUT_DIR = SIMULATION_DIR / "output"
 COMBINED_OUTPUT_PATH = OUTPUT_DIR / "llm_pa_decision_pipeline_all_agents.json"
 DAILY_DECISION_LOG_PATH = OUTPUT_DIR / "llm_pa_decision_daily_log.csv"
@@ -74,6 +82,19 @@ EXPECTED_PA_DECISION_FIELDS = frozenset(
         "diary_entry",
     }
 )
+EXPECTED_PA_DECISION_FIELDS_EMPIRICAL_V1_2 = frozenset(
+    {
+        "persona_id",
+        "day_index",
+        "decision_code",
+        "decision_label",
+        "duration_min",
+        "intensity",
+        "rationale_short",
+        "diary_entry",
+    }
+)
+EMPIRICAL_V1_2_INTENSITIES = frozenset({"none", "light", "moderate", "vigorous"})
 DETERMINISTIC_PA_DECISION_METADATA_FIELDS = frozenset(
     {
         "activity_performed",
@@ -107,6 +128,8 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "day_index",
     "decision_code",
     "decision_label",
+    "duration_min",
+    "intensity",
     "activity_done",
     "activity_performed",
     "diary_entry_generated_for_simulation",
