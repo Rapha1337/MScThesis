@@ -196,3 +196,18 @@ def test_real_llm2_path_parses_contextual_probability_and_returns_sampled_decisi
     assert result["sampled_decision_label"] == "extra_activity"
     assert result["decision_sampling_seed"] == sampling_seed(_pa_input(extra_probability=0.35))
     assert result["llm2_contextual_assessment"]["contextual_pa_probability"] == pytest.approx(1.0)
+
+
+def test_sampling_seed_is_runtime_only_and_not_exposed_to_llm2() -> None:
+    import json
+    from run_llm_pa_decision import build_pa_decision_user_prompt
+
+    pa_input = _pa_input()
+    assert pa_input["daily_context"]["seed"] == 1098547461
+
+    prompt = build_pa_decision_user_prompt(pa_input)
+    serialized_input = prompt.split("INPUT:\n", 1)[1].split("\n\nIMPORTANT:", 1)[0]
+    prompt_payload = json.loads(serialized_input)
+
+    assert "seed" not in prompt_payload["daily_context"]
+    assert prompt_payload["behavior_policy"]["extra_activity"] == pytest.approx(0.35)
