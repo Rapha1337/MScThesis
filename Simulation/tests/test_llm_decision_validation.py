@@ -1119,7 +1119,6 @@ def test_empirical_v1_2_pipeline_neutralizes_ap_then_applies_empirical_weight(
             "decision_code": 3,
             "decision_label": "extra_activity",
             "duration_min": 45,
-            "intensity": "moderate",
             "rationale_short": "Context supports activity.",
             "diary_entry": "I was active for about 45 minutes.",
         }
