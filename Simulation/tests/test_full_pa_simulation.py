@@ -1118,6 +1118,14 @@ def test_empirical_pa_v1_2_removes_mvpa_from_schedule_and_records_activity_dose(
             assert decision["duration_min"] == 0
             assert decision["intensity"] == "none"
 
+    compact_payload = json.loads(
+        (config.output_dir / "contexts_compact.json").read_text(encoding="utf-8")
+    )
+    compact_serialized = json.dumps(compact_payload)
+    assert "reported_mvpa_hours_per_week" not in compact_serialized
+    assert "fitness_hours_week" not in compact_serialized
+    assert "profile_metadata" not in compact_serialized
+
     metadata = json.loads(
         (config.output_dir / "persona_metadata.json").read_text(encoding="utf-8")
     )
