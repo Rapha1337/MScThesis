@@ -642,6 +642,7 @@ def build_pa_decision_input(
     planned_activity: Any | None = None,
     *,
     sampling_seed: int | None = None,
+    empirical_pa_v1_2_metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the exact JSON object passed to LLM2.
 
@@ -659,6 +660,11 @@ def build_pa_decision_input(
         raise ValueError("agent_context must contain day_index as an integer.")
 
     planned_physical_activity = _strip_raw_psychological_fields(planned_activity)
+    empirical_v1_2_enabled = empirical_pa_v1_2_metadata is not None
+    if empirical_v1_2_enabled and planned_physical_activity is not None:
+        raise ValueError(
+            "Empirical PA v1.2 must not receive schedule-derived planned physical activity."
+        )
     behavior_policy_raw = validate_behavior_policy(behavior_policy)
     has_planned_pa = planned_physical_activity is not None
     valid_categories = derive_valid_decision_categories(has_planned_pa=has_planned_pa)
@@ -673,11 +679,17 @@ def build_pa_decision_input(
         "planned_physical_activity": planned_physical_activity,
         "was_physical_activity_planned_today": has_planned_pa,
         "daily_context": prepare_daily_context_for_pa_decision(agent_context, planned_physical_activity),
+        "empirical_pa_v1_2": (
+            {"enabled": True, **_strip_raw_psychological_fields(empirical_pa_v1_2_metadata)}
+            if empirical_v1_2_enabled
+            else None
+        ),
     }
 
 def build_pa_decision_user_prompt(pa_decision_input: Mapping[str, Any]) -> str:
     input_json = json.dumps(pa_decision_input, ensure_ascii=False, separators=(",", ":"))
-    return f"""
+    if pa_decision_input.get("empirical_pa_v1_2"):
+        return f"""\nINPUT:\n{input_json}\n\nIMPORTANT:\nThis is empirical PA model v1.2. No physical-activity block is pre-scheduled.\nMake the final decision yourself from valid_decision_categories using behavior_policy\nas a psychological tendency and daily_context as the current opportunity/constraint\nstructure. If PA occurs, return a plausible duration_min and intensity exactly as\nrequired by the v1.2 schema. Do not infer or reconstruct observed T1 MVPA.\nReturn exactly one valid JSON object and no other text.\n""".strip()\n\n    return f"""
 INPUT:
 {input_json}
 
