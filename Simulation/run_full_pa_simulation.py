@@ -40,6 +40,8 @@ from resource_usage import ResourceUsageEngine  # noqa: E402
 from run_llm_pa_decision import (  # noqa: E402
     LLM1_MAX_TOKENS,
     LLM2_MAX_TOKENS,
+    EMPIRICAL_V1_2_PA_DECISION_PROMPT_PATH,
+    EMPIRICAL_V1_2_PA_DECISION_FEWSHOT_PATH,
     PA_DECISION_CODEBOOK,
     MODEL_NAME,
     TEMPERATURE,
@@ -150,6 +152,8 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "calendar_date",
     "decision_code",
     "decision_label",
+    "duration_min",
+    "intensity",
     "activity_done",
     "activity_performed",
     "diary_entry_generated_for_simulation",
@@ -221,6 +225,7 @@ class FullSimulationConfig:
     top_p: float = TOP_P
     llm_seed: int | None = None
     persona_input_file: Path | None = None
+    empirical_pa_v1_2: bool = False
 
 
 @dataclass
@@ -312,6 +317,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=(
             "CSV containing complete empirical persona rows, for example the "
             "primary medoid output from the T1 clustering analysis."
+        ),
+    )
+    parser.add_argument(
+        "--empirical-pa-v1-2",
+        action="store_true",
+        help=(
+            "Use the revised empirical PA pathway: observed T1 MVPA is validation-only, "
+            "no PA blocks are inserted into schedules, and action planning is weighted "
+            "once using the held-out T1 calibration."
         ),
     )
     parser.add_argument("--daily-log-path", type=Path, default=None)
@@ -417,6 +431,11 @@ def config_from_args(args: argparse.Namespace) -> FullSimulationConfig:
         raise ValueError("--n-personas must be >= 1")
     if args.n_days < 1:
         raise ValueError("--n-days must be >= 1")
+    if bool(getattr(args, "empirical_pa_v1_2", False)) and args.physical_activity_hours_per_week is not None:
+        raise ValueError(
+            "--physical-activity-hours-per-week cannot be used with --empirical-pa-v1-2; "
+            "observed/input PA must not parameterize the v1.2 schedule."
+        )
     return FullSimulationConfig(
         n_personas=int(args.n_personas),
         n_days=int(args.n_days),
@@ -442,6 +461,7 @@ def config_from_args(args: argparse.Namespace) -> FullSimulationConfig:
         persona_input_file=(
             Path(args.persona_input_file) if args.persona_input_file is not None else None
         ),
+        empirical_pa_v1_2=bool(getattr(args, "empirical_pa_v1_2", False)),
     )
 
 
