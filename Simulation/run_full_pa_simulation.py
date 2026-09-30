@@ -1804,6 +1804,13 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     ],
                     "behavior_policy": dict(pipeline_record["behavior_policy"]),
                     "behavior_policy_raw": dict(pipeline_record["behavior_policy_raw"]),
+                    "behavior_policy_before_empirical_calibration": dict(
+                        pipeline_record.get(
+                            "behavior_policy_before_empirical_calibration",
+                            pipeline_record["behavior_policy_raw"],
+                        )
+                    ),
+                    "empirical_pa_v1_2": pipeline_record.get("empirical_pa_v1_2"),
                     "decision_context_has_planned_pa": bool(
                         pipeline_record["decision_context_has_planned_pa"]
                     ),
@@ -1902,6 +1909,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 "start_date": config.start_date.isoformat(),
                 "base_seed": config.base_seed,
                 "dry_run": config.dry_run,
+                "empirical_pa_v1_2": bool(config.empirical_pa_v1_2),
                 "persona_metadata_file": str(persona_metadata_path),
                 "output_files": dict(output_files),
             },
