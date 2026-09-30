@@ -668,7 +668,7 @@ def build_pa_decision_input(
     behavior_policy_raw = validate_behavior_policy(behavior_policy)
     has_planned_pa = planned_physical_activity is not None
     valid_categories = derive_valid_decision_categories(has_planned_pa=has_planned_pa)
-    return {
+    payload = {
         "persona_id": persona_id,
         "day_index": int(day_index),
         "behavior_policy": behavior_policy_raw,
@@ -679,12 +679,13 @@ def build_pa_decision_input(
         "planned_physical_activity": planned_physical_activity,
         "was_physical_activity_planned_today": has_planned_pa,
         "daily_context": prepare_daily_context_for_pa_decision(agent_context, planned_physical_activity),
-        "empirical_pa_v1_2": (
-            {"enabled": True, **_strip_raw_psychological_fields(empirical_pa_v1_2_metadata)}
-            if empirical_v1_2_enabled
-            else None
-        ),
     }
+    if empirical_v1_2_enabled:
+        payload["empirical_pa_v1_2"] = {
+            "enabled": True,
+            **_strip_raw_psychological_fields(empirical_pa_v1_2_metadata),
+        }
+    return payload
 
 def build_pa_decision_user_prompt(pa_decision_input: Mapping[str, Any]) -> str:
     input_json = json.dumps(pa_decision_input, ensure_ascii=False, separators=(",", ":"))
