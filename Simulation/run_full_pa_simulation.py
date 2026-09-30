@@ -1253,8 +1253,16 @@ def _build_simulation_run_manifest(
             "psychological_construct_update_null_handling": "keep_previous",
         },
         "decision_schema": {
-            "active_categories": [PA_DECISION_CODEBOOK[key] for key in sorted(PA_DECISION_CODEBOOK)],
-            "successful_activity_categories": sorted(SUCCESSFUL_PA_DECISION_LABELS),
+            "active_categories": (
+                ["skip_activity", "extra_activity"]
+                if config.empirical_pa_v1_2
+                else [PA_DECISION_CODEBOOK[key] for key in sorted(PA_DECISION_CODEBOOK)]
+            ),
+            "successful_activity_categories": (
+                ["extra_activity"]
+                if config.empirical_pa_v1_2
+                else sorted(SUCCESSFUL_PA_DECISION_LABELS)
+            ),
             "unsuccessful_or_no_activity_categories": sorted(UNSUCCESSFUL_PA_DECISION_LABELS),
             "deprecated_categories": list(DEPRECATED_DECISION_CATEGORIES),
             "app_ignored_active": False,
@@ -1512,6 +1520,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
         "persona_input_file": (
             str(config.persona_input_file) if config.persona_input_file is not None else None
         ),
+        "empirical_pa_v1_2": bool(config.empirical_pa_v1_2),
     }
     if not config.resume:
         _write_json(config.output_dir / "run_config.json", run_config_payload)
