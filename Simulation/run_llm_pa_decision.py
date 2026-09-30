@@ -742,6 +742,7 @@ def validate_pa_decision_output(
     expected_decision_label: str | None = None,
     valid_decision_categories: Sequence[str] | None = None,
     has_planned_pa: bool | None = None,
+    empirical_pa_v1_2: bool = False,
 ) -> dict[str, Any]:
     core_payload = {
         key: value
@@ -749,9 +750,14 @@ def validate_pa_decision_output(
         if key not in DETERMINISTIC_PA_DECISION_METADATA_FIELDS
     }
     actual_fields = set(core_payload)
-    if actual_fields != EXPECTED_PA_DECISION_FIELDS:
-        missing = sorted(EXPECTED_PA_DECISION_FIELDS - actual_fields)
-        extra = sorted(actual_fields - EXPECTED_PA_DECISION_FIELDS)
+    expected_fields = (
+        EXPECTED_PA_DECISION_FIELDS_EMPIRICAL_V1_2
+        if empirical_pa_v1_2
+        else EXPECTED_PA_DECISION_FIELDS
+    )
+    if actual_fields != expected_fields:
+        missing = sorted(expected_fields - actual_fields)
+        extra = sorted(actual_fields - expected_fields)
         raise ValueError(f"PA decision fields mismatch. Missing: {missing}; extra: {extra}.")
 
     persona_id = _require_non_empty_string(core_payload, "persona_id")
@@ -802,16 +808,47 @@ def validate_pa_decision_output(
     rationale_short = _require_non_empty_string(core_payload, "rationale_short")
     diary_entry = _require_non_empty_string(core_payload, "diary_entry")
 
-    return add_pa_decision_metadata(
-        {
-            "persona_id": persona_id,
-            "day_index": int(day_index),
-            "decision_code": int(decision_code),
-            "decision_label": expected_label,
-            "rationale_short": rationale_short,
-            "diary_entry": diary_entry,
-        }
-    )
+    validated = {
+        "persona_id": persona_id,
+        "day_index": int(day_index),
+        "decision_code": int(decision_code),
+        "decision_label": expected_label,
+        "rationale_short": rationale_short,
+        "diary_entry": diary_entry,
+    }
+    if empirical_pa_v1_2:
+        raw_duration = core_payload["duration_min"]
+        if isinstance(raw_duration, bool) or not isinstance(raw_duration, (int, float)):
+            raise ValueError("duration_min must be numeric in empirical PA v1.2.")
+        duration_float = float(raw_duration)
+        if not math.isfinite(duration_float) or not duration_float.is_integer():
+            raise ValueError("duration_min must be a finite whole number in empirical PA v1.2.")
+        duration_min = int(duration_float)
+        intensity = str(core_payload["intensity"]).strip().lower()
+        if intensity not in EMPIRICAL_V1_2_INTENSITIES:
+            raise ValueError(
+                f"intensity must be one of {sorted(EMPIRICAL_V1_2_INTENSITIES)}."
+            )
+        if expected_label == "skip_activity":
+            if duration_min != 0 or intensity != "none":
+                raise ValueError(
+                    "skip_activity requires duration_min=0 and intensity=none in empirical PA v1.2."
+                )
+        elif expected_label == "extra_activity":
+            if not 10 <= duration_min <= 240:
+                raise ValueError(
+                    "Performed PA requires duration_min between 10 and 240 in empirical PA v1.2."
+                )
+            if intensity == "none":
+                raise ValueError("Performed PA requires light, moderate, or vigorous intensity.")
+        else:
+            raise ValueError(
+                "Empirical PA v1.2 only supports skip_activity or extra_activity."
+            )
+        validated["duration_min"] = duration_min
+        validated["intensity"] = intensity
+
+    return add_pa_decision_metadata(validated)
 
 
 def parse_and_validate_pa_decision(
@@ -822,6 +859,7 @@ def parse_and_validate_pa_decision(
     expected_decision_label: str | None = None,
     valid_decision_categories: Sequence[str] | None = None,
     has_planned_pa: bool | None = None,
+    empirical_pa_v1_2: bool = False,
 ) -> dict[str, Any]:
     return validate_pa_decision_output(
         parse_pa_decision_json(raw),
@@ -830,6 +868,7 @@ def parse_and_validate_pa_decision(
         expected_decision_label=expected_decision_label,
         valid_decision_categories=valid_decision_categories,
         has_planned_pa=has_planned_pa,
+        empirical_pa_v1_2=empirical_pa_v1_2,
     )
 
 
