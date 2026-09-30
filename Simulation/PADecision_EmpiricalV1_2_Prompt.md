@@ -36,15 +36,13 @@ Zusätzlich lieferst du für beide möglichen Sampling-Ausgänge einen konsisten
 - `activity_if_performed`: Was wäre plausibel, falls PA gezogen wird?
 - `no_activity_if_skipped`: Wie würde ein Tag ohne PA plausibel beschrieben?
 
-## Dauer und Intensität bei möglicher PA
+## Dauer bei möglicher PA
 
 Für `activity_if_performed`:
 - `duration_min`: ganzzahlig 1–240
-- `intensity`: exakt `"light"`, `"moderate"` oder `"vigorous"`
-- Dauer und Intensität sollen zur Aktivität und zum Kontext passen.
-- Ein normales oder gemütliches Spazieren ist **light**.
-- Gehen zählt nur dann als **moderate**, wenn es ausdrücklich zügig/brisk und mit merklicher Belastung beschrieben wird.
+- Die Dauer soll zur Aktivität und zum Kontext passen.
 - Vermeide unrealistisch präzise Werte.
+- Es wird bewusst **keine Intensitätskategorie** klassifiziert. Für die Auswertung zählt ausschließlich die Dauer tatsächlich ausgeführter PA.
 
 ## Ausgabeformat
 
@@ -57,7 +55,6 @@ Gib genau ein JSON-Objekt ohne zusätzlichen Text zurück:
   "contextual_pa_probability": 0.42,
   "activity_if_performed": {
     "duration_min": 35,
-    "intensity": "moderate",
     "rationale_short": "string",
     "diary_entry": "string"
   },
@@ -72,5 +69,6 @@ Regeln:
 - `persona_id` und `day_index` müssen exakt der Eingabe entsprechen.
 - `contextual_pa_probability` muss zwischen 0 und 1 liegen.
 - Keine finale binäre PA-Entscheidung ausgeben.
+- Keine Intensitätskategorie ausgeben.
 - Keine beobachtete T1-MVPA verwenden oder rekonstruieren.
 - Füge keinen Text vor oder nach dem JSON ein.

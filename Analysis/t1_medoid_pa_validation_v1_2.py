@@ -1,10 +1,10 @@
 """Empirical PA v1.2 correspondence analysis for the four T1 medoid personas.
 
 This analysis removes observed medoid MVPA from schedule generation. The full
-simulation contains no pre-scheduled PA blocks. LLM2 decides whether PA occurs
-from the current psychological tendency and day context, and reports duration
-and intensity. Moderate plus vigorous simulated minutes are compared directly
-with observed T1 MVPA hours/week.
+simulation contains no pre-scheduled PA blocks. LLM2 estimates a contextual PA
+probability and, if PA is sampled, reports duration only. All minutes of actually
+performed simulated PA are summed without an additional intensity classification
+and compared descriptively with the observed T1 PA reference variables.
 
 One continuous 90-day trajectory is generated per persona; 7-, 30-, and 90-day
 results are nested prefixes.
@@ -60,8 +60,6 @@ from t1_medoid_pa_validation import (  # noqa: E402
 )
 
 DEFAULT_OUTPUT_DIR = ROOT / "Analysis/results_t1_medoid_pa_validation_v1_2"
-VALID_INTENSITIES = {"none", "light", "moderate", "vigorous"}
-
 
 def daily_rows_from_trace(
     trace: Mapping[str, Any],
@@ -88,27 +86,20 @@ def daily_rows_from_trace(
         decision = dict(record["pa_decision"])
         decision_label = str(decision["decision_label"])
         duration_min = int(decision.get("duration_min", 0))
-        intensity = str(decision.get("intensity", "none")).strip().lower()
-        if intensity not in VALID_INTENSITIES:
-            raise ValueError(f"Invalid v1.2 intensity {intensity!r}.")
         performed = bool(record["closed_loop_update"]["activity_done"])
 
         if decision_label == "skip_activity":
-            if performed or duration_min != 0 or intensity != "none":
+            if performed or duration_min != 0:
                 raise ValueError("Invalid no-activity record in empirical PA v1.2.")
         elif decision_label == "extra_activity":
-            if not performed or duration_min <= 0 or intensity == "none":
+            if not performed or duration_min <= 0:
                 raise ValueError("Invalid performed-activity record in empirical PA v1.2.")
         else:
             raise ValueError(
                 f"Empirical PA v1.2 received unsupported decision {decision_label!r}."
             )
 
-        mvpa_minutes = (
-            float(duration_min) if intensity in {"moderate", "vigorous"} else 0.0
-        )
-        light_minutes = float(duration_min) if intensity == "light" else 0.0
-        total_pa_minutes = float(duration_min) if performed else 0.0
+        pa_minutes = float(duration_min) if performed else 0.0
         calibration = record.get("empirical_pa_v1_2") or {}
         metadata = lookup[persona_id]
 
@@ -125,10 +116,7 @@ def daily_rows_from_trace(
                 "decision_label": decision_label,
                 "activity_performed": performed,
                 "duration_min": duration_min,
-                "intensity": intensity,
-                "mvpa_minutes": mvpa_minutes,
-                "light_pa_minutes": light_minutes,
-                "total_pa_minutes": total_pa_minutes,
+                "pa_minutes": pa_minutes,
                 "action_planning_value": calibration.get("action_planning_value"),
                 "action_planning_modifier": calibration.get("modifier_beta_times_z"),
                 "behavior_policy_pa_prior": decision.get("behavior_policy_pa_prior"),
@@ -160,7 +148,7 @@ def summarize_horizons(
     daily: pd.DataFrame,
     empirical: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Calculate nested-prefix v1.2 outcomes in comparable MVPA units."""
+    """Calculate nested-prefix v1.2 outcomes from duration-only simulated PA."""
     output: list[dict[str, Any]] = []
     expected_personas = set(empirical["persona_id"])
 
@@ -177,13 +165,12 @@ def summarize_horizons(
             meta = empirical.loc[empirical["persona_id"] == persona_id].iloc[0]
             active = group["activity_performed"].astype(bool)
             active_days = int(active.sum())
-            mvpa_minutes = float(group["mvpa_minutes"].sum())
-            light_minutes = float(group["light_pa_minutes"].sum())
-            total_pa_minutes = float(group["total_pa_minutes"].sum())
-            simulated_mvpa_h_week = mvpa_minutes / 60.0 / horizon * 7.0
-            simulated_total_pa_h_week = total_pa_minutes / 60.0 / horizon * 7.0
+            pa_minutes = float(group["pa_minutes"].sum())
+            simulated_pa_h_week = pa_minutes / 60.0 / horizon * 7.0
             empirical_mvpa = float(meta["empirical_mvpa_hours_week"])
-            error = simulated_mvpa_h_week - empirical_mvpa
+            empirical_total_pa = float(meta["empirical_total_pa_hours_week"])
+            mvpa_reference_error = simulated_pa_h_week - empirical_mvpa
+            total_pa_reference_error = simulated_pa_h_week - empirical_total_pa
 
             output.append(
                 {
@@ -193,10 +180,12 @@ def summarize_horizons(
                     "persona_id": persona_id,
                     "occupation": meta["occupation"],
                     "empirical_mvpa_hours_week": empirical_mvpa,
-                    "simulated_mvpa_hours_week": simulated_mvpa_h_week,
-                    "mvpa_error_hours_week": error,
-                    "absolute_mvpa_error_hours_week": abs(error),
-                    "simulated_total_pa_hours_week": simulated_total_pa_h_week,
+                    "empirical_total_pa_hours_week": empirical_total_pa,
+                    "simulated_pa_hours_week": simulated_pa_h_week,
+                    "error_vs_empirical_mvpa_hours_week": mvpa_reference_error,
+                    "absolute_error_vs_empirical_mvpa_hours_week": abs(mvpa_reference_error),
+                    "error_vs_empirical_total_pa_hours_week": total_pa_reference_error,
+                    "absolute_error_vs_empirical_total_pa_hours_week": abs(total_pa_reference_error),
                     "active_days": active_days,
                     "active_days_per_week": active_days / horizon * 7.0,
                     "active_day_proportion": active_days / horizon,
@@ -204,13 +193,6 @@ def summarize_horizons(
                         float(group.loc[active, "duration_min"].mean())
                         if active_days
                         else 0.0
-                    ),
-                    "light_minutes": light_minutes,
-                    "moderate_minutes": float(
-                        group.loc[group["intensity"].eq("moderate"), "duration_min"].sum()
-                    ),
-                    "vigorous_minutes": float(
-                        group.loc[group["intensity"].eq("vigorous"), "duration_min"].sum()
                     ),
                     "normal_days": int(group["phase"].eq("normal").sum()),
                     "high_stress_days": int(group["phase"].eq("high_stress").sum()),
@@ -244,7 +226,7 @@ def summarize_horizons(
         "empirical_mvpa_hours_week"
     ].rank(method="average", ascending=False)
     summary["simulated_rank"] = summary.groupby("horizon_days")[
-        "simulated_mvpa_hours_week"
+        "simulated_pa_hours_week"
     ].rank(method="average", ascending=False)
     return summary
 
@@ -262,15 +244,16 @@ def _correlation(
 
 def calculate_correlations(summary: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
-    metrics = (
-        ("simulated_mvpa_hours_week", "spearman", "primary"),
-        ("simulated_mvpa_hours_week", "pearson", "secondary_descriptive"),
-        ("active_days_per_week", "spearman", "secondary_descriptive"),
-        ("simulated_total_pa_hours_week", "spearman", "secondary_descriptive"),
+    comparisons = (
+        ("empirical_mvpa_hours_week", "simulated_pa_hours_week", "spearman", "primary"),
+        ("empirical_mvpa_hours_week", "simulated_pa_hours_week", "pearson", "secondary_descriptive"),
+        ("empirical_total_pa_hours_week", "simulated_pa_hours_week", "spearman", "secondary_descriptive"),
+        ("empirical_total_pa_hours_week", "simulated_pa_hours_week", "pearson", "secondary_descriptive"),
+        ("empirical_mvpa_hours_week", "active_days_per_week", "spearman", "secondary_descriptive"),
     )
     for horizon, group in summary.groupby("horizon_days", sort=True):
-        for metric, method, role in metrics:
-            complete = group[["empirical_mvpa_hours_week", metric]].dropna()
+        for empirical_metric, simulated_metric, method, role in comparisons:
+            complete = group[[empirical_metric, simulated_metric]].dropna()
             coefficient, pvalue = _correlation(
                 complete.iloc[:, 0], complete.iloc[:, 1], method
             )
@@ -278,10 +261,10 @@ def calculate_correlations(summary: pd.DataFrame) -> pd.DataFrame:
                 {
                     "horizon_days": int(horizon),
                     "n_personas": len(complete),
-                    "empirical_variable": "empirical_mvpa_hours_week",
-                    "simulated_variable": metric,
+                    "empirical_variable": empirical_metric,
+                    "simulated_variable": simulated_metric,
                     "method": method,
-                    "analysis_stage": "post_decision_v1_2",
+                    "analysis_stage": "post_decision_v1_2_duration_only",
                     "role": role,
                     "coefficient": coefficient,
                     "exploratory_p_value": pvalue,
@@ -336,9 +319,10 @@ def build_report(
         ),
         "",
         (
-            "Observed medoid T1 MVPA is validation-only in v1.2. It is retained for "
-            "the final comparison but is not passed into schedule generation, LLM1, "
-            "or LLM2. Therefore there is no input-informed scheduler PA baseline."
+            "Observed medoid T1 MVPA and total PA are validation-only in v1.2. They "
+            "are retained for the final comparison but are not passed into schedule "
+            "generation, LLM1, or LLM2. Therefore there is no input-informed scheduler "
+            "PA baseline."
         ),
         "",
         "## Action-planning calibration",
@@ -365,23 +349,26 @@ def build_report(
         "## Primary outcome",
         "",
         (
-            "LLM2 reports duration and intensity for each performed activity. "
-            "Simulated MVPA equals moderate plus vigorous minutes, normalized to "
-            "hours/week. Light activity does not count toward simulated MVPA."
+            "LLM2 reports only duration for each performed activity. The simulation "
+            "does not introduce an additional light/moderate/vigorous classification. "
+            "All actually performed PA minutes are normalized to hours/week and compared "
+            "descriptively with the T1 MVPA and total-PA reference values."
         ),
         "",
-        "| horizon | Spearman empirical vs simulated MVPA | Pearson empirical vs simulated MVPA |",
+        "| horizon | Spearman T1 MVPA vs simulated PA duration | Pearson T1 MVPA vs simulated PA duration |",
         "|---:|---:|---:|",
     ]
 
     for horizon in HORIZONS:
         subset = correlations[correlations["horizon_days"].eq(horizon)]
         spear = subset[
-            subset["simulated_variable"].eq("simulated_mvpa_hours_week")
+            subset["empirical_variable"].eq("empirical_mvpa_hours_week")
+            & subset["simulated_variable"].eq("simulated_pa_hours_week")
             & subset["method"].eq("spearman")
         ].iloc[0]["coefficient"]
         pear = subset[
-            subset["simulated_variable"].eq("simulated_mvpa_hours_week")
+            subset["empirical_variable"].eq("empirical_mvpa_hours_week")
+            & subset["simulated_variable"].eq("simulated_pa_hours_week")
             & subset["method"].eq("pearson")
         ].iloc[0]["coefficient"]
         lines.append(f"| {horizon} | {_fmt(spear)} | {_fmt(pear)} |")
@@ -402,8 +389,9 @@ def build_report(
             "cluster",
             "participant_id",
             "empirical_mvpa_hours_week",
-            "simulated_mvpa_hours_week",
-            "mvpa_error_hours_week",
+            "empirical_total_pa_hours_week",
+            "simulated_pa_hours_week",
+            "error_vs_empirical_mvpa_hours_week",
             "active_days_per_week",
             "mean_duration_min_active_day",
             "normal_days",
@@ -420,8 +408,9 @@ def build_report(
         (
             "The four medoids are a deliberately small descriptive sample. T1 MVPA is "
             "self-reported baseline behavior, whereas the simulation evolves over time. "
-            "LLM-generated duration and intensity are structured simulation outputs, not "
-            "objective activity measurements. The action-planning calibration is a model "
+            "LLM-generated duration is a structured simulation output, not an objective "
+            "activity measurement. No additional intensity classification is imposed. "
+            "The action-planning calibration is a model "
             "mapping choice informed by the T1 association rather than a directly "
             "estimated daily transition probability. The cross-sectional T1 coefficient "
             "is applied to evolving simulated action-planning states, which is an explicit "
@@ -575,7 +564,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "observed_t1_mvpa_role": "validation_only",
         "pa_schedule_generation": "disabled",
         "primary_empirical_metric": "pa_mvpa_hours_per_week",
-        "primary_simulated_metric": "simulated_mvpa_hours_week",
+        "primary_simulated_metric": "simulated_pa_hours_week",
         "action_planning_standardized_beta": ACTION_PLANNING_BETA,
         "action_planning_calibration_n": ACTION_PLANNING_CALIBRATION_N,
     }

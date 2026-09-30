@@ -73,7 +73,6 @@ def _assessment(probability: float) -> dict:
         "contextual_pa_probability": probability,
         "activity_if_performed": {
             "duration_min": 35,
-            "intensity": "light",
             "rationale_short": "Free time makes a short light activity plausible.",
             "diary_entry": "I went for a relaxed 35-minute walk.",
         },
@@ -92,7 +91,6 @@ def test_contextual_assessment_validates_probability_and_conditional_branches() 
     )
     assert validated["contextual_pa_probability"] == pytest.approx(0.42)
     assert validated["activity_if_performed"]["duration_min"] == 35
-    assert validated["activity_if_performed"]["intensity"] == "light"
 
 
 @pytest.mark.parametrize("bad_probability", [-0.01, 1.01])
@@ -128,11 +126,9 @@ def test_probability_zero_always_skips_and_probability_one_always_performs() -> 
 
     assert skipped["decision_label"] == "skip_activity"
     assert skipped["duration_min"] == 0
-    assert skipped["intensity"] == "none"
 
     assert performed["decision_label"] == "extra_activity"
     assert performed["duration_min"] == 35
-    assert performed["intensity"] == "light"
 
 
 def test_empirical_v1_2_input_records_stochastic_decision_source() -> None:
@@ -142,14 +138,14 @@ def test_empirical_v1_2_input_records_stochastic_decision_source() -> None:
     assert pa_input["planned_physical_activity"] is None
 
 
-def test_v1_2_prompt_requires_probability_not_binary_choice_and_classifies_normal_walk_as_light() -> None:
+def test_v1_2_prompt_requires_probability_and_duration_only_output() -> None:
     prompt = (SIMULATION_DIR / "PADecision_EmpiricalV1_2_Prompt.md").read_text(
         encoding="utf-8"
     )
     assert "entscheidest deshalb **nicht direkt**" in prompt
     assert "contextual_pa_probability" in prompt
     assert "reproduzierbar" in prompt
-    assert "normales oder gemütliches Spazieren ist **light**" in prompt
+    assert "keine Intensitätskategorie" in prompt
 
 
 def test_real_llm2_path_parses_contextual_probability_and_returns_sampled_decision(
@@ -190,7 +186,6 @@ def test_real_llm2_path_parses_contextual_probability_and_returns_sampled_decisi
 
     assert result["decision_label"] == "extra_activity"
     assert result["duration_min"] == 35
-    assert result["intensity"] == "light"
     assert result["contextual_pa_probability"] == pytest.approx(1.0)
     assert result["behavior_policy_pa_prior"] == pytest.approx(0.35)
     assert result["sampled_decision_label"] == "extra_activity"

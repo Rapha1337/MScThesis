@@ -16,7 +16,7 @@ EXPECTED_CONTEXTUAL_FIELDS = frozenset(
     }
 )
 EXPECTED_ACTIVITY_BRANCH_FIELDS = frozenset(
-    {"duration_min", "intensity", "rationale_short", "diary_entry"}
+    {"duration_min", "rationale_short", "diary_entry"}
 )
 EXPECTED_SKIP_BRANCH_FIELDS = frozenset({"rationale_short", "diary_entry"})
 
@@ -84,15 +84,6 @@ def validate_contextual_assessment(
     if not 1 <= duration_min <= 240:
         raise ValueError("activity_if_performed.duration_min must be between 1 and 240.")
 
-    intensity_raw = activity["intensity"]
-    if not isinstance(intensity_raw, str) or not intensity_raw.strip():
-        raise ValueError("activity_if_performed.intensity must be a non-empty string.")
-    intensity = intensity_raw.strip().lower()
-    if intensity not in {"light", "moderate", "vigorous"}:
-        raise ValueError(
-            "activity_if_performed.intensity must be light, moderate, or vigorous."
-        )
-
     activity_rationale = _non_empty_string(activity, "rationale_short")
     activity_diary = _non_empty_string(activity, "diary_entry")
 
@@ -112,7 +103,6 @@ def validate_contextual_assessment(
         "contextual_pa_probability": probability,
         "activity_if_performed": {
             "duration_min": duration_min,
-            "intensity": intensity,
             "rationale_short": activity_rationale,
             "diary_entry": activity_diary,
         },
@@ -163,7 +153,6 @@ def sample_final_decision(
             "decision_code": 3,
             "decision_label": "extra_activity",
             "duration_min": int(branch["duration_min"]),
-            "intensity": str(branch["intensity"]),
             "rationale_short": str(branch["rationale_short"]),
             "diary_entry": str(branch["diary_entry"]),
         }
@@ -176,7 +165,6 @@ def sample_final_decision(
             "decision_code": 0,
             "decision_label": "skip_activity",
             "duration_min": 0,
-            "intensity": "none",
             "rationale_short": str(branch["rationale_short"]),
             "diary_entry": str(branch["diary_entry"]),
         }
