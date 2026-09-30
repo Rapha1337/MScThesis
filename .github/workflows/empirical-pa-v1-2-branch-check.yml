@@ -1,0 +1,33 @@
+name: Empirical PA v1.2 branch checks
+
+on:
+  push:
+    branches:
+      - codex/empirical-pa-v1-2-20260930
+
+jobs:
+  focused-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run empirical PA v1.2 focused tests
+        run: >
+          python -m pytest
+          Simulation/tests/test_empirical_pa_v1_2.py
+          Simulation/tests/test_llm_decision_validation.py
+          Simulation/tests/test_full_pa_simulation.py
+          Analysis/tests/test_t1_medoid_pa_validation.py
+          Analysis/tests/test_t1_medoid_pa_validation_v1_2.py
+          -q
