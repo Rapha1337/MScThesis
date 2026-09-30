@@ -1257,13 +1257,25 @@ def run_pipeline_for_context(
     resource_tracker: Any | None = None,
     resource_usage_token_source: str = "unavailable",
     verbose_llm_debug: bool = False,
+    empirical_pa_v1_2: bool = False,
 ) -> dict[str, Any]:
     persona_id = str(agent_context.get("persona_id", "unknown_persona"))
     day_index = int(agent_context.get("day_index", 0))
 
+    llm1_agent_context = agent_context
+    action_planning_value: float | None = None
+    empirical_calibration_metadata: dict[str, Any] | None = None
+    if empirical_pa_v1_2:
+        if planned_activity is not None:
+            raise ValueError(
+                "Empirical PA v1.2 does not allow schedule-derived planned activity."
+            )
+        action_planning_value = extract_action_planning(agent_context)
+        llm1_agent_context = neutralize_action_planning_for_llm1(agent_context)
+
     behavior_started = time.perf_counter()
     behavior_payload = dict(behavior_runner(
-        agent_context,
+        llm1_agent_context,
         system_prompt=behavior_system_prompt,
         model=model,
         temperature=temperature,
@@ -1285,9 +1297,21 @@ def run_pipeline_for_context(
         usage=behavior_usage,
     )
     if "probabilities" in behavior_payload:
-        behavior_policy = validate_behavior_policy(behavior_payload["probabilities"])
+        behavior_policy_before_calibration = validate_behavior_policy(
+            behavior_payload["probabilities"]
+        )
     else:
-        behavior_policy = validate_behavior_policy(behavior_payload)
+        behavior_policy_before_calibration = validate_behavior_policy(behavior_payload)
+
+    if empirical_pa_v1_2:
+        if action_planning_value is None:
+            raise RuntimeError("Missing action-planning value for empirical PA v1.2.")
+        behavior_policy, empirical_calibration_metadata = calibrate_unplanned_behavior_policy(
+            behavior_policy_before_calibration,
+            action_planning=action_planning_value,
+        )
+    else:
+        behavior_policy = behavior_policy_before_calibration
 
     behavior_output_path = save_agent_behavior_policy(
         persona_id,
@@ -1300,6 +1324,15 @@ def run_pipeline_for_context(
         agent_context,
         behavior_policy,
         planned_activity=planned_activity,
+        empirical_pa_v1_2_metadata=(
+            {
+                "mode": EMPIRICAL_PA_V1_2_MODE,
+                "action_planning_empirical_weight_applied": True,
+                "observed_t1_mvpa_exposed_to_llm2": False,
+            }
+            if empirical_pa_v1_2
+            else None
+        ),
     )
     pa_started = time.perf_counter()
     pa_decision = dict(
@@ -1330,6 +1363,7 @@ def run_pipeline_for_context(
         expected_day_index=day_index,
         valid_decision_categories=pa_decision_input.get("valid_decision_categories"),
         has_planned_pa=bool(pa_decision_input.get("was_physical_activity_planned_today")),
+        empirical_pa_v1_2=empirical_pa_v1_2,
     )
 
     pa_decision_output_path = save_agent_pa_decision(
@@ -1353,6 +1387,10 @@ def run_pipeline_for_context(
         "day_index": day_index,
         "behavior_policy": behavior_policy,
         "behavior_policy_raw": dict(pa_decision_input["behavior_policy_raw"]),
+        "behavior_policy_before_empirical_calibration": dict(
+            behavior_policy_before_calibration
+        ),
+        "empirical_pa_v1_2": empirical_calibration_metadata,
         "decision_context_has_planned_pa": bool(
             pa_decision_input["decision_context_has_planned_pa"]
         ),
