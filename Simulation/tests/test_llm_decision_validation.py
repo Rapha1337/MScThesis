@@ -1036,7 +1036,7 @@ def test_empirical_v1_2_input_forbids_schedule_pa_and_exposes_no_raw_constructs(
         )
 
 
-def test_empirical_v1_2_decision_requires_duration_and_intensity() -> None:
+def test_empirical_v1_2_decision_requires_duration_only() -> None:
     from run_llm_pa_decision import validate_pa_decision_output
 
     payload = {
@@ -1045,7 +1045,6 @@ def test_empirical_v1_2_decision_requires_duration_and_intensity() -> None:
         "decision_code": 3,
         "decision_label": "extra_activity",
         "duration_min": 50,
-        "intensity": "moderate",
         "rationale_short": "There is enough free time and energy for activity.",
         "diary_entry": "I trained moderately for about 50 minutes.",
     }
@@ -1059,24 +1058,20 @@ def test_empirical_v1_2_decision_requires_duration_and_intensity() -> None:
     )
 
     assert validated["duration_min"] == 50
-    assert validated["intensity"] == "moderate"
     assert validated["activity_performed"] is True
 
 
 @pytest.mark.parametrize(
-    ("decision_code", "decision_label", "duration_min", "intensity"),
+    ("decision_code", "decision_label", "duration_min"),
     [
-        (0, "skip_activity", 20, "light"),
-        (3, "extra_activity", 0, "none"),
-        (3, "extra_activity", 45, "none"),
-        (3, "extra_activity", 45, "invalid"),
+        (0, "skip_activity", 20),
+        (3, "extra_activity", 0),
     ],
 )
-def test_empirical_v1_2_rejects_inconsistent_activity_dose(
+def test_empirical_v1_2_rejects_inconsistent_activity_duration(
     decision_code: int,
     decision_label: str,
     duration_min: int,
-    intensity: str,
 ) -> None:
     from run_llm_pa_decision import validate_pa_decision_output
 
@@ -1086,7 +1081,6 @@ def test_empirical_v1_2_rejects_inconsistent_activity_dose(
         "decision_code": decision_code,
         "decision_label": decision_label,
         "duration_min": duration_min,
-        "intensity": intensity,
         "rationale_short": "context",
         "diary_entry": "entry",
     }
