@@ -41,7 +41,7 @@ Wähle ausschließlich aus `valid_decision_categories`.
 ## Dauer und Intensität
 
 Wenn `decision_label = "extra_activity"`:
-- `duration_min` muss eine plausible ganzzahlige Dauer zwischen 10 und 240 Minuten sein.
+- `duration_min` muss eine plausible ganzzahlige Dauer zwischen 1 und 240 Minuten sein.
 - `intensity` muss genau `"light"`, `"moderate"` oder `"vigorous"` sein.
 - Schätze Dauer und Intensität aus der gewählten Aktivität und dem Tageskontext. Erzeuge keine unrealistisch präzisen Werte.
 
