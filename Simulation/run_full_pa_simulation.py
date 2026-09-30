@@ -55,6 +55,7 @@ from run_llm_pa_decision import (  # noqa: E402
     TOP_P,
     DIARY_ENTRY_GENERATED_FOR_SIMULATION,
     DECISION_SOURCE_LLM2_CONTEXTUAL,
+    DECISION_SOURCE_EMPIRICAL_V1_2_STOCHASTIC,
     SUCCESSFUL_PA_DECISION_LABELS,
     UNSUCCESSFUL_PA_DECISION_LABELS,
     activity_performed_for_decision_label,
@@ -193,6 +194,11 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "behavior_policy_before_empirical_calibration",
     "action_planning_value",
     "action_planning_modifier",
+    "behavior_policy_pa_prior",
+    "contextual_pa_probability",
+    "decision_sampling_seed",
+    "decision_sampling_random_value",
+    "sampled_decision_probability",
     "previous_psychological_constructs",
     "updated_psychological_constructs",
     "diary_entry",
@@ -1092,6 +1098,11 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         "action_planning_modifier": (
             (record.get("empirical_pa_v1_2") or {}).get("modifier_beta_times_z")
         ),
+        "behavior_policy_pa_prior": pa_decision.get("behavior_policy_pa_prior"),
+        "contextual_pa_probability": pa_decision.get("contextual_pa_probability"),
+        "decision_sampling_seed": pa_decision.get("decision_sampling_seed"),
+        "decision_sampling_random_value": pa_decision.get("decision_sampling_random_value"),
+        "sampled_decision_probability": pa_decision.get("sampled_decision_probability"),
         "decision_context_has_planned_pa": bool(
             record.get("decision_context_has_planned_pa")
         ),
@@ -1284,11 +1295,17 @@ def _build_simulation_run_manifest(
             "deprecated_categories": list(DEPRECATED_DECISION_CATEGORIES),
             "app_ignored_active": False,
             "app_specific_output_fields_active": False,
-            "decision_source": DECISION_SOURCE_LLM2_CONTEXTUAL,
-            "llm2_makes_final_contextual_decision": True,
+            "decision_source": (
+                DECISION_SOURCE_EMPIRICAL_V1_2_STOCHASTIC
+                if config.empirical_pa_v1_2
+                else DECISION_SOURCE_LLM2_CONTEXTUAL
+            ),
+            "llm2_makes_final_contextual_decision": not config.empirical_pa_v1_2,
+            "llm2_estimates_contextual_pa_probability": bool(config.empirical_pa_v1_2),
             "pre_llm2_seeded_sampling_active": False,
+            "post_llm2_seeded_sampling_active": bool(config.empirical_pa_v1_2),
             "planned_vs_realized_context": (
-                "empirical PA v1.2: schedules contain no PA blocks; LLM2 decides daily PA from psychological tendencies and contextual opportunities/constraints."
+                "empirical PA v1.2: schedules contain no PA blocks; LLM2 estimates a contextual PA probability from the calibrated psychological prior and current opportunities/constraints, then code performs a reproducible seeded Bernoulli draw."
                 if config.empirical_pa_v1_2
                 else "planned_physical_activity records schedule intent; LLM2 daily_context rewrites planned PA hours as planned_physical_activity with origin-based accessibility until LLM2 decides."
             ),
