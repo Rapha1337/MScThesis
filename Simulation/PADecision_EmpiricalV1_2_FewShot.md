@@ -11,9 +11,8 @@ Erwartete Ausgabe:
   "contextual_pa_probability": 0.58,
   "activity_if_performed": {
     "duration_min": 45,
-    "intensity": "moderate",
-    "rationale_short": "Freie Zeit, ausreichende Energie und gute Erreichbarkeit erhöhen die Chance auf eine moderate Aktivität gegenüber dem psychologischen Prior.",
-    "diary_entry": "Am frühen Abend hatte ich noch genug Energie und bin ungefähr 45 Minuten moderat trainieren gegangen."
+    "rationale_short": "Freie Zeit, ausreichende Energie und gute Erreichbarkeit erhöhen die Chance auf körperliche Aktivität gegenüber dem psychologischen Prior.",
+    "diary_entry": "Am frühen Abend hatte ich noch genug Energie und war ungefähr 45 Minuten körperlich aktiv."
   },
   "no_activity_if_skipped": {
     "rationale_short": "Trotz günstiger Bedingungen wurde an diesem Tag keine Aktivität umgesetzt.",
@@ -35,9 +34,8 @@ Erwartete Ausgabe:
   "contextual_pa_probability": 0.34,
   "activity_if_performed": {
     "duration_min": 30,
-    "intensity": "light",
     "rationale_short": "Der günstige Kontext erhöht die niedrige Ausgangswahrscheinlichkeit etwas, rechtfertigt aber keine hohe PA-Wahrscheinlichkeit.",
-    "diary_entry": "Am Nachmittag habe ich das gute Wetter für einen lockeren Spaziergang von ungefähr 30 Minuten genutzt."
+    "diary_entry": "Am Nachmittag habe ich das gute Wetter für ungefähr 30 Minuten Bewegung genutzt."
   },
   "no_activity_if_skipped": {
     "rationale_short": "Die niedrige psychologische PA-Tendenz bleibt trotz freier Zeit und gutem Wetter relevant.",
@@ -59,9 +57,8 @@ Erwartete Ausgabe:
   "contextual_pa_probability": 0.41,
   "activity_if_performed": {
     "duration_min": 25,
-    "intensity": "light",
-    "rationale_short": "Trotz hoher psychologischer Bereitschaft sprechen Zeitknappheit und niedrige Energie nur für eine kurze leichte Aktivität.",
-    "diary_entry": "Am Abend bin ich noch ungefähr 25 Minuten locker spazieren gegangen."
+    "rationale_short": "Trotz hoher psychologischer Bereitschaft sprechen Zeitknappheit und niedrige Energie nur für eine kurze Aktivität.",
+    "diary_entry": "Am Abend war ich noch ungefähr 25 Minuten körperlich aktiv."
   },
   "no_activity_if_skipped": {
     "rationale_short": "Der volle Tag und die niedrige Energie können die grundsätzlich hohe PA-Tendenz an diesem Tag überwiegen.",
