@@ -403,7 +403,9 @@ def build_report(
             "LLM-generated duration and intensity are structured simulation outputs, not "
             "objective activity measurements. The action-planning calibration is a model "
             "mapping choice informed by the T1 association rather than a directly "
-            "estimated daily transition probability."
+            "estimated daily transition probability. The cross-sectional T1 coefficient "
+            "is applied to evolving simulated action-planning states, which is an explicit "
+            "longitudinal model assumption."
         ),
         "",
     ]
