@@ -837,7 +837,10 @@ def validate_pa_decision_output(
         if not math.isfinite(duration_float) or not duration_float.is_integer():
             raise ValueError("duration_min must be a finite whole number in empirical PA v1.2.")
         duration_min = int(duration_float)
-        intensity = str(core_payload["intensity"]).strip().lower()
+        raw_intensity = core_payload["intensity"]
+        if not isinstance(raw_intensity, str) or not raw_intensity.strip():
+            raise ValueError("intensity must be a non-empty string in empirical PA v1.2.")
+        intensity = raw_intensity.strip().lower()
         if intensity not in EMPIRICAL_V1_2_INTENSITIES:
             raise ValueError(
                 f"intensity must be one of {sorted(EMPIRICAL_V1_2_INTENSITIES)}."
@@ -1400,10 +1403,6 @@ def run_pipeline_for_context(
         "day_index": day_index,
         "behavior_policy": behavior_policy,
         "behavior_policy_raw": dict(pa_decision_input["behavior_policy_raw"]),
-        "behavior_policy_before_empirical_calibration": dict(
-            behavior_policy_before_calibration
-        ),
-        "empirical_pa_v1_2": empirical_calibration_metadata,
         "decision_context_has_planned_pa": bool(
             pa_decision_input["decision_context_has_planned_pa"]
         ),
@@ -1418,6 +1417,11 @@ def run_pipeline_for_context(
             "daily_decision_log": str(actual_daily_log_path),
         },
     }
+    if empirical_pa_v1_2:
+        record["behavior_policy_before_empirical_calibration"] = dict(
+            behavior_policy_before_calibration
+        )
+        record["empirical_pa_v1_2"] = empirical_calibration_metadata
     if "scenario" in agent_context:
         record["scenario"] = agent_context["scenario"]
     return record
