@@ -190,6 +190,9 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "valid_decision_categories",
     "decision_source",
     "behavior_policy",
+    "behavior_policy_before_empirical_calibration",
+    "action_planning_value",
+    "action_planning_modifier",
     "previous_psychological_constructs",
     "updated_psychological_constructs",
     "diary_entry",
@@ -1076,6 +1079,15 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         ),
         "behavior_policy": _json_log_value(record.get("behavior_policy")),
         "behavior_policy_raw": _json_log_value(record.get("behavior_policy_raw")),
+        "behavior_policy_before_empirical_calibration": _json_log_value(
+            record.get("behavior_policy_before_empirical_calibration")
+        ),
+        "action_planning_value": (
+            (record.get("empirical_pa_v1_2") or {}).get("action_planning_value")
+        ),
+        "action_planning_modifier": (
+            (record.get("empirical_pa_v1_2") or {}).get("modifier_beta_times_z")
+        ),
         "decision_context_has_planned_pa": bool(
             record.get("decision_context_has_planned_pa")
         ),
