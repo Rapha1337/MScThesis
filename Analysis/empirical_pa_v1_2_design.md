@@ -77,6 +77,12 @@ after LLM1, through the empirical calibration above.
 All other psychological constructs continue to inform the psychological
 PA/no-PA propensity.
 
+The calibration is applied to the **current simulated** action-planning value on
+each day, because psychological constructs can evolve during the longitudinal
+simulation. The regression itself is cross-sectional T1 evidence, so carrying
+that coefficient forward to evolving within-person states is an explicit model
+assumption rather than a longitudinally estimated effect.
+
 ## LLM2 decision
 
 In v1.2 there is no pre-existing sport appointment to follow. LLM2 receives the
