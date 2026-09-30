@@ -206,3 +206,97 @@ def test_sampling_seed_is_runtime_only_and_not_exposed_to_llm2() -> None:
 
     assert "seed" not in prompt_payload["daily_context"]
     assert prompt_payload["behavior_policy"]["extra_activity"] == pytest.approx(0.35)
+
+
+
+def test_llm2_retries_invalid_json_then_succeeds(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import json
+    import run_llm_pa_decision as module
+
+    valid_content = json.dumps(_assessment(1.0))
+    contents = ["not valid json", valid_content]
+    calls: list[dict] = []
+
+    class _FakeMessage:
+        def __init__(self, content: str) -> None:
+            self.content = content
+
+    class _FakeChoice:
+        def __init__(self, content: str) -> None:
+            self.message = _FakeMessage(content)
+            self.finish_reason = "stop"
+
+    class _FakeResponse:
+        def __init__(self, content: str) -> None:
+            self.choices = [_FakeChoice(content)]
+            self.usage = {
+                "completion_tokens": 2,
+                "prompt_tokens": 3,
+                "total_tokens": 5,
+            }
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return _FakeResponse(contents[len(calls) - 1])
+
+    class _FakeClient:
+        chat = type("Chat", (), {"completions": _FakeCompletions()})()
+
+    monkeypatch.setattr(module, "get_client", lambda: _FakeClient())
+
+    result = module.run_pa_decision_llm(
+        _pa_input(extra_probability=0.35),
+        system_prompt="system",
+        output_dir=tmp_path,
+    )
+
+    assert len(calls) == 2
+    assert result["decision_label"] == "extra_activity"
+    assert result["duration_min"] == 35
+    assert result["_resource_usage"]["prompt_tokens"] == 6
+    assert result["_resource_usage"]["response_tokens"] == 4
+    assert result["_resource_usage"]["tokens_total"] == 10
+
+
+def test_llm2_stops_after_three_invalid_json_attempts(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import run_llm_pa_decision as module
+
+    calls: list[dict] = []
+
+    class _FakeMessage:
+        content = "not valid json"
+
+    class _FakeChoice:
+        message = _FakeMessage()
+        finish_reason = "stop"
+
+    class _FakeResponse:
+        choices = [_FakeChoice()]
+        usage = {"completion_tokens": 1, "prompt_tokens": 1, "total_tokens": 2}
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return _FakeResponse()
+
+    class _FakeClient:
+        chat = type("Chat", (), {"completions": _FakeCompletions()})()
+
+    monkeypatch.setattr(module, "get_client", lambda: _FakeClient())
+
+    with pytest.raises(ValueError, match="nach 3 Versuchen"):
+        module.run_pa_decision_llm(
+            _pa_input(extra_probability=0.35),
+            system_prompt="system",
+            output_dir=tmp_path,
+        )
+
+    assert len(calls) == 3
+    assert (tmp_path / "llm_pa_decision_T1_Medoid_C4_8303_raw_invalid.txt").exists()

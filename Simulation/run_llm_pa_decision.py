@@ -56,6 +56,7 @@ TEMPERATURE = 0
 TOP_P = 1
 LLM1_MAX_TOKENS = 10000
 LLM2_MAX_TOKENS = 10000
+LLM2_VALIDATION_MAX_ATTEMPTS = 3
 DECISION_SAMPLING_SEED_OFFSET = 20_000_033  # Deprecated: no longer used by the active LLM2 decision flow.
 DECISION_SOURCE_LLM2_CONTEXTUAL = "llm2_contextual_decision"
 DECISION_SOURCE_EMPIRICAL_V1_2_STOCHASTIC = "llm2_contextual_probability_seeded_sampling"
@@ -976,94 +977,143 @@ def run_pa_decision_llm(
     day_index = int(pa_decision_input["day_index"])
     user_prompt = build_pa_decision_user_prompt(pa_decision_input)
 
-    print(f"Starte LLM2-PA-Entscheidung für {persona_id} ...", flush=True)
-    call_started = time.perf_counter()
-    response = get_client().chat.completions.create(
-        model=model,
-        messages=[
-            {
-                "role": "system",
-                "content": system_prompt,
-            },
-            {
-                "role": "user",
-                "content": user_prompt,
-            },
-        ],
-        temperature=temperature,
-        top_p=top_p,
-        max_tokens=max_tokens,
-        # Seed is opt-in because OpenAI-compatible providers vary in support.
-        # With no seed, determinism remains best-effort via temperature=0/top_p=1.
-        **({"seed": int(llm_seed)} if llm_seed is not None else {}),
-    )
+    total_prompt_tokens = 0
+    total_response_tokens = 0
+    total_tokens = 0
+    total_call_seconds = 0.0
+    token_sources: set[str] = set()
 
-    call_seconds = time.perf_counter() - call_started
-    print(f"LLM2-PA-Entscheidung für {persona_id} abgeschlossen.", flush=True)
-    choices = getattr(response, "choices", None)
-    finish_reason = getattr(choices[0], "finish_reason", None) if choices else None
-    print(
-        f"LLM2 finish_reason for {persona_id}/day {day_index}: {finish_reason!r}",
-        flush=True,
-    )
-    print(f"LLM2 usage for {persona_id}/day {day_index}: {_summarize_usage(response)}", flush=True)
-    if verbose_llm_debug:
+    for attempt in range(1, LLM2_VALIDATION_MAX_ATTEMPTS + 1):
+        attempt_suffix = (
+            ""
+            if attempt == 1
+            else f" (Retry {attempt}/{LLM2_VALIDATION_MAX_ATTEMPTS})"
+        )
         print(
-            "UNSAFE DEBUG LLM2 response object suppressed; full messages, prompts, "
-            "completions, and hidden reasoning are not printed.",
+            f"Starte LLM2-PA-Entscheidung für {persona_id}{attempt_suffix} ...",
             flush=True,
         )
-    content = _extract_llm_content(response, persona_id)
-
-    try:
-        if pa_decision_input.get("empirical_pa_v1_2"):
-            contextual_assessment = validate_empirical_v1_2_contextual_assessment(
-                parse_pa_decision_json(content),
-                expected_persona_id=persona_id,
-                expected_day_index=day_index,
-            )
-            sampled_result = sample_empirical_v1_2_final_decision(
-                contextual_assessment,
-                pa_decision_input=pa_decision_input,
-            )
-            result = validate_pa_decision_output(
-                sampled_result,
-                expected_persona_id=persona_id,
-                expected_day_index=day_index,
-                valid_decision_categories=pa_decision_input.get("valid_decision_categories"),
-                has_planned_pa=False,
-                empirical_pa_v1_2=True,
-            )
-            result.update({
-                key: sampled_result[key]
-                for key in DETERMINISTIC_PA_DECISION_METADATA_FIELDS
-                if key in sampled_result
-            })
-        else:
-            result = parse_and_validate_pa_decision(
-                content,
-                expected_persona_id=persona_id,
-                expected_day_index=day_index,
-                valid_decision_categories=pa_decision_input.get("valid_decision_categories"),
-                has_planned_pa=bool(pa_decision_input.get("was_physical_activity_planned_today")),
-                empirical_pa_v1_2=False,
-            )
-        result["_resource_usage"] = {
-            **extract_token_usage(response),
-            "paper_seconds": call_seconds,
-        }
-        return result
-    except ValueError as exc:
-        debug_path = save_invalid_raw_response(
-            persona_id,
-            content,
-            output_dir=output_dir,
-            verbose_llm_debug=verbose_llm_debug,
+        call_started = time.perf_counter()
+        response = get_client().chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": user_prompt,
+                },
+            ],
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+            # Seed is opt-in because OpenAI-compatible providers vary in support.
+            # With no seed, determinism remains best-effort via temperature=0/top_p=1.
+            **({"seed": int(llm_seed)} if llm_seed is not None else {}),
         )
-        raise ValueError(
-            f"Ungültiger LLM2-JSON-Output für {persona_id}: {exc}. "
-            f"Raw response gespeichert unter: {debug_path}"
-        ) from exc
+
+        call_seconds = time.perf_counter() - call_started
+        total_call_seconds += call_seconds
+        usage = extract_token_usage(response)
+        total_prompt_tokens += int(usage.get("prompt_tokens") or 0)
+        total_response_tokens += int(usage.get("response_tokens") or 0)
+        total_tokens += int(usage.get("tokens_total") or 0)
+        token_sources.add(str(usage.get("token_source") or "unavailable"))
+
+        print(
+            f"LLM2-PA-Entscheidung für {persona_id} abgeschlossen.",
+            flush=True,
+        )
+        choices = getattr(response, "choices", None)
+        finish_reason = getattr(choices[0], "finish_reason", None) if choices else None
+        print(
+            f"LLM2 finish_reason for {persona_id}/day {day_index}: {finish_reason!r}",
+            flush=True,
+        )
+        print(
+            f"LLM2 usage for {persona_id}/day {day_index}: {_summarize_usage(response)}",
+            flush=True,
+        )
+        if verbose_llm_debug:
+            print(
+                "UNSAFE DEBUG LLM2 response object suppressed; full messages, prompts, "
+                "completions, and hidden reasoning are not printed.",
+                flush=True,
+            )
+        content = _extract_llm_content(response, persona_id)
+
+        try:
+            if pa_decision_input.get("empirical_pa_v1_2"):
+                contextual_assessment = validate_empirical_v1_2_contextual_assessment(
+                    parse_pa_decision_json(content),
+                    expected_persona_id=persona_id,
+                    expected_day_index=day_index,
+                )
+                sampled_result = sample_empirical_v1_2_final_decision(
+                    contextual_assessment,
+                    pa_decision_input=pa_decision_input,
+                )
+                result = validate_pa_decision_output(
+                    sampled_result,
+                    expected_persona_id=persona_id,
+                    expected_day_index=day_index,
+                    valid_decision_categories=pa_decision_input.get("valid_decision_categories"),
+                    has_planned_pa=False,
+                    empirical_pa_v1_2=True,
+                )
+                result.update({
+                    key: sampled_result[key]
+                    for key in DETERMINISTIC_PA_DECISION_METADATA_FIELDS
+                    if key in sampled_result
+                })
+            else:
+                result = parse_and_validate_pa_decision(
+                    content,
+                    expected_persona_id=persona_id,
+                    expected_day_index=day_index,
+                    valid_decision_categories=pa_decision_input.get("valid_decision_categories"),
+                    has_planned_pa=bool(
+                        pa_decision_input.get("was_physical_activity_planned_today")
+                    ),
+                    empirical_pa_v1_2=False,
+                )
+
+            token_source = (
+                next(iter(token_sources))
+                if len(token_sources) == 1
+                else "mixed:" + ",".join(sorted(token_sources))
+            )
+            result["_resource_usage"] = {
+                "prompt_tokens": total_prompt_tokens,
+                "response_tokens": total_response_tokens,
+                "tokens_total": total_tokens,
+                "token_source": token_source,
+                "paper_seconds": total_call_seconds,
+            }
+            return result
+        except ValueError as exc:
+            if attempt < LLM2_VALIDATION_MAX_ATTEMPTS:
+                print(
+                    f"Ungültiger LLM2-JSON-/Schema-Output für {persona_id}/day "
+                    f"{day_index} bei Versuch {attempt}/{LLM2_VALIDATION_MAX_ATTEMPTS}; "
+                    "automatischer Retry.",
+                    flush=True,
+                )
+                continue
+
+            debug_path = save_invalid_raw_response(
+                persona_id,
+                content,
+                output_dir=output_dir,
+                verbose_llm_debug=verbose_llm_debug,
+            )
+            raise ValueError(
+                f"Ungültiger LLM2-JSON-Output für {persona_id} nach "
+                f"{LLM2_VALIDATION_MAX_ATTEMPTS} Versuchen: {exc}. "
+                f"Raw response gespeichert unter: {debug_path}"
+            ) from exc
 
 
 def save_agent_behavior_policy(
