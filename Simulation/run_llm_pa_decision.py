@@ -690,7 +690,20 @@ def build_pa_decision_input(
 def build_pa_decision_user_prompt(pa_decision_input: Mapping[str, Any]) -> str:
     input_json = json.dumps(pa_decision_input, ensure_ascii=False, separators=(",", ":"))
     if pa_decision_input.get("empirical_pa_v1_2"):
-        return f"""\nINPUT:\n{input_json}\n\nIMPORTANT:\nThis is empirical PA model v1.2. No physical-activity block is pre-scheduled.\nMake the final decision yourself from valid_decision_categories using behavior_policy\nas a psychological tendency and daily_context as the current opportunity/constraint\nstructure. If PA occurs, return a plausible duration_min and intensity exactly as\nrequired by the v1.2 schema. Do not infer or reconstruct observed T1 MVPA.\nReturn exactly one valid JSON object and no other text.\n""".strip()\n\n    return f"""
+        return f"""
+INPUT:
+{input_json}
+
+IMPORTANT:
+This is empirical PA model v1.2. No physical-activity block is pre-scheduled.
+Make the final decision yourself from valid_decision_categories using behavior_policy
+as a psychological tendency and daily_context as the current opportunity/constraint
+structure. If PA occurs, return a plausible duration_min and intensity exactly as
+required by the v1.2 schema. Do not infer or reconstruct observed T1 MVPA.
+Return exactly one valid JSON object and no other text.
+""".strip()
+
+    return f"""
 INPUT:
 {input_json}
 
@@ -702,7 +715,6 @@ overrides those tendencies. The planned physical activity is schedule-derived fo
 simulated day; do not propose a new activity or future activity. Return exactly one
 valid JSON object in the required PA decision schema.
 """.strip()
-
 
 def parse_pa_decision_json(raw: str) -> dict[str, Any]:
     try:
