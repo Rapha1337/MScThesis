@@ -60,8 +60,8 @@ jobs:
           for record in records:
               assert record["planned_physical_activity"] is None
               assert record["was_physical_activity_planned_today"] is False
-              assert record["decision_label"] in {"skip_activity", "extra_activity"}
               decision = record["pa_decision"]
+              assert decision["decision_label"] in {"skip_activity", "extra_activity"}
               if decision["decision_label"] == "skip_activity":
                   assert decision["duration_min"] == 0
                   assert decision["intensity"] == "none"
