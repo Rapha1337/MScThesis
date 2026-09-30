@@ -1414,14 +1414,21 @@ def run_pipeline_for_context(
         stage="llm2_pa_decision",
         usage=pa_usage,
     )
+    pa_decision_before_validation = dict(pa_decision)
     pa_decision = validate_pa_decision_output(
-        pa_decision,
+        pa_decision_before_validation,
         expected_persona_id=persona_id,
         expected_day_index=day_index,
         valid_decision_categories=pa_decision_input.get("valid_decision_categories"),
         has_planned_pa=bool(pa_decision_input.get("was_physical_activity_planned_today")),
         empirical_pa_v1_2=empirical_pa_v1_2,
     )
+    if empirical_pa_v1_2:
+        pa_decision.update({
+            key: pa_decision_before_validation[key]
+            for key in DETERMINISTIC_PA_DECISION_METADATA_FIELDS
+            if key in pa_decision_before_validation
+        })
 
     pa_decision_output_path = save_agent_pa_decision(
         persona_id,
