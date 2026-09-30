@@ -31,6 +31,10 @@ from empirical_pa_v1_2 import (  # noqa: E402
     extract_action_planning,
     neutralize_action_planning_for_llm1,
 )
+from empirical_pa_v1_2_stochastic import (  # noqa: E402
+    sample_final_decision as sample_empirical_v1_2_final_decision,
+    validate_contextual_assessment as validate_empirical_v1_2_contextual_assessment,
+)
 from run_behavior_probability_estimation import (  # noqa: E402
     DEFAULT_PROMPT_PATH as DEFAULT_BEHAVIOR_PROMPT_PATH,
     load_behavior_probability_prompt,
@@ -54,6 +58,7 @@ LLM1_MAX_TOKENS = 10000
 LLM2_MAX_TOKENS = 10000
 DECISION_SAMPLING_SEED_OFFSET = 20_000_033  # Deprecated: no longer used by the active LLM2 decision flow.
 DECISION_SOURCE_LLM2_CONTEXTUAL = "llm2_contextual_decision"
+DECISION_SOURCE_EMPIRICAL_V1_2_STOCHASTIC = "llm2_contextual_probability_seeded_sampling"
 
 PA_DECISION_CODEBOOK: dict[int, str] = {
     0: "skip_activity",
@@ -99,6 +104,13 @@ DETERMINISTIC_PA_DECISION_METADATA_FIELDS = frozenset(
     {
         "activity_performed",
         "diary_entry_generated_for_simulation",
+        "contextual_pa_probability",
+        "behavior_policy_pa_prior",
+        "decision_sampling_seed",
+        "decision_sampling_random_value",
+        "sampled_decision_label",
+        "sampled_decision_probability",
+        "llm2_contextual_assessment",
     }
 )
 
@@ -675,7 +687,11 @@ def build_pa_decision_input(
         "behavior_policy_raw": behavior_policy_raw,
         "decision_context_has_planned_pa": has_planned_pa,
         "valid_decision_categories": valid_categories,
-        "decision_source": DECISION_SOURCE_LLM2_CONTEXTUAL,
+        "decision_source": (
+            DECISION_SOURCE_EMPIRICAL_V1_2_STOCHASTIC
+            if empirical_v1_2_enabled
+            else DECISION_SOURCE_LLM2_CONTEXTUAL
+        ),
         "planned_physical_activity": planned_physical_activity,
         "was_physical_activity_planned_today": has_planned_pa,
         "daily_context": prepare_daily_context_for_pa_decision(agent_context, planned_physical_activity),
@@ -696,10 +712,11 @@ INPUT:
 
 IMPORTANT:
 This is empirical PA model v1.2. No physical-activity block is pre-scheduled.
-Make the final decision yourself from valid_decision_categories using behavior_policy
-as a psychological tendency and daily_context as the current opportunity/constraint
-structure. If PA occurs, return a plausible duration_min and intensity exactly as
-required by the v1.2 schema. Do not infer or reconstruct observed T1 MVPA.
+Do NOT choose the final binary PA outcome. Use behavior_policy.extra_activity as the
+psychological prior probability and modify it in light of daily_context to estimate
+contextual_pa_probability. The context may move the prior up or down, but it must not
+replace or ignore the prior. Provide coherent conditional output for both possible
+sampled outcomes. Do not infer or reconstruct observed T1 MVPA.
 Return exactly one valid JSON object and no other text.
 """.strip()
 
@@ -1005,14 +1022,33 @@ def run_pa_decision_llm(
     content = _extract_llm_content(response, persona_id)
 
     try:
-        result = parse_and_validate_pa_decision(
-            content,
-            expected_persona_id=persona_id,
-            expected_day_index=day_index,
-            valid_decision_categories=pa_decision_input.get("valid_decision_categories"),
-            has_planned_pa=bool(pa_decision_input.get("was_physical_activity_planned_today")),
-            empirical_pa_v1_2=bool(pa_decision_input.get("empirical_pa_v1_2")),
-        )
+        if pa_decision_input.get("empirical_pa_v1_2"):
+            contextual_assessment = validate_empirical_v1_2_contextual_assessment(
+                parse_pa_decision_json(content),
+                expected_persona_id=persona_id,
+                expected_day_index=day_index,
+            )
+            result = sample_empirical_v1_2_final_decision(
+                contextual_assessment,
+                pa_decision_input=pa_decision_input,
+            )
+            result = validate_pa_decision_output(
+                result,
+                expected_persona_id=persona_id,
+                expected_day_index=day_index,
+                valid_decision_categories=pa_decision_input.get("valid_decision_categories"),
+                has_planned_pa=False,
+                empirical_pa_v1_2=True,
+            )
+        else:
+            result = parse_and_validate_pa_decision(
+                content,
+                expected_persona_id=persona_id,
+                expected_day_index=day_index,
+                valid_decision_categories=pa_decision_input.get("valid_decision_categories"),
+                has_planned_pa=bool(pa_decision_input.get("was_physical_activity_planned_today")),
+                empirical_pa_v1_2=False,
+            )
         result["_resource_usage"] = {
             **extract_token_usage(response),
             "paper_seconds": call_seconds,
