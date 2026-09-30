@@ -73,18 +73,17 @@ def _empirical() -> pd.DataFrame:
 def _trace() -> dict:
     records = []
     personas = [
-        ("T1_Medoid_C1_7067", 30, "moderate", 0.30),
-        ("T1_Medoid_C2_8153", 20, "moderate", 0.40),
-        ("T1_Medoid_C3_8237", 40, "vigorous", 0.65),
-        ("T1_Medoid_C4_8303", 15, "light", 0.00),
+        ("T1_Medoid_C1_7067", 30, 0.30),
+        ("T1_Medoid_C2_8153", 20, 0.40),
+        ("T1_Medoid_C3_8237", 40, 0.65),
+        ("T1_Medoid_C4_8303", 15, 0.00),
     ]
-    for persona_id, duration, intensity, action_planning in personas:
+    for persona_id, duration, action_planning in personas:
         for day_index in range(90):
             active = day_index % 3 == 0
             decision = {
                 "decision_label": "extra_activity" if active else "skip_activity",
                 "duration_min": duration if active else 0,
-                "intensity": intensity if active else "none",
             }
             records.append(
                 {
@@ -125,18 +124,18 @@ def test_seed_14_remains_valid_when_pa_schedule_is_disabled() -> None:
     ]
 
 
-def test_v1_2_daily_rows_use_only_moderate_and_vigorous_minutes_as_mvpa() -> None:
+def test_v1_2_daily_rows_count_all_performed_minutes_without_intensity_classification() -> None:
     daily = daily_rows_from_trace(_trace(), _empirical())
 
     c1 = daily[daily["persona_id"].eq("T1_Medoid_C1_7067")]
     c4 = daily[daily["persona_id"].eq("T1_Medoid_C4_8303")]
 
-    assert c1.loc[c1["activity_performed"], "mvpa_minutes"].eq(30).all()
-    assert c4.loc[c4["activity_performed"], "mvpa_minutes"].eq(0).all()
-    assert c4.loc[c4["activity_performed"], "light_pa_minutes"].eq(15).all()
+    assert c1.loc[c1["activity_performed"], "pa_minutes"].eq(30).all()
+    assert c4.loc[c4["activity_performed"], "pa_minutes"].eq(15).all()
+    assert "intensity" not in daily.columns
 
 
-def test_v1_2_summary_produces_direct_mvpa_hours_per_week() -> None:
+def test_v1_2_summary_produces_duration_only_pa_hours_per_week() -> None:
     empirical = _empirical()
     daily = daily_rows_from_trace(_trace(), empirical)
     summary = summarize_horizons(daily, empirical)
@@ -151,8 +150,9 @@ def test_v1_2_summary_produces_direct_mvpa_hours_per_week() -> None:
     ].iloc[0]
 
     expected_c1 = (30 * 30) / 60 / 90 * 7
-    assert c1_90["simulated_mvpa_hours_week"] == pytest.approx(expected_c1)
-    assert c4_90["simulated_mvpa_hours_week"] == 0.0
+    assert c1_90["simulated_pa_hours_week"] == pytest.approx(expected_c1)
+    expected_c4 = (15 * 30) / 60 / 90 * 7
+    assert c4_90["simulated_pa_hours_week"] == pytest.approx(expected_c4)
 
 
 def test_v1_2_correlations_and_report_label_analysis_as_descriptive() -> None:
