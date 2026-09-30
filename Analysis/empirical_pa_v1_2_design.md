@@ -121,6 +121,17 @@ with seven days in their modal annual phase and without acute schedule-altering
 events. Seed 14 remains valid. Selection does not inspect PA outcomes or
 correlations.
 
+## Reproducing the T1 calibration
+
+The coefficients above can be regenerated from the repository's prepared,
+anonymized T1 analysis table with:
+
+    python Analysis/t1_action_planning_mvpa_regression.py
+
+The script reports both the full n=147 simple OLS and the n=143 held-out
+calibration after excluding the four simulated medoids. The frozen constants in
+`Simulation/empirical_pa_v1_2.py` are regression outputs, not hand-tuned values.
+
 ## Run command
 
 From the repository root:
