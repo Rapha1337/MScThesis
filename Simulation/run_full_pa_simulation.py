@@ -896,6 +896,7 @@ def _dry_behavior_runner(agent_context: Mapping[str, Any], **kwargs: Any) -> dic
 def _dry_pa_decision_runner(pa_decision_input: Mapping[str, Any], **kwargs: Any) -> dict[str, Any]:
     del kwargs
     planned_activity = pa_decision_input.get("planned_physical_activity")
+    empirical_v1_2 = bool(pa_decision_input.get("empirical_pa_v1_2"))
     valid_categories = [str(label) for label in pa_decision_input.get("valid_decision_categories", [])]
     if not valid_categories:
         raise ValueError("Dry-run LLM2 requires valid_decision_categories.")
@@ -948,7 +949,7 @@ def _dry_pa_decision_runner(pa_decision_input: Mapping[str, Any], **kwargs: Any)
         rationale = "Dry-run LLM2 selected doing the planned activity because psychological tendencies and context supported it."
         diary = "Dry-run: I completed today's planned activity as planned."
 
-    return {
+    result = {
         "persona_id": str(pa_decision_input["persona_id"]),
         "day_index": int(pa_decision_input["day_index"]),
         "decision_code": decision_code,
@@ -963,6 +964,14 @@ def _dry_pa_decision_runner(pa_decision_input: Mapping[str, Any], **kwargs: Any)
             "paper_seconds": 0.0,
         },
     }
+    if empirical_v1_2:
+        if decision_label == "extra_activity":
+            result["duration_min"] = 45
+            result["intensity"] = "moderate"
+        else:
+            result["duration_min"] = 0
+            result["intensity"] = "none"
+    return result
 
 def _context_summary(llm_context: Mapping[str, Any]) -> dict[str, Any]:
     hourly = list(llm_context.get("hourly_context_24h", []))
