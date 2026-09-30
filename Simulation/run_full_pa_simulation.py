@@ -1001,6 +1001,8 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         "calendar_date": record["calendar_date"],
         "decision_code": int(pa_decision["decision_code"]),
         "decision_label": str(pa_decision["decision_label"]),
+        "duration_min": pa_decision.get("duration_min", ""),
+        "intensity": pa_decision.get("intensity", ""),
         "activity_done": bool(closed_loop["activity_done"]),
         "activity_performed": bool(closed_loop.get("activity_performed", closed_loop["activity_done"])),
         "diary_entry_generated_for_simulation": bool(
@@ -1141,6 +1143,7 @@ def _run_pipeline(
         resource_tracker=resource_tracker,
         resource_usage_token_source="dry_run" if config.dry_run else "unavailable",
         verbose_llm_debug=config.verbose_llm_debug,
+        empirical_pa_v1_2=config.empirical_pa_v1_2,
         **kwargs,
     )
 
@@ -1307,6 +1310,7 @@ def _run_config_comparison_payload(config: FullSimulationConfig, daily_log_path:
         "persona_input_file": (
             str(config.persona_input_file) if config.persona_input_file is not None else None
         ),
+        "empirical_pa_v1_2": bool(config.empirical_pa_v1_2),
     }
 
 
@@ -1493,7 +1497,15 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
 
     try:
         behavior_system_prompt = "DRY RUN BEHAVIOR PROMPT" if config.dry_run else load_behavior_probability_prompt()
-        pa_decision_system_prompt = "DRY RUN PA DECISION PROMPT" if config.dry_run else load_pa_decision_prompt()
+        if config.dry_run:
+            pa_decision_system_prompt = "DRY RUN PA DECISION PROMPT"
+        elif config.empirical_pa_v1_2:
+            pa_decision_system_prompt = load_pa_decision_prompt(
+                EMPIRICAL_V1_2_PA_DECISION_PROMPT_PATH,
+                EMPIRICAL_V1_2_PA_DECISION_FEWSHOT_PATH,
+            )
+        else:
+            pa_decision_system_prompt = load_pa_decision_prompt()
         state_assessment_prompt = load_state_assessment_prompt()
 
         persona_states = _build_persona_states(config)
@@ -1558,6 +1570,10 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 planned_activity_for_day = _json_ready(
                     planned_physical_activity_from_schedule(llm_context["hourly_context_24h"])
                 )
+                if config.empirical_pa_v1_2 and planned_activity_for_day is not None:
+                    raise RuntimeError(
+                        "Empirical PA v1.2 leaked a physical-activity block into the schedule."
+                    )
                 per_day_output_dir = (
                     config.output_dir
                     / "llm_outputs"
