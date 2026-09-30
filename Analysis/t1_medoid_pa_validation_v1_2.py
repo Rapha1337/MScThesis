@@ -319,9 +319,10 @@ def build_report(
         ),
         "",
         (
-            "Observed medoid T1 MVPA is validation-only in v1.2. It is retained for "
-            "the final comparison but is not passed into schedule generation, LLM1, "
-            "or LLM2. Therefore there is no input-informed scheduler PA baseline."
+            "Observed medoid T1 MVPA and total PA are validation-only in v1.2. They "
+            "are retained for the final comparison but are not passed into schedule "
+            "generation, LLM1, or LLM2. Therefore there is no input-informed scheduler "
+            "PA baseline."
         ),
         "",
         "## Action-planning calibration",
@@ -361,11 +362,13 @@ def build_report(
     for horizon in HORIZONS:
         subset = correlations[correlations["horizon_days"].eq(horizon)]
         spear = subset[
-            subset["simulated_variable"].eq("simulated_pa_hours_week")
+            subset["empirical_variable"].eq("empirical_mvpa_hours_week")
+            & subset["simulated_variable"].eq("simulated_pa_hours_week")
             & subset["method"].eq("spearman")
         ].iloc[0]["coefficient"]
         pear = subset[
-            subset["simulated_variable"].eq("simulated_pa_hours_week")
+            subset["empirical_variable"].eq("empirical_mvpa_hours_week")
+            & subset["simulated_variable"].eq("simulated_pa_hours_week")
             & subset["method"].eq("pearson")
         ].iloc[0]["coefficient"]
         lines.append(f"| {horizon} | {_fmt(spear)} | {_fmt(pear)} |")
