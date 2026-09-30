@@ -111,3 +111,14 @@ def test_empirical_v1_2_wrapper_removes_pa_budget_but_retains_observed_mvpa_meta
     assert profile.metadata()["reported_mvpa_hours_per_week"] == pytest.approx(
         profile.fitness_hours_week
     )
+
+
+def test_v1_2_behavior_prompt_neutralizes_action_planning_and_disables_plan_labels() -> None:
+    prompt = (
+        SIMULATION_DIR / "BehaviorProbability_EmpiricalV1_2_Prompt.md"
+    ).read_text(encoding="utf-8")
+
+    assert "action_planning hier deshalb als neutral" in prompt
+    assert "do_planned_activity = 0.0" in prompt
+    assert "adapt_activity = 0.0" in prompt
+    assert "skip_activity und extra_activity müssen zusammen 1.0 ergeben" in prompt
