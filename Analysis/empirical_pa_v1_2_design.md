@@ -83,24 +83,36 @@ simulation. The regression itself is cross-sectional T1 evidence, so carrying
 that coefficient forward to evolving within-person states is an explicit model
 assumption rather than a longitudinally estimated effect.
 
-## LLM2 decision
+## LLM2 contextual probability and stochastic final decision
 
-In v1.2 there is no pre-existing sport appointment to follow. LLM2 receives the
-calibrated psychological tendency plus the actual day context and chooses
-between:
+In v1.2 there is no pre-existing sport appointment to follow. The first real
+7-day GPUStack test showed that asking deterministic LLM2 to choose the binary
+outcome directly was still too permissive: all 28 persona-days were classified
+as PA despite markedly different calibrated psychological tendencies.
 
-- skip_activity: no PA today
-- extra_activity: PA occurs today
+The revised v1.2 therefore separates contextual assessment from stochastic
+behavior realization:
 
-The historical extra_activity label is retained for code compatibility; in v1.2
-it simply means that PA is performed today.
+1. LLM1 plus the empirical action-planning calibration produces the
+   psychological prior probability for PA.
+2. LLM2 receives that prior and the actual day context and estimates
+   `contextual_pa_probability`. The context may raise or lower the prior, but
+   must not replace or ignore it.
+3. The code performs a reproducible Bernoulli draw using a deterministic
+   persona/day seed.
+4. The sampled result is mapped to `skip_activity` or `extra_activity`.
 
-When PA occurs, LLM2 must additionally report:
+This explicitly avoids treating a temperature-0 language model as if repeated
+binary classifications were Bernoulli draws.
 
-- duration_min
-- intensity: light, moderate, or vigorous
+LLM2 also provides conditional outputs for both possible sampled outcomes. If
+PA is sampled, the selected branch supplies `duration_min` and `intensity`
+(light, moderate, or vigorous). If no PA is sampled, duration is 0 and intensity
+is none. Ordinary or leisurely walking is classified as light; walking is
+moderate only when explicitly brisk/effortful.
 
-When no PA occurs, duration is 0 and intensity is none.
+The historical `extra_activity` label is retained for code compatibility; in
+v1.2 it simply means that PA is performed today.
 
 ## Validation outcome
 
