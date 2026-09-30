@@ -25,6 +25,12 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from resource_usage import extract_token_usage  # noqa: E402
+from empirical_pa_v1_2 import (  # noqa: E402
+    EMPIRICAL_PA_V1_2_MODE,
+    calibrate_unplanned_behavior_policy,
+    extract_action_planning,
+    neutralize_action_planning_for_llm1,
+)
 from run_behavior_probability_estimation import (  # noqa: E402
     DEFAULT_PROMPT_PATH as DEFAULT_BEHAVIOR_PROMPT_PATH,
     load_behavior_probability_prompt,
@@ -36,6 +42,8 @@ DEFAULT_CONTEXT_PATH = SIMULATION_DIR / "output" / "llm_day_contexts_heterogeneo
 FALLBACK_CONTEXT_PATH = SIMULATION_DIR / "output" / "llm_day_contexts.json"
 DEFAULT_PA_DECISION_PROMPT_PATH = SIMULATION_DIR / "PADecision_Prompt.md"
 DEFAULT_PA_DECISION_FEWSHOT_PATH = SIMULATION_DIR / "PADecision_FewShot.md"
+EMPIRICAL_V1_2_PA_DECISION_PROMPT_PATH = SIMULATION_DIR / "PADecision_EmpiricalV1_2_Prompt.md"
+EMPIRICAL_V1_2_PA_DECISION_FEWSHOT_PATH = SIMULATION_DIR / "PADecision_EmpiricalV1_2_FewShot.md"
 OUTPUT_DIR = SIMULATION_DIR / "output"
 COMBINED_OUTPUT_PATH = OUTPUT_DIR / "llm_pa_decision_pipeline_all_agents.json"
 DAILY_DECISION_LOG_PATH = OUTPUT_DIR / "llm_pa_decision_daily_log.csv"
@@ -74,6 +82,19 @@ EXPECTED_PA_DECISION_FIELDS = frozenset(
         "diary_entry",
     }
 )
+EXPECTED_PA_DECISION_FIELDS_EMPIRICAL_V1_2 = frozenset(
+    {
+        "persona_id",
+        "day_index",
+        "decision_code",
+        "decision_label",
+        "duration_min",
+        "intensity",
+        "rationale_short",
+        "diary_entry",
+    }
+)
+EMPIRICAL_V1_2_INTENSITIES = frozenset({"none", "light", "moderate", "vigorous"})
 DETERMINISTIC_PA_DECISION_METADATA_FIELDS = frozenset(
     {
         "activity_performed",
@@ -107,6 +128,8 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "day_index",
     "decision_code",
     "decision_label",
+    "duration_min",
+    "intensity",
     "activity_done",
     "activity_performed",
     "diary_entry_generated_for_simulation",
@@ -619,6 +642,7 @@ def build_pa_decision_input(
     planned_activity: Any | None = None,
     *,
     sampling_seed: int | None = None,
+    empirical_pa_v1_2_metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the exact JSON object passed to LLM2.
 
@@ -636,10 +660,15 @@ def build_pa_decision_input(
         raise ValueError("agent_context must contain day_index as an integer.")
 
     planned_physical_activity = _strip_raw_psychological_fields(planned_activity)
+    empirical_v1_2_enabled = empirical_pa_v1_2_metadata is not None
+    if empirical_v1_2_enabled and planned_physical_activity is not None:
+        raise ValueError(
+            "Empirical PA v1.2 must not receive schedule-derived planned physical activity."
+        )
     behavior_policy_raw = validate_behavior_policy(behavior_policy)
     has_planned_pa = planned_physical_activity is not None
     valid_categories = derive_valid_decision_categories(has_planned_pa=has_planned_pa)
-    return {
+    payload = {
         "persona_id": persona_id,
         "day_index": int(day_index),
         "behavior_policy": behavior_policy_raw,
@@ -651,9 +680,29 @@ def build_pa_decision_input(
         "was_physical_activity_planned_today": has_planned_pa,
         "daily_context": prepare_daily_context_for_pa_decision(agent_context, planned_physical_activity),
     }
+    if empirical_v1_2_enabled:
+        payload["empirical_pa_v1_2"] = {
+            "enabled": True,
+            **_strip_raw_psychological_fields(empirical_pa_v1_2_metadata),
+        }
+    return payload
 
 def build_pa_decision_user_prompt(pa_decision_input: Mapping[str, Any]) -> str:
     input_json = json.dumps(pa_decision_input, ensure_ascii=False, separators=(",", ":"))
+    if pa_decision_input.get("empirical_pa_v1_2"):
+        return f"""
+INPUT:
+{input_json}
+
+IMPORTANT:
+This is empirical PA model v1.2. No physical-activity block is pre-scheduled.
+Make the final decision yourself from valid_decision_categories using behavior_policy
+as a psychological tendency and daily_context as the current opportunity/constraint
+structure. If PA occurs, return a plausible duration_min and intensity exactly as
+required by the v1.2 schema. Do not infer or reconstruct observed T1 MVPA.
+Return exactly one valid JSON object and no other text.
+""".strip()
+
     return f"""
 INPUT:
 {input_json}
@@ -666,7 +715,6 @@ overrides those tendencies. The planned physical activity is schedule-derived fo
 simulated day; do not propose a new activity or future activity. Return exactly one
 valid JSON object in the required PA decision schema.
 """.strip()
-
 
 def parse_pa_decision_json(raw: str) -> dict[str, Any]:
     try:
@@ -707,6 +755,7 @@ def validate_pa_decision_output(
     expected_decision_label: str | None = None,
     valid_decision_categories: Sequence[str] | None = None,
     has_planned_pa: bool | None = None,
+    empirical_pa_v1_2: bool = False,
 ) -> dict[str, Any]:
     core_payload = {
         key: value
@@ -714,9 +763,14 @@ def validate_pa_decision_output(
         if key not in DETERMINISTIC_PA_DECISION_METADATA_FIELDS
     }
     actual_fields = set(core_payload)
-    if actual_fields != EXPECTED_PA_DECISION_FIELDS:
-        missing = sorted(EXPECTED_PA_DECISION_FIELDS - actual_fields)
-        extra = sorted(actual_fields - EXPECTED_PA_DECISION_FIELDS)
+    expected_fields = (
+        EXPECTED_PA_DECISION_FIELDS_EMPIRICAL_V1_2
+        if empirical_pa_v1_2
+        else EXPECTED_PA_DECISION_FIELDS
+    )
+    if actual_fields != expected_fields:
+        missing = sorted(expected_fields - actual_fields)
+        extra = sorted(actual_fields - expected_fields)
         raise ValueError(f"PA decision fields mismatch. Missing: {missing}; extra: {extra}.")
 
     persona_id = _require_non_empty_string(core_payload, "persona_id")
@@ -767,16 +821,50 @@ def validate_pa_decision_output(
     rationale_short = _require_non_empty_string(core_payload, "rationale_short")
     diary_entry = _require_non_empty_string(core_payload, "diary_entry")
 
-    return add_pa_decision_metadata(
-        {
-            "persona_id": persona_id,
-            "day_index": int(day_index),
-            "decision_code": int(decision_code),
-            "decision_label": expected_label,
-            "rationale_short": rationale_short,
-            "diary_entry": diary_entry,
-        }
-    )
+    validated = {
+        "persona_id": persona_id,
+        "day_index": int(day_index),
+        "decision_code": int(decision_code),
+        "decision_label": expected_label,
+        "rationale_short": rationale_short,
+        "diary_entry": diary_entry,
+    }
+    if empirical_pa_v1_2:
+        raw_duration = core_payload["duration_min"]
+        if isinstance(raw_duration, bool) or not isinstance(raw_duration, (int, float)):
+            raise ValueError("duration_min must be numeric in empirical PA v1.2.")
+        duration_float = float(raw_duration)
+        if not math.isfinite(duration_float) or not duration_float.is_integer():
+            raise ValueError("duration_min must be a finite whole number in empirical PA v1.2.")
+        duration_min = int(duration_float)
+        raw_intensity = core_payload["intensity"]
+        if not isinstance(raw_intensity, str) or not raw_intensity.strip():
+            raise ValueError("intensity must be a non-empty string in empirical PA v1.2.")
+        intensity = raw_intensity.strip().lower()
+        if intensity not in EMPIRICAL_V1_2_INTENSITIES:
+            raise ValueError(
+                f"intensity must be one of {sorted(EMPIRICAL_V1_2_INTENSITIES)}."
+            )
+        if expected_label == "skip_activity":
+            if duration_min != 0 or intensity != "none":
+                raise ValueError(
+                    "skip_activity requires duration_min=0 and intensity=none in empirical PA v1.2."
+                )
+        elif expected_label == "extra_activity":
+            if not 1 <= duration_min <= 240:
+                raise ValueError(
+                    "Performed PA requires duration_min between 1 and 240 in empirical PA v1.2."
+                )
+            if intensity == "none":
+                raise ValueError("Performed PA requires light, moderate, or vigorous intensity.")
+        else:
+            raise ValueError(
+                "Empirical PA v1.2 only supports skip_activity or extra_activity."
+            )
+        validated["duration_min"] = duration_min
+        validated["intensity"] = intensity
+
+    return add_pa_decision_metadata(validated)
 
 
 def parse_and_validate_pa_decision(
@@ -787,6 +875,7 @@ def parse_and_validate_pa_decision(
     expected_decision_label: str | None = None,
     valid_decision_categories: Sequence[str] | None = None,
     has_planned_pa: bool | None = None,
+    empirical_pa_v1_2: bool = False,
 ) -> dict[str, Any]:
     return validate_pa_decision_output(
         parse_pa_decision_json(raw),
@@ -795,6 +884,7 @@ def parse_and_validate_pa_decision(
         expected_decision_label=expected_decision_label,
         valid_decision_categories=valid_decision_categories,
         has_planned_pa=has_planned_pa,
+        empirical_pa_v1_2=empirical_pa_v1_2,
     )
 
 
@@ -921,6 +1011,7 @@ def run_pa_decision_llm(
             expected_day_index=day_index,
             valid_decision_categories=pa_decision_input.get("valid_decision_categories"),
             has_planned_pa=bool(pa_decision_input.get("was_physical_activity_planned_today")),
+            empirical_pa_v1_2=bool(pa_decision_input.get("empirical_pa_v1_2")),
         )
         result["_resource_usage"] = {
             **extract_token_usage(response),
@@ -1041,6 +1132,8 @@ def write_daily_decision_log_row(
         "day_index": int(day_index),
         "decision_code": int(pa_decision["decision_code"]),
         "decision_label": str(pa_decision["decision_label"]),
+        "duration_min": pa_decision.get("duration_min", ""),
+        "intensity": pa_decision.get("intensity", ""),
         "activity_done": bool(activity_done),
         "activity_performed": bool(pa_decision.get("activity_performed", activity_done)),
         "diary_entry_generated_for_simulation": bool(
@@ -1110,6 +1203,8 @@ def build_closed_loop_update(
     return {
         "activity_done": activity_done,
         "activity_performed": activity_done,
+        "duration_min": pa_decision.get("duration_min"),
+        "intensity": pa_decision.get("intensity"),
         "diary_entry_generated_for_simulation": DIARY_ENTRY_GENERATED_FOR_SIMULATION,
         "previous_psychological_constructs": previous_constructs,
         "updated_psychological_constructs": updated_constructs,
@@ -1178,13 +1273,25 @@ def run_pipeline_for_context(
     resource_tracker: Any | None = None,
     resource_usage_token_source: str = "unavailable",
     verbose_llm_debug: bool = False,
+    empirical_pa_v1_2: bool = False,
 ) -> dict[str, Any]:
     persona_id = str(agent_context.get("persona_id", "unknown_persona"))
     day_index = int(agent_context.get("day_index", 0))
 
+    llm1_agent_context = agent_context
+    action_planning_value: float | None = None
+    empirical_calibration_metadata: dict[str, Any] | None = None
+    if empirical_pa_v1_2:
+        if planned_activity is not None:
+            raise ValueError(
+                "Empirical PA v1.2 does not allow schedule-derived planned activity."
+            )
+        action_planning_value = extract_action_planning(agent_context)
+        llm1_agent_context = neutralize_action_planning_for_llm1(agent_context)
+
     behavior_started = time.perf_counter()
     behavior_payload = dict(behavior_runner(
-        agent_context,
+        llm1_agent_context,
         system_prompt=behavior_system_prompt,
         model=model,
         temperature=temperature,
@@ -1206,9 +1313,21 @@ def run_pipeline_for_context(
         usage=behavior_usage,
     )
     if "probabilities" in behavior_payload:
-        behavior_policy = validate_behavior_policy(behavior_payload["probabilities"])
+        behavior_policy_before_calibration = validate_behavior_policy(
+            behavior_payload["probabilities"]
+        )
     else:
-        behavior_policy = validate_behavior_policy(behavior_payload)
+        behavior_policy_before_calibration = validate_behavior_policy(behavior_payload)
+
+    if empirical_pa_v1_2:
+        if action_planning_value is None:
+            raise RuntimeError("Missing action-planning value for empirical PA v1.2.")
+        behavior_policy, empirical_calibration_metadata = calibrate_unplanned_behavior_policy(
+            behavior_policy_before_calibration,
+            action_planning=action_planning_value,
+        )
+    else:
+        behavior_policy = behavior_policy_before_calibration
 
     behavior_output_path = save_agent_behavior_policy(
         persona_id,
@@ -1221,6 +1340,15 @@ def run_pipeline_for_context(
         agent_context,
         behavior_policy,
         planned_activity=planned_activity,
+        empirical_pa_v1_2_metadata=(
+            {
+                "mode": EMPIRICAL_PA_V1_2_MODE,
+                "action_planning_empirical_weight_applied": True,
+                "observed_t1_mvpa_exposed_to_llm2": False,
+            }
+            if empirical_pa_v1_2
+            else None
+        ),
     )
     pa_started = time.perf_counter()
     pa_decision = dict(
@@ -1251,6 +1379,7 @@ def run_pipeline_for_context(
         expected_day_index=day_index,
         valid_decision_categories=pa_decision_input.get("valid_decision_categories"),
         has_planned_pa=bool(pa_decision_input.get("was_physical_activity_planned_today")),
+        empirical_pa_v1_2=empirical_pa_v1_2,
     )
 
     pa_decision_output_path = save_agent_pa_decision(
@@ -1288,6 +1417,11 @@ def run_pipeline_for_context(
             "daily_decision_log": str(actual_daily_log_path),
         },
     }
+    if empirical_pa_v1_2:
+        record["behavior_policy_before_empirical_calibration"] = dict(
+            behavior_policy_before_calibration
+        )
+        record["empirical_pa_v1_2"] = empirical_calibration_metadata
     if "scenario" in agent_context:
         record["scenario"] = agent_context["scenario"]
     return record
