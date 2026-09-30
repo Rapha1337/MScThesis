@@ -1816,13 +1816,6 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     ],
                     "behavior_policy": dict(pipeline_record["behavior_policy"]),
                     "behavior_policy_raw": dict(pipeline_record["behavior_policy_raw"]),
-                    "behavior_policy_before_empirical_calibration": dict(
-                        pipeline_record.get(
-                            "behavior_policy_before_empirical_calibration",
-                            pipeline_record["behavior_policy_raw"],
-                        )
-                    ),
-                    "empirical_pa_v1_2": pipeline_record.get("empirical_pa_v1_2"),
                     "decision_context_has_planned_pa": bool(
                         pipeline_record["decision_context_has_planned_pa"]
                     ),
@@ -1849,6 +1842,13 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     },
                 }
                 record["output_files"]["state_assessment"] = str(assessment_output_path)
+                if config.empirical_pa_v1_2:
+                    record["behavior_policy_before_empirical_calibration"] = dict(
+                        pipeline_record["behavior_policy_before_empirical_calibration"]
+                    )
+                    record["empirical_pa_v1_2"] = dict(
+                        pipeline_record["empirical_pa_v1_2"] or {}
+                    )
                 if config.include_full_hourly_context:
                     record["hourly_context_24h"] = llm_context["hourly_context_24h"]
 
