@@ -594,7 +594,9 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
         profile = empirical_profiles[idx] if empirical_profiles else None
         persona_id = profile.persona_id if profile is not None else f"StudentPersona_{idx + 1:02d}"
         if profile is not None:
-            profile_wrapper = profile.to_wrapper()
+            profile_wrapper = profile.to_wrapper(
+                include_pa_schedule=not config.empirical_pa_v1_2
+            )
             default_input_parameters = profile_wrapper.schedule_input_parameters()
             default_poi_distances = profile_wrapper.accessibility_input_parameters()
         else:
@@ -612,6 +614,10 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
             config.cli_overrides,
             idx,
         )
+        if config.empirical_pa_v1_2 and profile is not None:
+            # Observed T1 MVPA is validation-only in v1.2 and must not create
+            # schedule PA blocks or otherwise parameterize the day structure.
+            input_parameters["fitness_hours_week"] = 0.0
         simulation_inputs = {**normalized_inputs, **input_parameters, **poi_distances}
         simulation_inputs["day_index"] = 0
         if profile is not None:
@@ -656,6 +662,12 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
                 **profile.metadata(),
                 "initial_psychological_constructs_normalized": dict(
                     profile.psychological_constructs
+                ),
+                "empirical_pa_v1_2_enabled": bool(config.empirical_pa_v1_2),
+                "observed_mvpa_role": (
+                    "validation_only"
+                    if config.empirical_pa_v1_2
+                    else "schedule_parameter_and_validation_comparator"
                 ),
             }
         else:
