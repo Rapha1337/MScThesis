@@ -1003,3 +1003,149 @@ def test_pre_decision_context_does_not_mutate_original_hourly_context() -> None:
     assert entries == original
     assert result is not entries
     assert result[10] is not entries[10]
+
+
+def test_empirical_v1_2_input_forbids_schedule_pa_and_exposes_no_raw_constructs() -> None:
+    from run_llm_pa_decision import build_pa_decision_input
+
+    context = _agent_context()
+    context["psychological_state"]["values_normalized"]["action_planning"] = 0.65
+    result = build_pa_decision_input(
+        context,
+        BEHAVIOR_POLICY,
+        empirical_pa_v1_2_metadata={
+            "mode": "empirical_pa_v1_2",
+            "action_planning_empirical_weight_applied": True,
+        },
+    )
+
+    assert result["valid_decision_categories"] == ["skip_activity", "extra_activity"]
+    assert result["planned_physical_activity"] is None
+    assert result["was_physical_activity_planned_today"] is False
+    assert result["empirical_pa_v1_2"]["enabled"] is True
+    serialized = json.dumps(result)
+    assert "psychological_state" not in serialized
+    assert "values_normalized" not in serialized
+
+    with pytest.raises(ValueError, match="must not receive schedule-derived"):
+        build_pa_decision_input(
+            context,
+            BEHAVIOR_POLICY,
+            planned_activity={"duration_min": 60},
+            empirical_pa_v1_2_metadata={"mode": "empirical_pa_v1_2"},
+        )
+
+
+def test_empirical_v1_2_decision_requires_duration_and_intensity() -> None:
+    from run_llm_pa_decision import validate_pa_decision_output
+
+    payload = {
+        "persona_id": "p1",
+        "day_index": 3,
+        "decision_code": 3,
+        "decision_label": "extra_activity",
+        "duration_min": 50,
+        "intensity": "moderate",
+        "rationale_short": "There is enough free time and energy for activity.",
+        "diary_entry": "I trained moderately for about 50 minutes.",
+    }
+    validated = validate_pa_decision_output(
+        payload,
+        "p1",
+        3,
+        valid_decision_categories=["skip_activity", "extra_activity"],
+        has_planned_pa=False,
+        empirical_pa_v1_2=True,
+    )
+
+    assert validated["duration_min"] == 50
+    assert validated["intensity"] == "moderate"
+    assert validated["activity_performed"] is True
+
+
+@pytest.mark.parametrize(
+    ("decision_code", "decision_label", "duration_min", "intensity"),
+    [
+        (0, "skip_activity", 20, "light"),
+        (3, "extra_activity", 0, "none"),
+        (3, "extra_activity", 45, "none"),
+        (3, "extra_activity", 45, "invalid"),
+    ],
+)
+def test_empirical_v1_2_rejects_inconsistent_activity_dose(
+    decision_code: int,
+    decision_label: str,
+    duration_min: int,
+    intensity: str,
+) -> None:
+    from run_llm_pa_decision import validate_pa_decision_output
+
+    payload = {
+        "persona_id": "p1",
+        "day_index": 3,
+        "decision_code": decision_code,
+        "decision_label": decision_label,
+        "duration_min": duration_min,
+        "intensity": intensity,
+        "rationale_short": "context",
+        "diary_entry": "entry",
+    }
+    with pytest.raises(ValueError):
+        validate_pa_decision_output(
+            payload,
+            "p1",
+            3,
+            valid_decision_categories=["skip_activity", "extra_activity"],
+            has_planned_pa=False,
+            empirical_pa_v1_2=True,
+        )
+
+
+def test_empirical_v1_2_pipeline_neutralizes_ap_then_applies_empirical_weight(
+    tmp_path: Path,
+) -> None:
+    from empirical_pa_v1_2 import ACTION_PLANNING_MEAN
+    from run_llm_pa_decision import run_pipeline_for_context
+
+    context = _agent_context()
+    context["psychological_state"]["values_normalized"]["action_planning"] = 0.65
+    seen: dict[str, object] = {}
+
+    def fake_behavior_runner(agent_context, **kwargs):
+        seen["llm1_action_planning"] = agent_context["psychological_state"][
+            "values_normalized"
+        ]["action_planning"]
+        return {"probabilities": dict(BEHAVIOR_POLICY)}
+
+    def fake_pa_runner(pa_decision_input, **kwargs):
+        seen["pa_input"] = dict(pa_decision_input)
+        return {
+            "persona_id": pa_decision_input["persona_id"],
+            "day_index": pa_decision_input["day_index"],
+            "decision_code": 3,
+            "decision_label": "extra_activity",
+            "duration_min": 45,
+            "intensity": "moderate",
+            "rationale_short": "Context supports activity.",
+            "diary_entry": "I was active for about 45 minutes.",
+        }
+
+    record = run_pipeline_for_context(
+        context,
+        behavior_system_prompt="behavior prompt",
+        pa_decision_system_prompt="pa prompt",
+        behavior_runner=fake_behavior_runner,
+        pa_decision_runner=fake_pa_runner,
+        output_dir=tmp_path,
+        empirical_pa_v1_2=True,
+    )
+
+    assert seen["llm1_action_planning"] == pytest.approx(ACTION_PLANNING_MEAN)
+    pa_input = seen["pa_input"]
+    assert isinstance(pa_input, dict)
+    assert pa_input["valid_decision_categories"] == ["skip_activity", "extra_activity"]
+    assert pa_input["behavior_policy"]["do_planned_activity"] == 0.0
+    assert pa_input["behavior_policy"]["adapt_activity"] == 0.0
+    assert "action_planning_value" not in json.dumps(pa_input)
+    assert record["empirical_pa_v1_2"]["action_planning_value"] == pytest.approx(0.65)
+    assert record["pa_decision"]["duration_min"] == 45
