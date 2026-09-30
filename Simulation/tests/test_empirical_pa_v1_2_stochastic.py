@@ -99,7 +99,7 @@ def test_contextual_assessment_validates_probability_and_conditional_branches() 
 def test_contextual_assessment_rejects_probability_outside_unit_interval(
     bad_probability: float,
 ) -> None:
-    with pytest.raises(ValueError, match=r"within \\[0, 1\\]"):
+    with pytest.raises(ValueError, match=r"within \[0, 1\]"):
         validate_contextual_assessment(
             _assessment(bad_probability),
             expected_persona_id="T1_Medoid_C4_8303",
