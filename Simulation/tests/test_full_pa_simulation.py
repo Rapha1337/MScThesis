@@ -1112,11 +1112,9 @@ def test_empirical_pa_v1_2_removes_mvpa_from_schedule_and_records_activity_dose(
         decision = record["pa_decision"]
         if decision["decision_label"] == "extra_activity":
             assert decision["duration_min"] == 45
-            assert decision["intensity"] == "moderate"
         else:
             assert decision["decision_label"] == "skip_activity"
             assert decision["duration_min"] == 0
-            assert decision["intensity"] == "none"
 
     compact_payload = json.loads(
         (config.output_dir / "contexts_compact.json").read_text(encoding="utf-8")
@@ -1160,6 +1158,7 @@ def test_empirical_pa_v1_2_removes_mvpa_from_schedule_and_records_activity_dose(
     assert manifest["decision_schema"]["llm2_makes_final_contextual_decision"] is False
     assert manifest["decision_schema"]["llm2_estimates_contextual_pa_probability"] is True
     assert manifest["decision_schema"]["post_llm2_seeded_sampling_active"] is True
+    assert manifest["decision_schema"]["activity_dose_fields"] == ["duration_min"]
 
     run_config = json.loads(
         (config.output_dir / "run_config.json").read_text(encoding="utf-8")
