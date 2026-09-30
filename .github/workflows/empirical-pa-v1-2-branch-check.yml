@@ -31,3 +31,20 @@ jobs:
           Analysis/tests/test_t1_medoid_pa_validation.py
           Analysis/tests/test_t1_medoid_pa_validation_v1_2.py
           -q
+
+      - name: Run no-LLM v1.2 wiring check
+        run: >
+          python Analysis/t1_medoid_pa_validation_v1_2.py
+          --base-seed 14
+          --persona-input-file Analysis/results_t1_persona_clustering/11_primary_medoid_personas.csv
+          --output-dir Analysis/results_t1_medoid_pa_validation_v1_2_ci
+          --dry-run
+          --disable-resource-tracking
+          --disable-codecarbon
+
+      - name: Check v1.2 outputs exist
+        run: |
+          test -f Analysis/results_t1_medoid_pa_validation_v1_2_ci/03_daily_simulated_pa_v1_2.csv
+          test -f Analysis/results_t1_medoid_pa_validation_v1_2_ci/04_horizon_persona_summary_v1_2.csv
+          test -f Analysis/results_t1_medoid_pa_validation_v1_2_ci/05_horizon_correlations_v1_2.csv
+          test -f Analysis/results_t1_medoid_pa_validation_v1_2_ci/06_validation_report_v1_2.md
