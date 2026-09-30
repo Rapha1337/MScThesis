@@ -590,6 +590,10 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
         if config.persona_input_file is not None
         else []
     )
+    if config.empirical_pa_v1_2 and not empirical_profiles:
+        raise ValueError(
+            "Empirical PA v1.2 requires --persona-input-file with empirical persona profiles."
+        )
     if empirical_profiles and len(empirical_profiles) != config.n_personas:
         raise ValueError(
             "The empirical persona input file contains "
