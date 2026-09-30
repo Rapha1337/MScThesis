@@ -31,6 +31,13 @@ from empirical_personas import (  # noqa: E402
     EmpiricalPersonaWrapper,
     load_empirical_personas,
 )
+from empirical_pa_v1_2 import (  # noqa: E402
+    ACTION_PLANNING_BETA,
+    ACTION_PLANNING_CALIBRATION_DESCRIPTION,
+    ACTION_PLANNING_CALIBRATION_N,
+    ACTION_PLANNING_MEAN,
+    ACTION_PLANNING_SD,
+)
 from psychological_state import (  # noqa: E402
     BACKEND_CONSTRUCT_RANGES,
     build_psychological_state,
@@ -40,6 +47,8 @@ from resource_usage import ResourceUsageEngine  # noqa: E402
 from run_llm_pa_decision import (  # noqa: E402
     LLM1_MAX_TOKENS,
     LLM2_MAX_TOKENS,
+    EMPIRICAL_V1_2_PA_DECISION_PROMPT_PATH,
+    EMPIRICAL_V1_2_PA_DECISION_FEWSHOT_PATH,
     PA_DECISION_CODEBOOK,
     MODEL_NAME,
     TEMPERATURE,
@@ -68,6 +77,7 @@ from state_assessment import (  # noqa: E402
 )
 
 DEFAULT_OUTPUT_DIR = SIMULATION_DIR / "output" / "full_pa_simulation"
+EMPIRICAL_V1_2_BEHAVIOR_PROMPT_PATH = SIMULATION_DIR / "BehaviorProbability_EmpiricalV1_2_Prompt.md"
 SIMULATION_RUN_MANIFEST_FILENAME = "simulation_run_manifest.json"
 RESOURCE_USAGE_FILENAME = "resource_usage.jsonl"
 DEPRECATED_DECISION_CATEGORIES: tuple[str, ...] = (
@@ -150,6 +160,8 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "calendar_date",
     "decision_code",
     "decision_label",
+    "duration_min",
+    "intensity",
     "activity_done",
     "activity_performed",
     "diary_entry_generated_for_simulation",
@@ -178,6 +190,9 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "valid_decision_categories",
     "decision_source",
     "behavior_policy",
+    "behavior_policy_before_empirical_calibration",
+    "action_planning_value",
+    "action_planning_modifier",
     "previous_psychological_constructs",
     "updated_psychological_constructs",
     "diary_entry",
@@ -221,6 +236,7 @@ class FullSimulationConfig:
     top_p: float = TOP_P
     llm_seed: int | None = None
     persona_input_file: Path | None = None
+    empirical_pa_v1_2: bool = False
 
 
 @dataclass
@@ -312,6 +328,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help=(
             "CSV containing complete empirical persona rows, for example the "
             "primary medoid output from the T1 clustering analysis."
+        ),
+    )
+    parser.add_argument(
+        "--empirical-pa-v1-2",
+        action="store_true",
+        help=(
+            "Use the revised empirical PA pathway: observed T1 MVPA is validation-only, "
+            "no PA blocks are inserted into schedules, and action planning is weighted "
+            "once using the held-out T1 calibration."
         ),
     )
     parser.add_argument("--daily-log-path", type=Path, default=None)
@@ -417,6 +442,11 @@ def config_from_args(args: argparse.Namespace) -> FullSimulationConfig:
         raise ValueError("--n-personas must be >= 1")
     if args.n_days < 1:
         raise ValueError("--n-days must be >= 1")
+    if bool(getattr(args, "empirical_pa_v1_2", False)) and args.physical_activity_hours_per_week is not None:
+        raise ValueError(
+            "--physical-activity-hours-per-week cannot be used with --empirical-pa-v1-2; "
+            "observed/input PA must not parameterize the v1.2 schedule."
+        )
     return FullSimulationConfig(
         n_personas=int(args.n_personas),
         n_days=int(args.n_days),
@@ -442,6 +472,7 @@ def config_from_args(args: argparse.Namespace) -> FullSimulationConfig:
         persona_input_file=(
             Path(args.persona_input_file) if args.persona_input_file is not None else None
         ),
+        empirical_pa_v1_2=bool(getattr(args, "empirical_pa_v1_2", False)),
     )
 
 
@@ -559,6 +590,10 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
         if config.persona_input_file is not None
         else []
     )
+    if config.empirical_pa_v1_2 and not empirical_profiles:
+        raise ValueError(
+            "Empirical PA v1.2 requires --persona-input-file with empirical persona profiles."
+        )
     if empirical_profiles and len(empirical_profiles) != config.n_personas:
         raise ValueError(
             "The empirical persona input file contains "
@@ -574,7 +609,9 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
         profile = empirical_profiles[idx] if empirical_profiles else None
         persona_id = profile.persona_id if profile is not None else f"StudentPersona_{idx + 1:02d}"
         if profile is not None:
-            profile_wrapper = profile.to_wrapper()
+            profile_wrapper = profile.to_wrapper(
+                include_pa_schedule=not config.empirical_pa_v1_2
+            )
             default_input_parameters = profile_wrapper.schedule_input_parameters()
             default_poi_distances = profile_wrapper.accessibility_input_parameters()
         else:
@@ -592,6 +629,10 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
             config.cli_overrides,
             idx,
         )
+        if config.empirical_pa_v1_2 and profile is not None:
+            # Observed T1 MVPA is validation-only in v1.2 and must not create
+            # schedule PA blocks or otherwise parameterize the day structure.
+            input_parameters["fitness_hours_week"] = 0.0
         simulation_inputs = {**normalized_inputs, **input_parameters, **poi_distances}
         simulation_inputs["day_index"] = 0
         if profile is not None:
@@ -636,6 +677,12 @@ def _build_persona_states(config: FullSimulationConfig) -> list[PersonaRuntimeSt
                 **profile.metadata(),
                 "initial_psychological_constructs_normalized": dict(
                     profile.psychological_constructs
+                ),
+                "empirical_pa_v1_2_enabled": bool(config.empirical_pa_v1_2),
+                "observed_mvpa_role": (
+                    "validation_only"
+                    if config.empirical_pa_v1_2
+                    else "schedule_parameter_and_validation_comparator"
                 ),
             }
         else:
@@ -864,6 +911,7 @@ def _dry_behavior_runner(agent_context: Mapping[str, Any], **kwargs: Any) -> dic
 def _dry_pa_decision_runner(pa_decision_input: Mapping[str, Any], **kwargs: Any) -> dict[str, Any]:
     del kwargs
     planned_activity = pa_decision_input.get("planned_physical_activity")
+    empirical_v1_2 = bool(pa_decision_input.get("empirical_pa_v1_2"))
     valid_categories = [str(label) for label in pa_decision_input.get("valid_decision_categories", [])]
     if not valid_categories:
         raise ValueError("Dry-run LLM2 requires valid_decision_categories.")
@@ -916,7 +964,7 @@ def _dry_pa_decision_runner(pa_decision_input: Mapping[str, Any], **kwargs: Any)
         rationale = "Dry-run LLM2 selected doing the planned activity because psychological tendencies and context supported it."
         diary = "Dry-run: I completed today's planned activity as planned."
 
-    return {
+    result = {
         "persona_id": str(pa_decision_input["persona_id"]),
         "day_index": int(pa_decision_input["day_index"]),
         "decision_code": decision_code,
@@ -931,6 +979,14 @@ def _dry_pa_decision_runner(pa_decision_input: Mapping[str, Any], **kwargs: Any)
             "paper_seconds": 0.0,
         },
     }
+    if empirical_v1_2:
+        if decision_label == "extra_activity":
+            result["duration_min"] = 45
+            result["intensity"] = "moderate"
+        else:
+            result["duration_min"] = 0
+            result["intensity"] = "none"
+    return result
 
 def _context_summary(llm_context: Mapping[str, Any]) -> dict[str, Any]:
     hourly = list(llm_context.get("hourly_context_24h", []))
@@ -969,6 +1025,8 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         "calendar_date": record["calendar_date"],
         "decision_code": int(pa_decision["decision_code"]),
         "decision_label": str(pa_decision["decision_label"]),
+        "duration_min": pa_decision.get("duration_min", ""),
+        "intensity": pa_decision.get("intensity", ""),
         "activity_done": bool(closed_loop["activity_done"]),
         "activity_performed": bool(closed_loop.get("activity_performed", closed_loop["activity_done"])),
         "diary_entry_generated_for_simulation": bool(
@@ -1025,6 +1083,15 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         ),
         "behavior_policy": _json_log_value(record.get("behavior_policy")),
         "behavior_policy_raw": _json_log_value(record.get("behavior_policy_raw")),
+        "behavior_policy_before_empirical_calibration": _json_log_value(
+            record.get("behavior_policy_before_empirical_calibration")
+        ),
+        "action_planning_value": (
+            (record.get("empirical_pa_v1_2") or {}).get("action_planning_value")
+        ),
+        "action_planning_modifier": (
+            (record.get("empirical_pa_v1_2") or {}).get("modifier_beta_times_z")
+        ),
         "decision_context_has_planned_pa": bool(
             record.get("decision_context_has_planned_pa")
         ),
@@ -1109,6 +1176,7 @@ def _run_pipeline(
         resource_tracker=resource_tracker,
         resource_usage_token_source="dry_run" if config.dry_run else "unavailable",
         verbose_llm_debug=config.verbose_llm_debug,
+        empirical_pa_v1_2=config.empirical_pa_v1_2,
         **kwargs,
     )
 
@@ -1166,6 +1234,7 @@ def _build_simulation_run_manifest(
             "temperature": config.temperature,
             "top_p": config.top_p,
             "llm_seed": config.llm_seed,
+            "empirical_pa_v1_2": bool(config.empirical_pa_v1_2),
         },
         "models": {
             "llm1": config.model,
@@ -1201,8 +1270,16 @@ def _build_simulation_run_manifest(
             "psychological_construct_update_null_handling": "keep_previous",
         },
         "decision_schema": {
-            "active_categories": [PA_DECISION_CODEBOOK[key] for key in sorted(PA_DECISION_CODEBOOK)],
-            "successful_activity_categories": sorted(SUCCESSFUL_PA_DECISION_LABELS),
+            "active_categories": (
+                ["skip_activity", "extra_activity"]
+                if config.empirical_pa_v1_2
+                else [PA_DECISION_CODEBOOK[key] for key in sorted(PA_DECISION_CODEBOOK)]
+            ),
+            "successful_activity_categories": (
+                ["extra_activity"]
+                if config.empirical_pa_v1_2
+                else sorted(SUCCESSFUL_PA_DECISION_LABELS)
+            ),
             "unsuccessful_or_no_activity_categories": sorted(UNSUCCESSFUL_PA_DECISION_LABELS),
             "deprecated_categories": list(DEPRECATED_DECISION_CATEGORIES),
             "app_ignored_active": False,
@@ -1210,17 +1287,52 @@ def _build_simulation_run_manifest(
             "decision_source": DECISION_SOURCE_LLM2_CONTEXTUAL,
             "llm2_makes_final_contextual_decision": True,
             "pre_llm2_seeded_sampling_active": False,
-            "planned_vs_realized_context": "planned_physical_activity records schedule intent; LLM2 daily_context rewrites planned PA hours as planned_physical_activity with origin-based accessibility until LLM2 decides.",
-            "llm2_raw_psychological_construct_values": "not provided; LLM1 is the sole processor of raw normalized constructs before LLM2 and passes four behavior_policy probabilities.",
+            "planned_vs_realized_context": (
+                "empirical PA v1.2: schedules contain no PA blocks; LLM2 decides daily PA from psychological tendencies and contextual opportunities/constraints."
+                if config.empirical_pa_v1_2
+                else "planned_physical_activity records schedule intent; LLM2 daily_context rewrites planned PA hours as planned_physical_activity with origin-based accessibility until LLM2 decides."
+            ),
+            "llm2_raw_psychological_construct_values": (
+                "not provided; in empirical PA v1.2 individual action planning is neutralized for LLM1 and reintroduced once through the held-out empirical beta calibration before LLM2."
+                if config.empirical_pa_v1_2
+                else "not provided; LLM1 is the sole processor of raw normalized constructs before LLM2 and passes four behavior_policy probabilities."
+            ),
+            "activity_dose_fields": (
+                ["duration_min", "intensity"] if config.empirical_pa_v1_2 else []
+            ),
             "weekday_convention": "Internal weekday is 0=Monday through 6=Sunday; LLM-facing context also includes weekday_name.",
             "phase_representation": "Internal phase may be holiday for lower-structure vacation blocks; LLM-facing phase_llm translates this as vacation_period. Public holidays require separate event variables.",
             "llm3_assessment_policy": "conservative evidence-based scoring with null preserving previous construct values when current diary evidence is insufficient; full-simulation runtime passes the current LLM2 decision label, planned-PA status, and planned PA summary into LLM3.",
         },
         "prompt_files": {
-            "llm1": str((SIMULATION_DIR / "BehaviorProbability_Prompt.md").relative_to(ROOT_DIR)),
-            "llm2": str((SIMULATION_DIR / "PADecision_Prompt.md").relative_to(ROOT_DIR)),
-            "few_shot": str((SIMULATION_DIR / "PADecision_FewShot.md").relative_to(ROOT_DIR)),
+            "llm1": str((
+                EMPIRICAL_V1_2_BEHAVIOR_PROMPT_PATH
+                if config.empirical_pa_v1_2
+                else SIMULATION_DIR / "BehaviorProbability_Prompt.md"
+            ).relative_to(ROOT_DIR)),
+            "llm2": str((
+                EMPIRICAL_V1_2_PA_DECISION_PROMPT_PATH
+                if config.empirical_pa_v1_2
+                else SIMULATION_DIR / "PADecision_Prompt.md"
+            ).relative_to(ROOT_DIR)),
+            "few_shot": str((
+                EMPIRICAL_V1_2_PA_DECISION_FEWSHOT_PATH
+                if config.empirical_pa_v1_2
+                else SIMULATION_DIR / "PADecision_FewShot.md"
+            ).relative_to(ROOT_DIR)),
         },
+        "empirical_pa_v1_2_calibration": (
+            {
+                "description": ACTION_PLANNING_CALIBRATION_DESCRIPTION,
+                "standardized_beta": ACTION_PLANNING_BETA,
+                "action_planning_mean": ACTION_PLANNING_MEAN,
+                "action_planning_sd": ACTION_PLANNING_SD,
+                "calibration_n": ACTION_PLANNING_CALIBRATION_N,
+                "observed_t1_mvpa_role": "validation_only",
+            }
+            if config.empirical_pa_v1_2
+            else None
+        ),
         "output_files": dict(output_files),
         "notes": {"diary_entries_are_simulation_artifacts": True},
     }
@@ -1275,6 +1387,7 @@ def _run_config_comparison_payload(config: FullSimulationConfig, daily_log_path:
         "persona_input_file": (
             str(config.persona_input_file) if config.persona_input_file is not None else None
         ),
+        "empirical_pa_v1_2": bool(config.empirical_pa_v1_2),
     }
 
 
@@ -1302,6 +1415,7 @@ def _write_incremental_outputs(
                 "start_date": config.start_date.isoformat(),
                 "base_seed": config.base_seed,
                 "dry_run": config.dry_run,
+                "empirical_pa_v1_2": bool(config.empirical_pa_v1_2),
                 "persona_metadata_file": str(persona_metadata_path),
                 "state_assessment_call_count": state_assessment_call_count,
             },
@@ -1318,6 +1432,7 @@ def _write_incremental_outputs(
                 "start_date": config.start_date.isoformat(),
                 "base_seed": config.base_seed,
                 "dry_run": config.dry_run,
+                "empirical_pa_v1_2": bool(config.empirical_pa_v1_2),
                 "persona_metadata_file": str(persona_metadata_path),
                 "output_files": dict(output_files),
             },
@@ -1428,6 +1543,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
         "persona_input_file": (
             str(config.persona_input_file) if config.persona_input_file is not None else None
         ),
+        "empirical_pa_v1_2": bool(config.empirical_pa_v1_2),
     }
     if not config.resume:
         _write_json(config.output_dir / "run_config.json", run_config_payload)
@@ -1460,8 +1576,23 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
     resource_tracker.start_run()
 
     try:
-        behavior_system_prompt = "DRY RUN BEHAVIOR PROMPT" if config.dry_run else load_behavior_probability_prompt()
-        pa_decision_system_prompt = "DRY RUN PA DECISION PROMPT" if config.dry_run else load_pa_decision_prompt()
+        if config.dry_run:
+            behavior_system_prompt = "DRY RUN BEHAVIOR PROMPT"
+        elif config.empirical_pa_v1_2:
+            behavior_system_prompt = load_behavior_probability_prompt(
+                EMPIRICAL_V1_2_BEHAVIOR_PROMPT_PATH
+            )
+        else:
+            behavior_system_prompt = load_behavior_probability_prompt()
+        if config.dry_run:
+            pa_decision_system_prompt = "DRY RUN PA DECISION PROMPT"
+        elif config.empirical_pa_v1_2:
+            pa_decision_system_prompt = load_pa_decision_prompt(
+                EMPIRICAL_V1_2_PA_DECISION_PROMPT_PATH,
+                EMPIRICAL_V1_2_PA_DECISION_FEWSHOT_PATH,
+            )
+        else:
+            pa_decision_system_prompt = load_pa_decision_prompt()
         state_assessment_prompt = load_state_assessment_prompt()
 
         persona_states = _build_persona_states(config)
@@ -1526,6 +1657,10 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 planned_activity_for_day = _json_ready(
                     planned_physical_activity_from_schedule(llm_context["hourly_context_24h"])
                 )
+                if config.empirical_pa_v1_2 and planned_activity_for_day is not None:
+                    raise RuntimeError(
+                        "Empirical PA v1.2 leaked a physical-activity block into the schedule."
+                    )
                 per_day_output_dir = (
                     config.output_dir
                     / "llm_outputs"
@@ -1711,6 +1846,13 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     },
                 }
                 record["output_files"]["state_assessment"] = str(assessment_output_path)
+                if config.empirical_pa_v1_2:
+                    record["behavior_policy_before_empirical_calibration"] = dict(
+                        pipeline_record["behavior_policy_before_empirical_calibration"]
+                    )
+                    record["empirical_pa_v1_2"] = dict(
+                        pipeline_record["empirical_pa_v1_2"] or {}
+                    )
                 if config.include_full_hourly_context:
                     record["hourly_context_24h"] = llm_context["hourly_context_24h"]
 
@@ -1767,6 +1909,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 "start_date": config.start_date.isoformat(),
                 "base_seed": config.base_seed,
                 "dry_run": config.dry_run,
+                "empirical_pa_v1_2": bool(config.empirical_pa_v1_2),
                 "persona_metadata_file": str(persona_metadata_path),
                 "state_assessment_call_count": state_assessment_call_count,
             },
@@ -1782,6 +1925,7 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 "start_date": config.start_date.isoformat(),
                 "base_seed": config.base_seed,
                 "dry_run": config.dry_run,
+                "empirical_pa_v1_2": bool(config.empirical_pa_v1_2),
                 "persona_metadata_file": str(persona_metadata_path),
                 "output_files": dict(output_files),
             },

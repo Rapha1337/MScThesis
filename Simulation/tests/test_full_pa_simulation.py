@@ -1064,3 +1064,97 @@ def test_resumed_rolling_diary_window_output_matches_uninterrupted_dry_run(tmp_p
         ]
 
     assert comparable(resumed) == comparable(uninterrupted)
+
+
+def test_empirical_pa_v1_2_removes_mvpa_from_schedule_and_records_activity_dose(
+    tmp_path: Path,
+) -> None:
+    from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
+
+    persona_file = (
+        ROOT_DIR.parent
+        / "Analysis"
+        / "results_t1_persona_clustering"
+        / "11_primary_medoid_personas.csv"
+    )
+    config = FullSimulationConfig(
+        n_personas=4,
+        n_days=2,
+        start_date=date(2026, 7, 9),
+        base_seed=14,
+        output_dir=tmp_path / "empirical_v1_2",
+        model="gpt-oss-120b",
+        temperature=0,
+        llm1_max_tokens=2000,
+        llm2_max_tokens=1200,
+        dry_run=True,
+        include_full_hourly_context=True,
+        persona_input_file=persona_file,
+        empirical_pa_v1_2=True,
+        enable_resource_tracking=False,
+        enable_codecarbon=False,
+    )
+
+    trace = run_full_simulation(config)
+
+    assert len(trace["records"]) == 8
+    for record in trace["records"]:
+        assert record["was_physical_activity_planned_today"] is False
+        assert record["planned_physical_activity"] is None
+        assert record["valid_decision_categories"] == ["skip_activity", "extra_activity"]
+        assert record["behavior_policy"]["do_planned_activity"] == 0.0
+        assert record["behavior_policy"]["adapt_activity"] == 0.0
+        assert not any(
+            entry.get("activity_type") == "physical_activity"
+            or entry.get("subtype") == "physical_activity"
+            for entry in record["hourly_context_24h"]
+        )
+        decision = record["pa_decision"]
+        if decision["decision_label"] == "extra_activity":
+            assert decision["duration_min"] == 45
+            assert decision["intensity"] == "moderate"
+        else:
+            assert decision["decision_label"] == "skip_activity"
+            assert decision["duration_min"] == 0
+            assert decision["intensity"] == "none"
+
+    compact_payload = json.loads(
+        (config.output_dir / "contexts_compact.json").read_text(encoding="utf-8")
+    )
+    compact_serialized = json.dumps(compact_payload)
+    assert "reported_mvpa_hours_per_week" not in compact_serialized
+    assert "fitness_hours_week" not in compact_serialized
+    assert "profile_metadata" not in compact_serialized
+
+    metadata = json.loads(
+        (config.output_dir / "persona_metadata.json").read_text(encoding="utf-8")
+    )
+    assert all(
+        persona["input_parameters"]["physical_activity_hours_per_week"] == 0.0
+        for persona in metadata["personas"]
+    )
+    assert all(
+        persona["profile_metadata"]["observed_mvpa_role"] == "validation_only"
+        for persona in metadata["personas"]
+    )
+    assert [
+        persona["profile_metadata"]["reported_mvpa_hours_per_week"]
+        for persona in metadata["personas"]
+    ] == pytest.approx([2.0, 1.66666666666667, 2.25, 0.333333333333333])
+
+    manifest = json.loads(
+        (config.output_dir / "simulation_run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["simulation"]["empirical_pa_v1_2"] is True
+    assert manifest["decision_schema"]["active_categories"] == [
+        "skip_activity",
+        "extra_activity",
+    ]
+    assert manifest["empirical_pa_v1_2_calibration"]["standardized_beta"] == pytest.approx(
+        0.16164280788232943
+    )
+
+    run_config = json.loads(
+        (config.output_dir / "run_config.json").read_text(encoding="utf-8")
+    )
+    assert run_config["empirical_pa_v1_2"] is True
