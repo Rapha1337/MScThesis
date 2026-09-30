@@ -1,6 +1,6 @@
-### Beispiel 1: PA findet statt
+### Beispiel 1: Kontext erhöht eine mittlere psychologische PA-Wahrscheinlichkeit
 
-Input-Situation: Ein freier früher Abend, mittlere bis hohe Energie, trockenes Wetter, ein Aktivitätsort ist gut erreichbar und die psychologische Tendenz spricht eher für Aktivität.
+Input-Situation: `behavior_policy.extra_activity = 0.45`. Freier früher Abend, gute Energie, trockenes Wetter, Aktivitätsort gut erreichbar.
 
 Erwartete Ausgabe:
 
@@ -8,18 +8,23 @@ Erwartete Ausgabe:
 {
   "persona_id": "ExamplePersona_01",
   "day_index": 1,
-  "decision_code": 3,
-  "decision_label": "extra_activity",
-  "duration_min": 50,
-  "intensity": "moderate",
-  "rationale_short": "Freie Zeit, ausreichende Energie und gute Erreichbarkeit machen körperliche Aktivität heute plausibel.",
-  "diary_entry": "Am frühen Abend hatte ich noch genug Energie und bin für ungefähr 50 Minuten moderat trainieren gegangen."
+  "contextual_pa_probability": 0.58,
+  "activity_if_performed": {
+    "duration_min": 45,
+    "intensity": "moderate",
+    "rationale_short": "Freie Zeit, ausreichende Energie und gute Erreichbarkeit erhöhen die Chance auf eine moderate Aktivität gegenüber dem psychologischen Prior.",
+    "diary_entry": "Am frühen Abend hatte ich noch genug Energie und bin ungefähr 45 Minuten moderat trainieren gegangen."
+  },
+  "no_activity_if_skipped": {
+    "rationale_short": "Trotz günstiger Bedingungen wurde an diesem Tag keine Aktivität umgesetzt.",
+    "diary_entry": "Obwohl der Abend frei war, habe ich heute keinen Sport gemacht und mich stattdessen erholt."
+  }
 }
 ```
 
-### Beispiel 2: Keine PA
+### Beispiel 2: Günstiger Kontext überschreibt einen niedrigen Prior nicht
 
-Input-Situation: Ein dichter Arbeitstag, niedrige Energie und ungünstige Bedingungen; die psychologische Tendenz ist gemischt.
+Input-Situation: `behavior_policy.extra_activity = 0.25`. Viel freie Zeit und gutes Wetter, aber die psychologische PA-Tendenz ist niedrig.
 
 Erwartete Ausgabe:
 
@@ -27,18 +32,23 @@ Erwartete Ausgabe:
 {
   "persona_id": "ExamplePersona_02",
   "day_index": 4,
-  "decision_code": 0,
-  "decision_label": "skip_activity",
-  "duration_min": 0,
-  "intensity": "none",
-  "rationale_short": "Der volle Tagesablauf und die niedrige Energie machen zusätzliche körperliche Aktivität heute unplausibel.",
-  "diary_entry": "Der Tag war ziemlich voll und ich war am Abend müde, deshalb habe ich heute keinen Sport oder andere körperliche Aktivität gemacht."
+  "contextual_pa_probability": 0.34,
+  "activity_if_performed": {
+    "duration_min": 30,
+    "intensity": "light",
+    "rationale_short": "Der günstige Kontext erhöht die niedrige Ausgangswahrscheinlichkeit etwas, rechtfertigt aber keine hohe PA-Wahrscheinlichkeit.",
+    "diary_entry": "Am Nachmittag habe ich das gute Wetter für einen lockeren Spaziergang von ungefähr 30 Minuten genutzt."
+  },
+  "no_activity_if_skipped": {
+    "rationale_short": "Die niedrige psychologische PA-Tendenz bleibt trotz freier Zeit und gutem Wetter relevant.",
+    "diary_entry": "Ich hatte zwar Zeit, habe mich heute aber nicht zu zusätzlicher Bewegung aufgerafft."
+  }
 }
 ```
 
-### Beispiel 3: Leichte Aktivität
+### Beispiel 3: Barrieren senken einen hohen Prior
 
-Input-Situation: Ein freies Zeitfenster und gutes Wetter sprechen für Bewegung, aber die Energie reicht nicht für eine belastende Einheit.
+Input-Situation: `behavior_policy.extra_activity = 0.72`. Dichter Arbeitstag, niedrige Energie und ungünstiges Wetter.
 
 Erwartete Ausgabe:
 
@@ -46,11 +56,16 @@ Erwartete Ausgabe:
 {
   "persona_id": "ExamplePersona_03",
   "day_index": 8,
-  "decision_code": 3,
-  "decision_label": "extra_activity",
-  "duration_min": 35,
-  "intensity": "light",
-  "rationale_short": "Das freie Zeitfenster und gute Wetter begünstigen Bewegung, während das Energielevel eher für eine leichte Aktivität spricht.",
-  "diary_entry": "Ich habe das gute Wetter genutzt und bin etwa 35 Minuten locker spazieren gegangen."
+  "contextual_pa_probability": 0.41,
+  "activity_if_performed": {
+    "duration_min": 25,
+    "intensity": "light",
+    "rationale_short": "Trotz hoher psychologischer Bereitschaft sprechen Zeitknappheit und niedrige Energie nur für eine kurze leichte Aktivität.",
+    "diary_entry": "Am Abend bin ich noch ungefähr 25 Minuten locker spazieren gegangen."
+  },
+  "no_activity_if_skipped": {
+    "rationale_short": "Der volle Tag und die niedrige Energie können die grundsätzlich hohe PA-Tendenz an diesem Tag überwiegen.",
+    "diary_entry": "Nach dem langen Tag war ich zu müde und habe heute keine zusätzliche körperliche Aktivität gemacht."
+  }
 }
 ```
