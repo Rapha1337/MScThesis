@@ -33,19 +33,40 @@ jobs:
           Analysis/tests/test_t1_action_planning_mvpa_regression.py
           -q
 
-      - name: Run no-LLM v1.2 wiring check
+      - name: Run short no-LLM v1.2 integration check
         run: >
-          python Analysis/t1_medoid_pa_validation_v1_2.py
+          python Simulation/run_full_pa_simulation.py
+          --n-personas 4
+          --n-days 7
+          --start-date 2026-07-09
           --base-seed 14
           --persona-input-file Analysis/results_t1_persona_clustering/11_primary_medoid_personas.csv
-          --output-dir Analysis/results_t1_medoid_pa_validation_v1_2_ci
+          --empirical-pa-v1-2
+          --output-dir Analysis/results_t1_medoid_pa_validation_v1_2_ci/simulation
           --dry-run
           --disable-resource-tracking
           --disable-codecarbon
 
-      - name: Check v1.2 outputs exist
+      - name: Verify no PA schedule leakage and structured PA dose
         run: |
-          test -f Analysis/results_t1_medoid_pa_validation_v1_2_ci/03_daily_simulated_pa_v1_2.csv
-          test -f Analysis/results_t1_medoid_pa_validation_v1_2_ci/04_horizon_persona_summary_v1_2.csv
-          test -f Analysis/results_t1_medoid_pa_validation_v1_2_ci/05_horizon_correlations_v1_2.csv
-          test -f Analysis/results_t1_medoid_pa_validation_v1_2_ci/06_validation_report_v1_2.md
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("Analysis/results_t1_medoid_pa_validation_v1_2_ci/simulation/full_simulation_trace.json")
+          trace = json.loads(path.read_text())
+          records = trace["records"]
+          assert len(records) == 28, len(records)
+          for record in records:
+              assert record["planned_physical_activity"] is None
+              assert record["was_physical_activity_planned_today"] is False
+              assert record["decision_label"] in {"skip_activity", "extra_activity"}
+              decision = record["pa_decision"]
+              if decision["decision_label"] == "skip_activity":
+                  assert decision["duration_min"] == 0
+                  assert decision["intensity"] == "none"
+              else:
+                  assert 1 <= decision["duration_min"] <= 240
+                  assert decision["intensity"] in {"light", "moderate", "vigorous"}
+          print(f"Validated {len(records)} v1.2 persona-days without scheduled PA leakage.")
+          PY
