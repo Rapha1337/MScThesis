@@ -30,6 +30,7 @@ jobs:
           Simulation/tests/test_full_pa_simulation.py
           Analysis/tests/test_t1_medoid_pa_validation.py
           Analysis/tests/test_t1_medoid_pa_validation_v1_2.py
+          Analysis/tests/test_t1_action_planning_mvpa_regression.py
           -q
 
       - name: Run no-LLM v1.2 wiring check
