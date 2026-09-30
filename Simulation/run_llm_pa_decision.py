@@ -995,6 +995,7 @@ def run_pa_decision_llm(
             expected_day_index=day_index,
             valid_decision_categories=pa_decision_input.get("valid_decision_categories"),
             has_planned_pa=bool(pa_decision_input.get("was_physical_activity_planned_today")),
+            empirical_pa_v1_2=bool(pa_decision_input.get("empirical_pa_v1_2")),
         )
         result["_resource_usage"] = {
             **extract_token_usage(response),
@@ -1115,6 +1116,8 @@ def write_daily_decision_log_row(
         "day_index": int(day_index),
         "decision_code": int(pa_decision["decision_code"]),
         "decision_label": str(pa_decision["decision_label"]),
+        "duration_min": pa_decision.get("duration_min", ""),
+        "intensity": pa_decision.get("intensity", ""),
         "activity_done": bool(activity_done),
         "activity_performed": bool(pa_decision.get("activity_performed", activity_done)),
         "diary_entry_generated_for_simulation": bool(
@@ -1184,6 +1187,8 @@ def build_closed_loop_update(
     return {
         "activity_done": activity_done,
         "activity_performed": activity_done,
+        "duration_min": pa_decision.get("duration_min"),
+        "intensity": pa_decision.get("intensity"),
         "diary_entry_generated_for_simulation": DIARY_ENTRY_GENERATED_FOR_SIMULATION,
         "previous_psychological_constructs": previous_constructs,
         "updated_psychological_constructs": updated_constructs,
