@@ -851,9 +851,9 @@ def validate_pa_decision_output(
                     "skip_activity requires duration_min=0 and intensity=none in empirical PA v1.2."
                 )
         elif expected_label == "extra_activity":
-            if not 10 <= duration_min <= 240:
+            if not 1 <= duration_min <= 240:
                 raise ValueError(
-                    "Performed PA requires duration_min between 10 and 240 in empirical PA v1.2."
+                    "Performed PA requires duration_min between 1 and 240 in empirical PA v1.2."
                 )
             if intensity == "none":
                 raise ValueError("Performed PA requires light, moderate, or vigorous intensity.")
