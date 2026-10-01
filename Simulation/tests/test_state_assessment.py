@@ -578,3 +578,89 @@ def test_wrong_persona_id_still_raises_after_retries(
 
     with pytest.raises(ValueError, match="persona_id does not match"):
         _run_real_assessment(tmp_path)
+
+
+
+def test_invalid_state_assessment_diagnostics_use_compact_names_for_deep_paths(
+    tmp_path: Path,
+) -> None:
+    deep_output_dir = tmp_path / ("nested_" * 12) / ("results_" * 12) / "day_033"
+    deep_output_dir.mkdir(parents=True)
+
+    raw_path, metadata_path = state_assessment._invalid_state_assessment_paths(
+        output_dir=deep_output_dir,
+        persona_id="T1_Medoid_C4_8303",
+        attempt=1,
+        error_type="schema_validation_error",
+    )
+
+    assert raw_path.name == "sa_a1_raw.txt"
+    assert metadata_path.name == "sa_a1_schema.json"
+
+    error = ValueError("automaticity.items must contain exactly 4 items; got 0.")
+    saved_raw_path, saved_metadata_path = state_assessment._save_invalid_state_assessment(
+        output_dir=deep_output_dir,
+        persona_id="T1_Medoid_C4_8303",
+        day_index=33,
+        attempt=1,
+        raw_response='{"invalid_schema": true}',
+        error=error,
+        error_type="schema_validation_error",
+        finish_reason="stop",
+        max_tokens=10000,
+        model="gpt-oss-120b",
+    )
+
+    assert saved_raw_path.exists()
+    assert saved_metadata_path.exists()
+    metadata = json.loads(saved_metadata_path.read_text(encoding="utf-8"))
+    assert metadata["persona_id"] == "T1_Medoid_C4_8303"
+    assert metadata["day_index"] == 33
+    assert metadata["error_type"] == "schema_validation_error"
+
+
+def test_schema_cardinality_retry_still_runs_when_diagnostics_use_compact_names(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    deep_output_dir = tmp_path / ("nested_" * 12) / ("results_" * 12) / "day_033"
+    deep_output_dir.mkdir(parents=True)
+
+    invalid = _valid_payload()
+    invalid["item_scores"]["automaticity"]["items"] = []
+    responses = iter(
+        [
+            {
+                "raw_response": json.dumps(invalid),
+                "finish_reason": "stop",
+                "resource_usage": {},
+            },
+            {
+                "raw_response": json.dumps(_valid_payload()),
+                "finish_reason": "stop",
+                "resource_usage": {},
+            },
+        ]
+    )
+    calls = 0
+
+    def fake_call(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return next(responses)
+
+    monkeypatch.setattr(state_assessment, "call_state_assessment_llm", fake_call)
+    result = run_state_assessment(
+        persona_id="Persona_01",
+        day_index=2,
+        previous_normalized_values=_previous_values(),
+        current_simulated_diary_entry="current",
+        previous_diary_entries=[],
+        output_dir=deep_output_dir,
+        max_tokens=10000,
+    )
+
+    assert calls == 2
+    assert result["state_assessment_attempt_count"] == 2
+    assert result["state_assessment_fallback_used"] is False
+    assert (deep_output_dir / "sa_a1_schema.json").exists()
