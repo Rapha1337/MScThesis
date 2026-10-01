@@ -15,6 +15,7 @@ DEFAULT_PROMPT_PATH = SIMULATION_DIR / "AssessmentModel_Prompt.md"
 DEFAULT_MODEL_NAME = "gpt-oss-120b"
 DEFAULT_MAX_TOKENS = 10000
 RETRY_MIN_MAX_TOKENS = 12000
+PORTABLE_DIAGNOSTIC_PATH_LIMIT = 240
 PREVIOUS_DIARY_CONTEXT_WINDOW = 7
 PREVIOUS_DIARY_CONTEXT_STRATEGY = "rolling_window_last_7_entries"
 JSON_REPAIR_INSTRUCTION = (
@@ -441,6 +442,25 @@ def call_state_assessment_llm(
     }
 
 
+def _absolute_path_length(path: Path) -> int:
+    """Return an absolute-path length without requiring the target to exist."""
+    try:
+        return len(str(path.resolve(strict=False)))
+    except (OSError, RuntimeError):
+        return len(os.path.abspath(str(path)))
+
+
+def _compact_diagnostic_path_if_needed(
+    path: Path,
+    *,
+    compact_name: str,
+) -> Path:
+    """Avoid legacy Windows MAX_PATH failures in deeply nested result folders."""
+    if _absolute_path_length(path) < PORTABLE_DIAGNOSTIC_PATH_LIMIT:
+        return path
+    return path.parent / compact_name
+
+
 def _invalid_state_assessment_paths(
     *,
     output_dir: Path,
@@ -455,6 +475,15 @@ def _invalid_state_assessment_paths(
     attempt_label = f"attempt_{attempt}"
     raw_path = output_dir / f"state_assessment_{safe_persona_id}_{attempt_label}_raw_invalid.txt"
     metadata_path = output_dir / f"state_assessment_{safe_persona_id}_{attempt_label}_{error_type}.json"
+    error_tag = "parse" if error_type == "parse_error" else "schema"
+    raw_path = _compact_diagnostic_path_if_needed(
+        raw_path,
+        compact_name=f"sa_a{attempt}_raw.txt",
+    )
+    metadata_path = _compact_diagnostic_path_if_needed(
+        metadata_path,
+        compact_name=f"sa_a{attempt}_{error_tag}.json",
+    )
     return raw_path, metadata_path
 
 
@@ -489,6 +518,15 @@ def _save_invalid_state_assessment(
         legacy_marker = "" if attempt == 1 else "_retry"
         legacy_raw_path = output_dir / f"state_assessment_{safe_persona_id}{legacy_marker}_raw_invalid.txt"
         legacy_metadata_path = output_dir / f"state_assessment_{safe_persona_id}{legacy_marker}_parse_error.json"
+        compact_marker = "" if attempt == 1 else "_retry"
+        legacy_raw_path = _compact_diagnostic_path_if_needed(
+            legacy_raw_path,
+            compact_name=f"sa{compact_marker}_raw.txt",
+        )
+        legacy_metadata_path = _compact_diagnostic_path_if_needed(
+            legacy_metadata_path,
+            compact_name=f"sa{compact_marker}_parse.json",
+        )
         legacy_raw_path.write_text(raw_response, encoding="utf-8")
     else:
         legacy_metadata_path = None
