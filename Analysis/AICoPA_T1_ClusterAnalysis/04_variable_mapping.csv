@@ -1,0 +1,26 @@
+"derived_variable","source_or_derivation","primary_clustering_variable"
+"occupational_status","Prof",TRUE
+"workload_hours_per_week","BeschaeftProz / 100 * 40",TRUE
+"holiday_weeks","UrlaubWochen",TRUE
+"stress_weeks","StressWochen",TRUE
+"care_work_hours_per_week","CareStunden; 0 if CareArbeit = Nein",TRUE
+"social_hours_per_week","Social",TRUE
+"pa_mvpa_hours_per_week","((Bew1 * Bew2) + (Bew3 * Bew4)) / 60",TRUE
+"pa_total_hours_per_week","MVPA + (Bew5 * Bew6) / 60",FALSE
+"wake_time_minutes","AlltagAbl[AufWa], minutes after midnight",FALSE
+"work_start_time_minutes","AlltagAbl[StaProf], minutes after midnight",FALSE
+"work_end_time_minutes","AlltagAbl[EndProf], minutes after midnight",FALSE
+"break_duration_minutes","AlltagAbl[PausDau], duration minutes",FALSE
+"leisure_duration_minutes","AlltagAbl[FreiDau], duration minutes",FALSE
+"bed_time_minutes","AlltagAbl[BettZeit], after midnight > 1440",FALSE
+"workplace_distance_km","EntfernPOI[BStel]",FALSE
+"indoor_activity_distance_km","EntfernPOI[InBew]",FALSE
+"outdoor_activity_distance_km","EntfernPOI[OutBew]",FALSE
+"residence_size_ordinal","Wohnort, ordinal 1-5",FALSE
+"residential_sealing","UmgebTyp[Ver], ordinal response 1-5",FALSE
+"residential_nature_access","UmgebTyp[Nat], ordinal response 1-5",FALSE
+"residential_active_routes","UmgebTyp[Mov], ordinal response 1-5",FALSE
+"age_years","Difference between Geb and submitdate in years",FALSE
+"income_ordinal","Einko, ordinal 1-10",FALSE
+"household_size","HHGroesse",FALSE
+"household_minors","HHMinderj; missing 0 only for one-person households",FALSE

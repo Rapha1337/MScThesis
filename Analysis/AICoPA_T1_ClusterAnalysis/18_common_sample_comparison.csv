@@ -1,0 +1,8 @@
+"variant","n","selected_k","average_silhouette","negative_silhouette_n","minimum_cluster_size","cluster_sizes"
+"primary",142,4,0.422677038856014,5,12,"58/12/50/22"
+"add_daily_routine",142,3,0.266122823303518,9,27,"63/27/52"
+"add_poi",142,4,0.353162326518365,5,10,"57/10/50/25"
+"add_residential_context",142,3,0.206168910503909,14,39,"51/52/39"
+"add_sociodemographics",142,3,0.361892949141503,3,15,"65/62/15"
+"add_routine_and_poi",142,4,0.256874293592539,7,5,"62/24/51/5"
+"full_context",142,2,0.182676093351626,8,71,"71/71"

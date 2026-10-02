@@ -7,3 +7,11 @@ __pycache__/
 @
 
 /analysis/outputs/
+
+# Generated / intermediate PA simulation outputs
+analysis/results_t1_medoid_pa_validation/
+analysis/results_t1_medoid_pa_validation_v1_2/
+analysis/results_t1_medoid_pa_validation_v1_2_7d_stochastic/
+analysis/results_t1_medoid_pa_validation_v1_2_7d_test/
+analysis/AIcoPA_T1_MedoidPAValidation_v1_2_final_20261001/simulation/
+codecarbon/

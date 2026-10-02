@@ -1,0 +1,12 @@
+"variant","description","n","variable_n","selected_k","average_silhouette","silhouette_interpretation","negative_silhouette_n","minimum_cluster_size","cluster_sizes","mean_adjusted_rand_index","median_adjusted_rand_index","q025_adjusted_rand_index","q975_adjusted_rand_index"
+"primary","Primary: occupation + weekly structure + MVPA",150,7,4,0.422290950454611,"weak cluster structure",6,12,"65/12/51/22",0.960164796296744,0.984044624409205,0.830393656957575,1
+"omit_pa","Occupation + weekly structure, without PA",150,6,4,0.448906778116338,"weak cluster structure",5,12,"64/12/51/23",0.958860677366982,0.974552497736348,0.841794259918736,1
+"total_pa","Total PA instead of MVPA",150,7,4,0.425661762596063,"weak cluster structure",6,12,"65/12/51/22",0.924908388149563,0.936773987988299,0.780237237553496,1
+"omit_occupation","Weekly structure + MVPA, without occupation",151,6,5,0.335423144601412,"weak cluster structure",10,6,"78/26/32/9/6",0.810159872793434,0.819248353382142,0.584368838877955,1
+"add_daily_routine","Primary + typical daily routine",150,13,3,0.270633003408898,"weak cluster structure",8,28,"69/28/53",0.925151402382364,0.981447338688237,0.688946065624153,1
+"add_poi","Primary + work and PA distances",148,10,4,0.353237997252443,"weak cluster structure",5,10,"61/10/51/26",0.938206822937613,0.956726436007602,0.781838882943574,1
+"add_residential_context","Primary + residential context",149,11,3,0.206874901264403,"no substantial cluster structure",14,39,"56/54/39",0.695842386880935,0.72206608470251,0.259443407847075,1
+"add_sociodemographics","Primary + age, income and household",145,11,3,0.359604656447362,"weak cluster structure",3,15,"67/63/15",0.889849995884495,0.925574957361469,0.68459650101664,1
+"add_routine_and_poi","Primary + daily routine + distances",148,16,4,0.256106774901143,"weak cluster structure",8,5,"66/25/52/5",0.912643443159215,0.916771479386065,0.744872550960993,1
+"full_context","Primary + routine + POI + residence + sociodemographics",142,24,2,0.182676093351626,"no substantial cluster structure",8,71,"71/71",0.855987605250393,0.964598997493734,0.459638584540009,1
+"phase_compatible","Primary restricted to holiday + stress <= 52 weeks",141,7,4,0.413794582209419,"weak cluster structure",8,11,"63/11/48/19",0.943800937997583,0.987027525167752,0.631652773454277,1

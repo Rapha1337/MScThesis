@@ -1,0 +1,17 @@
+{
+  "description": "Held-out T1 OLS calibration excluding the four simulated medoid personas: MVPA_hours_week ~ action_planning_normalized. Standardized beta is used as a small relative weighting coefficient only.",
+  "n": 148,
+  "standardized_beta": 0.10728499572967862,
+  "unstandardized_B": 1.9774300552445538,
+  "intercept": 2.27298841765128,
+  "action_planning_mean": 0.3898648648648649,
+  "action_planning_sd": 0.2737966534941716,
+  "p_value": 0.19433507322993454,
+  "r_squared": 0.011510070308717202,
+  "medoid_personas_excluded_from_calibration": [
+    "7067",
+    "8361",
+    "8237",
+    "8303"
+  ]
+}

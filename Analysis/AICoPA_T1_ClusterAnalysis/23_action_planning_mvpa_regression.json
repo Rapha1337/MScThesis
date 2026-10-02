@@ -1,0 +1,46 @@
+{
+  "analysis": "simple OLS: T1 MVPA hours/week ~ normalized action planning",
+  "source": "analysis\\AIcoPA_T1_ClusterAnalysis\\03_prepared_t1_inputs.csv",
+  "medoid_source": "analysis\\AIcoPA_T1_ClusterAnalysis\\11_primary_medoid_personas.csv",
+  "medoid_ids": [
+    "7067",
+    "8361",
+    "8237",
+    "8303"
+  ],
+  "full_sample": {
+    "n": 152,
+    "intercept": 2.247565182603501,
+    "unstandardized_B": 1.9308117562814895,
+    "standard_error_B": 1.472517565095892,
+    "ci95_B_lower": -0.9787435504161015,
+    "ci95_B_upper": 4.84036706297908,
+    "standardized_beta": 0.1064532670069557,
+    "p_value": 0.19178314895897405,
+    "r_squared": 0.011332298056453971,
+    "action_planning_mean": 0.39111842105263156,
+    "action_planning_sd": 0.27495345624691864,
+    "mvpa_mean_hours_week": 3.002741228070177,
+    "mvpa_sd_hours_week": 4.987008672238221,
+    "spearman_rho": 0.2834400940080751,
+    "spearman_p_value": 0.0004024261801189234
+  },
+  "held_out_medoids": {
+    "n": 148,
+    "intercept": 2.27298841765128,
+    "unstandardized_B": 1.9774300552445538,
+    "standard_error_B": 1.5166027504269615,
+    "ci95_B_lower": -1.0199012002899428,
+    "ci95_B_upper": 4.9747613107790505,
+    "standardized_beta": 0.10728499572967862,
+    "p_value": 0.19433507322993454,
+    "r_squared": 0.011510070308717202,
+    "action_planning_mean": 0.3898648648648649,
+    "action_planning_sd": 0.2737966534941716,
+    "mvpa_mean_hours_week": 3.0439189189189197,
+    "mvpa_sd_hours_week": 5.046500006477423,
+    "spearman_rho": 0.27939557715271984,
+    "spearman_p_value": 0.0005840384669256665
+  },
+  "interpretation_note": "The regression is descriptive/cross-sectional. The standardized beta is used in empirical PA v1.2 only as a small monotonic simulation weight, not as a probability, percentage-point effect, causal effect, or directly estimated daily transition coefficient."
+}

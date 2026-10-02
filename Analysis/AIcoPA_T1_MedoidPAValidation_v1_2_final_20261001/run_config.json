@@ -1,0 +1,29 @@
+{
+  "study": "T1 empirical medoid PA validation v1.2",
+  "model_version": "empirical_pa_v1_2",
+  "start_date": "2026-07-09",
+  "n_days": 90,
+  "nested_horizons_days": [
+    7,
+    30,
+    90
+  ],
+  "n_personas": 4,
+  "base_seed": 14,
+  "persona_seeds": [
+    458825077,
+    1060578839,
+    1164431025,
+    1098547461
+  ],
+  "persona_input_file": "analysis\\AIcoPA_T1_ClusterAnalysis\\11_primary_medoid_personas.csv",
+  "simulation_output_dir": "analysis\\AIcoPA_T1_MedoidPAValidation_v1_2_final_20261001\\simulation",
+  "dry_run": false,
+  "resume": false,
+  "observed_t1_mvpa_role": "validation_only",
+  "pa_schedule_generation": "disabled",
+  "primary_empirical_metric": "pa_mvpa_hours_per_week",
+  "primary_simulated_metric": "simulated_pa_hours_week",
+  "action_planning_standardized_beta": 0.10728499572967862,
+  "action_planning_calibration_n": 148
+}

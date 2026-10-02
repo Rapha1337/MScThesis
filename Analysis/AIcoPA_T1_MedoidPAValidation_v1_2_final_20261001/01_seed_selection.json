@@ -1,0 +1,449 @@
+{
+  "selected_base_seed": 14,
+  "derived_persona_seeds": [
+    458825077,
+    1060578839,
+    1164431025,
+    1098547461
+  ],
+  "start_date": "2026-07-09",
+  "validation_window_days": 7,
+  "valid": true,
+  "selection_criterion": "representative modal phase on all seven dates and no acute schedule-altering events",
+  "representative_phase_used_for_selection": true,
+  "event_free_used_for_selection": true,
+  "pa_outcomes_used_for_selection": false,
+  "correlations_used_for_selection": false,
+  "personas": [
+    {
+      "persona_id": "T1_Medoid_C1_7067",
+      "cluster": 1,
+      "participant_id": "7067",
+      "persona_seed": 458825077,
+      "phase_counts": {
+        "normal": 32,
+        "high_stress": 10,
+        "holiday": 10
+      },
+      "representative_phase": "normal",
+      "phase_sequence": [
+        "normal",
+        "normal",
+        "normal",
+        "normal",
+        "normal",
+        "normal",
+        "normal"
+      ],
+      "days": [
+        {
+          "calendar_date": "2026-07-09",
+          "week_index": 27,
+          "weekday": 3,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-10",
+          "week_index": 27,
+          "weekday": 4,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-11",
+          "week_index": 27,
+          "weekday": 5,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-12",
+          "week_index": 27,
+          "weekday": 6,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-13",
+          "week_index": 28,
+          "weekday": 0,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-14",
+          "week_index": 28,
+          "weekday": 1,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-15",
+          "week_index": 28,
+          "weekday": 2,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "persona_id": "T1_Medoid_C2_8361",
+      "cluster": 2,
+      "participant_id": "8361",
+      "persona_seed": 1060578839,
+      "phase_counts": {
+        "normal": 37,
+        "high_stress": 10,
+        "holiday": 5
+      },
+      "representative_phase": "normal",
+      "phase_sequence": [
+        "normal",
+        "normal",
+        "normal",
+        "normal",
+        "normal",
+        "normal",
+        "normal"
+      ],
+      "days": [
+        {
+          "calendar_date": "2026-07-09",
+          "week_index": 27,
+          "weekday": 3,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-10",
+          "week_index": 27,
+          "weekday": 4,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-11",
+          "week_index": 27,
+          "weekday": 5,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-12",
+          "week_index": 27,
+          "weekday": 6,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-13",
+          "week_index": 28,
+          "weekday": 0,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-14",
+          "week_index": 28,
+          "weekday": 1,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-15",
+          "week_index": 28,
+          "weekday": 2,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "persona_id": "T1_Medoid_C3_8237",
+      "cluster": 3,
+      "participant_id": "8237",
+      "persona_seed": 1164431025,
+      "phase_counts": {
+        "normal": 32,
+        "high_stress": 14,
+        "holiday": 6
+      },
+      "representative_phase": "normal",
+      "phase_sequence": [
+        "normal",
+        "normal",
+        "normal",
+        "normal",
+        "normal",
+        "normal",
+        "normal"
+      ],
+      "days": [
+        {
+          "calendar_date": "2026-07-09",
+          "week_index": 27,
+          "weekday": 3,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-10",
+          "week_index": 27,
+          "weekday": 4,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-11",
+          "week_index": 27,
+          "weekday": 5,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-12",
+          "week_index": 27,
+          "weekday": 6,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-13",
+          "week_index": 28,
+          "weekday": 0,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-14",
+          "week_index": 28,
+          "weekday": 1,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-15",
+          "week_index": 28,
+          "weekday": 2,
+          "phase": "normal",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "persona_id": "T1_Medoid_C4_8303",
+      "cluster": 4,
+      "participant_id": "8303",
+      "persona_seed": 1098547461,
+      "phase_counts": {
+        "normal": 9,
+        "high_stress": 37,
+        "holiday": 6
+      },
+      "representative_phase": "high_stress",
+      "phase_sequence": [
+        "high_stress",
+        "high_stress",
+        "high_stress",
+        "high_stress",
+        "high_stress",
+        "high_stress",
+        "high_stress"
+      ],
+      "days": [
+        {
+          "calendar_date": "2026-07-09",
+          "week_index": 27,
+          "weekday": 3,
+          "phase": "high_stress",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-10",
+          "week_index": 27,
+          "weekday": 4,
+          "phase": "high_stress",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-11",
+          "week_index": 27,
+          "weekday": 5,
+          "phase": "high_stress",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-12",
+          "week_index": 27,
+          "weekday": 6,
+          "phase": "high_stress",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-13",
+          "week_index": 28,
+          "weekday": 0,
+          "phase": "high_stress",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-14",
+          "week_index": 28,
+          "weekday": 1,
+          "phase": "high_stress",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        },
+        {
+          "calendar_date": "2026-07-15",
+          "week_index": 28,
+          "weekday": 2,
+          "phase": "high_stress",
+          "fixed_block_tag": null,
+          "active_event_ids": [],
+          "active_event_types": [],
+          "illness_active": false,
+          "public_holiday_active": false,
+          "valid": true
+        }
+      ]
+    }
+  ],
+  "selection_mode": "explicit_override",
+  "pa_schedule_in_seed_check": false
+}

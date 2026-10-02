@@ -1,0 +1,5 @@
+cluster,participant_id,persona_id,occupation,empirical_mvpa_hours_week,empirical_total_pa_hours_week
+1,7067,T1_Medoid_C1_7067,Studium,2.0,4.66666666666667
+2,8361,T1_Medoid_C2_8361,Sonstiges,1.33333333333333,3.66666666666667
+3,8237,T1_Medoid_C3_8237,Angestellt,2.25,8.25
+4,8303,T1_Medoid_C4_8303,Arbeitslos,0.333333333333333,1.0
