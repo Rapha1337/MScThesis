@@ -388,6 +388,21 @@ prepared <- data.frame(
 prepared$occupational_status[prepared$occupational_status == ""] <- NA_character_
 prepared$occupational_status_other[prepared$occupational_status_other == ""] <- NA_character_
 
+# If the main occupation field is empty but a free-text occupation was provided,
+# retain the participant under the existing "Sonstiges" category.
+missing_prof_with_other <- (
+  is.na(prepared$occupational_status) &
+  !is.na(prepared$occupational_status_other)
+)
+
+prepared$occupational_status[missing_prof_with_other] <- "Sonstiges"
+
+message(
+  "Occupation fallback applied to n = ",
+  sum(missing_prof_with_other),
+  " participant(s)."
+)
+
 # Retained as medoid inputs, but not primary clustering variables.
 prepared$automaticity <- (strict_row_mean(data, paste0("Habit", 1:4)) - 1) / 6
 prepared$pa_specific_self_control <- (

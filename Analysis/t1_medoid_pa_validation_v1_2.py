@@ -11,7 +11,6 @@ results are nested prefixes.
 """
 
 from __future__ import annotations
-raise RuntimeError('Historical participant identifiers removed; use the current code with protected input files')
 
 import argparse
 import json
@@ -455,7 +454,7 @@ def write_analysis_outputs(
         "action_planning_sd": ACTION_PLANNING_SD,
         "p_value": ACTION_PLANNING_P_VALUE,
         "r_squared": ACTION_PLANNING_R2,
-        "medoid_personas_excluded_from_calibration": ["[participant identifier removed]", "[participant identifier removed]", "[participant identifier removed]", "[participant identifier removed]"],
+        "medoid_personas_excluded_from_calibration": empirical["participant_id"].astype(str).tolist(),
     }
     (output_dir / "07_action_planning_calibration.json").write_text(
         json.dumps(calibration, indent=2),
