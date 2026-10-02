@@ -28,29 +28,30 @@ Kai suggested empirically weighting the effect of action planning using the T1
 survey. A simple linear regression of T1 MVPA hours/week on normalized action
 planning was calculated.
 
-Full T1 sample:
+Full valid T1 sample:
 
-- n = 147
-- standardized beta = 0.1648
-- B = 2.6449 h/week per 0-1 action-planning unit
-- p = 0.0461
-- R2 = 0.0272
+- n = 152
+- standardized beta = 0.1064533
+- B = 1.9308118 h/week per 0-1 action-planning unit
+- p = 0.1917831
+- R2 = 0.0113323
 
 To avoid using the four validation medoids' own MVPA values when calibrating
 their simulation, the final v1.2 coefficient is estimated after excluding
-participants 7067, 8153, 8237, and 8303:
+participants 7067, 8361, 8237, and 8303:
 
-- n = 143
-- standardized beta = 0.1616428
-- B = 2.6175879 h/week per 0-1 action-planning unit
-- intercept = 1.8487240 h/week
-- action-planning mean = 0.3919580
-- action-planning SD = 0.2751856
-- p = 0.0537675
-- R2 = 0.0261284
+- n = 148
+- standardized beta = 0.1072850
+- B = 1.9774301 h/week per 0-1 action-planning unit
+- intercept = 2.2729884 h/week
+- action-planning mean = 0.3898649
+- action-planning SD = 0.2737967
+- p = 0.1943351
+- R2 = 0.0115101
 
-The held-out coefficient is almost unchanged from the full-sample estimate, but
-the conventional p value moves just above .05. This is reported transparently.
+The held-out coefficient is almost unchanged from the full-sample estimate.
+The linear association is small and is not statistically significant in either
+analysis. This is reported transparently.
 
 The standardized beta is not interpreted as a probability, percentage-point
 effect, or causal effect. In v1.2 it is used as a small monotonic calibration of
@@ -131,8 +132,8 @@ The 7-, 30-, and 90-day outcomes remain nested prefixes of one continuous
 
 The original seed-selection criterion is retained: all four personas must begin
 with seven days in their modal annual phase and without acute schedule-altering
-events. Seed 14 remains valid. Selection does not inspect PA outcomes or
-correlations.
+events. Seed 14 was rechecked with the final four medoid personas and remains
+valid. Selection does not inspect PA outcomes or correlations.
 
 ## Reproducing the T1 calibration
 
@@ -141,7 +142,7 @@ anonymized T1 analysis table with:
 
     python Analysis/t1_action_planning_mvpa_regression.py
 
-The script reports both the full n=147 simple OLS and the n=143 held-out
+The script reports both the full n=152 simple OLS and the n=148 held-out
 calibration after excluding the four simulated medoids. The frozen constants in
 `Simulation/empirical_pa_v1_2.py` are regression outputs, not hand-tuned values.
 
@@ -151,7 +152,7 @@ From the repository root:
 
     python Analysis/t1_medoid_pa_validation_v1_2.py \
       --base-seed 14 \
-      --persona-input-file Analysis/results_t1_persona_clustering/11_primary_medoid_personas.csv \
-      --output-dir Analysis/results_t1_medoid_pa_validation_v1_2
+      --persona-input-file analysis/AIcoPA_T1_ClusterAnalysis/11_primary_medoid_personas.csv \
+      --output-dir analysis/AIcoPA_T1_MedoidPAValidation_v1_2_final_20261001
 
 For a no-LLM wiring test, add --dry-run.

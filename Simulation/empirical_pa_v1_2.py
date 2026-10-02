@@ -7,17 +7,17 @@ from typing import Any, Mapping
 EMPIRICAL_PA_V1_2_MODE = "empirical_pa_v1_2"
 
 # Held-out T1 calibration: simple OLS MVPA ~ action planning after excluding the
-# four medoid personas (7067, 8153, 8237, 8303). Action planning is normalized
+# four medoid personas (7067, 8361, 8237, 8303). Action planning is normalized
 # to [0, 1]. The standardized beta is used only as a small directional weight;
 # it is not interpreted as a probability or as a causal effect.
-ACTION_PLANNING_BETA = 0.16164280788232943
-ACTION_PLANNING_MEAN = 0.39195804195804196
-ACTION_PLANNING_SD = 0.27518561915130735
-ACTION_PLANNING_UNSTANDARDIZED_B = 2.617587892858344
-ACTION_PLANNING_INTERCEPT = 1.848723999570791
-ACTION_PLANNING_P_VALUE = 0.05376746550106626
-ACTION_PLANNING_R2 = 0.026128397340083626
-ACTION_PLANNING_CALIBRATION_N = 143
+ACTION_PLANNING_BETA = 0.10728499572967862
+ACTION_PLANNING_MEAN = 0.3898648648648649
+ACTION_PLANNING_SD = 0.2737966534941716
+ACTION_PLANNING_UNSTANDARDIZED_B = 1.9774300552445538
+ACTION_PLANNING_INTERCEPT = 2.27298841765128
+ACTION_PLANNING_P_VALUE = 0.19433507322993454
+ACTION_PLANNING_R2 = 0.011510070308717202
+ACTION_PLANNING_CALIBRATION_N = 148
 ACTION_PLANNING_CALIBRATION_DESCRIPTION = (
     "Held-out T1 OLS calibration excluding the four simulated medoid personas: "
     "MVPA_hours_week ~ action_planning_normalized. Standardized beta is used as "
