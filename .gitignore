@@ -15,3 +15,12 @@ analysis/results_t1_medoid_pa_validation_v1_2_7d_stochastic/
 analysis/results_t1_medoid_pa_validation_v1_2_7d_test/
 analysis/AIcoPA_T1_MedoidPAValidation_v1_2_final_20261001/simulation/
 codecarbon/
+
+# Keep empirical research inputs and generated participant outputs local
+/[Aa]nalysis/[Dd]ata/
+/[Aa]nalysis/[Aa][Ii][Cc][Oo][Pp][Aa]_[Tt]1*/
+/[Aa]nalysis/results_t1*/
+/[Ss]imulation/output/
+__pycache__/
+*.pyc
+*.pyo
