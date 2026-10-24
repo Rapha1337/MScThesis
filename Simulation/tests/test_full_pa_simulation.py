@@ -26,6 +26,95 @@ GLOBAL_ENVIRONMENT_FIELDS = {
     "snow_cover",
 }
 
+SYNTHETIC_PERSONA_COLUMNS = (
+    "cluster",
+    "participant_id",
+    "complete_required_simulation_inputs",
+    "normal_weeks_raw",
+    "stress_weeks",
+    "holiday_weeks",
+    "occupational_status",
+    "occupational_status_other",
+    "workload_hours_per_week",
+    "pa_mvpa_hours_per_week",
+    "pa_total_hours_per_week",
+    "care_work_hours_per_week",
+    "social_hours_per_week",
+    "workplace_distance_km",
+    "indoor_activity_distance_km",
+    "outdoor_activity_distance_km",
+    "automaticity",
+    "pa_specific_self_control",
+    "action_planning",
+    "intention",
+    "perceived_behavioral_control",
+    "attitude",
+    "subjective_norm",
+    "intrinsic_motivation",
+    "motivational_competence",
+    "wake_time_minutes",
+    "work_start_time_minutes",
+    "work_end_time_minutes",
+    "break_duration_minutes",
+    "leisure_duration_minutes",
+    "bed_time_minutes",
+)
+
+
+def _synthetic_persona_row(
+    cluster: int,
+    *,
+    mvpa_hours: float,
+    action_planning: float,
+) -> dict[str, object]:
+    return {
+        "cluster": cluster,
+        "participant_id": f"synthetic_p{cluster}",
+        "complete_required_simulation_inputs": "true",
+        "normal_weeks_raw": 32,
+        "stress_weeks": 12,
+        "holiday_weeks": 8,
+        "occupational_status": "Studium",
+        "occupational_status_other": "",
+        "workload_hours_per_week": 28.0 + cluster,
+        "pa_mvpa_hours_per_week": mvpa_hours,
+        "pa_total_hours_per_week": mvpa_hours + 1.5,
+        "care_work_hours_per_week": 2.0,
+        "social_hours_per_week": 8.0,
+        "workplace_distance_km": 2.0 + cluster,
+        "indoor_activity_distance_km": 1.0 + cluster / 10,
+        "outdoor_activity_distance_km": 0.5 + cluster / 10,
+        "automaticity": 0.45,
+        "pa_specific_self_control": 0.55,
+        "action_planning": action_planning,
+        "intention": 0.60,
+        "perceived_behavioral_control": 0.50,
+        "attitude": 0.70,
+        "subjective_norm": 0.35,
+        "intrinsic_motivation": 0.65,
+        "motivational_competence": 0.52,
+        "wake_time_minutes": 420,
+        "work_start_time_minutes": 540,
+        "work_end_time_minutes": 1020,
+        "break_duration_minutes": 45,
+        "leisure_duration_minutes": 240,
+        "bed_time_minutes": 1380,
+    }
+
+
+def _write_synthetic_persona_csv(tmp_path: Path) -> tuple[Path, list[float]]:
+    mvpa_values = [2.0, 1.5, 3.0, 0.5]
+    rows = [
+        _synthetic_persona_row(cluster, mvpa_hours=mvpa, action_planning=0.25 + cluster / 10)
+        for cluster, mvpa in enumerate(mvpa_values, start=1)
+    ]
+    path = tmp_path / "synthetic_medoid_personas.csv"
+    with path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=SYNTHETIC_PERSONA_COLUMNS)
+        writer.writeheader()
+        writer.writerows(rows)
+    return path, mvpa_values
+
 
 def _run_dry_simulation(tmp_path: Path, *, include_full_hourly_context: bool = True):
     from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
@@ -1071,12 +1160,7 @@ def test_empirical_pa_v1_2_removes_mvpa_from_schedule_and_records_activity_dose(
 ) -> None:
     from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
 
-    persona_file = (
-        ROOT_DIR.parent
-        / "Analysis"
-        / "results_t1_persona_clustering"
-        / "11_primary_medoid_personas.csv"
-    )
+    persona_file, expected_mvpa_values = _write_synthetic_persona_csv(tmp_path)
     config = FullSimulationConfig(
         n_personas=4,
         n_days=2,
@@ -1110,11 +1194,25 @@ def test_empirical_pa_v1_2_removes_mvpa_from_schedule_and_records_activity_dose(
             for entry in record["hourly_context_24h"]
         )
         decision = record["pa_decision"]
+        assert decision["contextual_response"]["adaptation_reference"] == "none_no_preplanned_pa"
+        assert "contextual_flexibility" in decision["llm2_contextual_assessment"]
         if decision["decision_label"] == "extra_activity":
+            assert isinstance(decision["start_hour"], int)
             assert decision["duration_min"] == 45
         else:
             assert decision["decision_label"] == "skip_activity"
+            assert decision["start_hour"] is None
             assert decision["duration_min"] == 0
+
+    with (config.output_dir / "daily_decision_log.csv").open("r", encoding="utf-8", newline="") as file:
+        daily_rows = list(csv.DictReader(file))
+    assert len(daily_rows) == 8
+    assert all(
+        json.loads(row["llm2_contextual_assessment"])["contextual_flexibility"]["adaptation_reference"]
+        == "none_no_preplanned_pa"
+        for row in daily_rows
+    )
+    assert all("activity_performed" in json.loads(row["contextual_response"]) for row in daily_rows)
 
     compact_payload = json.loads(
         (config.output_dir / "contexts_compact.json").read_text(encoding="utf-8")
@@ -1138,7 +1236,7 @@ def test_empirical_pa_v1_2_removes_mvpa_from_schedule_and_records_activity_dose(
     assert [
         persona["profile_metadata"]["reported_mvpa_hours_per_week"]
         for persona in metadata["personas"]
-    ] == pytest.approx([2.0, 1.66666666666667, 2.25, 0.333333333333333])
+    ] == pytest.approx(expected_mvpa_values)
 
     manifest = json.loads(
         (config.output_dir / "simulation_run_manifest.json").read_text(encoding="utf-8")
@@ -1148,8 +1246,9 @@ def test_empirical_pa_v1_2_removes_mvpa_from_schedule_and_records_activity_dose(
         "skip_activity",
         "extra_activity",
     ]
+    assert manifest["empirical_pa_v1_2_calibration"]["calibration_n"] == 148
     assert manifest["empirical_pa_v1_2_calibration"]["standardized_beta"] == pytest.approx(
-        0.16164280788232943
+        0.10728499572967862
     )
     assert (
         manifest["decision_schema"]["decision_source"]
@@ -1158,9 +1257,68 @@ def test_empirical_pa_v1_2_removes_mvpa_from_schedule_and_records_activity_dose(
     assert manifest["decision_schema"]["llm2_makes_final_contextual_decision"] is False
     assert manifest["decision_schema"]["llm2_estimates_contextual_pa_probability"] is True
     assert manifest["decision_schema"]["post_llm2_seeded_sampling_active"] is True
-    assert manifest["decision_schema"]["activity_dose_fields"] == ["duration_min"]
+    assert manifest["decision_schema"]["activity_dose_fields"] == ["start_hour", "duration_min"]
 
     run_config = json.loads(
         (config.output_dir / "run_config.json").read_text(encoding="utf-8")
     )
     assert run_config["empirical_pa_v1_2"] is True
+
+
+def test_empirical_pa_v1_2_dry_run_without_downtime_is_consistent() -> None:
+    from run_full_pa_simulation import _dry_pa_decision_runner
+    from run_llm_pa_decision import validate_pa_decision_output
+
+    pa_input = {
+        "persona_id": "synthetic_no_downtime",
+        "day_index": 0,
+        "behavior_policy": {
+            "do_planned_activity": 0.0,
+            "adapt_activity": 0.0,
+            "skip_activity": 0.0,
+            "extra_activity": 1.0,
+        },
+        "planned_physical_activity": None,
+        "valid_decision_categories": ["skip_activity", "extra_activity"],
+        "daily_context": {
+            "hourly_context_24h": [
+                {
+                    "hour": hour,
+                    "activity_type": "work",
+                    "is_daylight": True,
+                    "is_wet": False,
+                    "energy_category": "medium",
+                }
+                for hour in range(24)
+            ]
+        },
+        "empirical_pa_v1_2": {"enabled": True},
+    }
+
+    result = _dry_pa_decision_runner(pa_input)
+    result_for_validation = {key: value for key, value in result.items() if key != "_resource_usage"}
+    validated = validate_pa_decision_output(
+        result_for_validation,
+        "synthetic_no_downtime",
+        0,
+        valid_decision_categories=["skip_activity", "extra_activity"],
+        has_planned_pa=False,
+        empirical_pa_v1_2=True,
+    )
+
+    assert validated["decision_label"] == "skip_activity"
+    assert validated["start_hour"] is None
+    assert validated["duration_min"] == 0
+    assert result["contextual_pa_probability"] == 1.0
+    assert result["effective_pa_probability"] == 0.0
+    assert result["sampled_decision_probability"] == 1.0
+    assert result["pa_time_allocation"] == {
+        "available_downtime_blocks": [],
+        "requested_start_hour": None,
+        "requested_duration_min": None,
+        "time_allocation_feasible": False,
+        "infeasibility_reason": "no_downtime_block_available",
+    }
+    assert result["contextual_response"]["barriers_present"] == ["no_downtime"]
+    assert result["contextual_response"]["potentially_mitigated_barriers"] == []
+    assert "kein freies Zeitfenster" in result["diary_entry"]

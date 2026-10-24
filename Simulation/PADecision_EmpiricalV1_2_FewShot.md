@@ -1,6 +1,6 @@
-### Beispiel 1: Kontext erhöht eine mittlere psychologische PA-Wahrscheinlichkeit
+### Beispiel 1: Keine verfügbare Freizeit erzwingt keine fiktive PA-Option
 
-Input-Situation: `behavior_policy.extra_activity = 0.45`. Freier früher Abend, gute Energie, trockenes Wetter, Aktivitätsort gut erreichbar.
+Input-Situation: `behavior_policy.extra_activity = 0.68`, `behavior_policy.skip_activity = 0.32`. Der Tageskontext enthält 24 Stunden mit Studium, Arbeit, Pendeln, Schlaf und Haushalt, aber keinen zusammenhängenden `downtime`-Block. Die psychologische PA-Tendenz ist hoch, die Durchführung ist strukturell nicht möglich. Die spätere effektive PA-Wahrscheinlichkeit wird im Code wegen fehlender Downtime auf 0 gesetzt.
 
 Erwartete Ausgabe:
 
@@ -8,22 +8,18 @@ Erwartete Ausgabe:
 {
   "persona_id": "ExamplePersona_01",
   "day_index": 1,
-  "contextual_pa_probability": 0.58,
-  "activity_if_performed": {
-    "duration_min": 45,
-    "rationale_short": "Freie Zeit, ausreichende Energie und gute Erreichbarkeit erhöhen die Chance auf körperliche Aktivität gegenüber dem psychologischen Prior.",
-    "diary_entry": "Am frühen Abend hatte ich noch genug Energie und war ungefähr 45 Minuten körperlich aktiv."
-  },
+  "contextual_pa_probability": 0.22,
+  "activity_if_performed": null,
   "no_activity_if_skipped": {
-    "rationale_short": "Trotz günstiger Bedingungen wurde an diesem Tag keine Aktivität umgesetzt.",
-    "diary_entry": "Obwohl der Abend frei war, habe ich heute keinen Sport gemacht und mich stattdessen erholt."
+    "rationale_short": "Obwohl die psychologische PA-Tendenz hoch ist, enthält der Tag kein freies zusammenhängendes Zeitfenster für zusätzliche körperliche Aktivität.",
+    "diary_entry": "Zwischen Terminen, Pendeln und Haushalt blieb heute kein freies Zeitfenster für zusätzliche körperliche Aktivität."
   }
 }
 ```
 
-### Beispiel 2: Günstiger Kontext überschreibt einen niedrigen Prior nicht
+### Beispiel 2: Unterstützender Kontext bleibt stochastisch
 
-Input-Situation: `behavior_policy.extra_activity = 0.25`. Viel freie Zeit und gutes Wetter, aber die psychologische PA-Tendenz ist niedrig.
+Input-Situation: `behavior_policy.extra_activity = 0.45`, `behavior_policy.skip_activity = 0.55`. Es gibt einen zusammenhängenden `downtime`-Block von 17:00 bis 19:00, mittlere bis gute Energie, trockenes Wetter und gute Erreichbarkeit. Der Kontext unterstützt PA, ersetzt aber den psychologischen Prior nicht.
 
 Erwartete Ausgabe:
 
@@ -31,22 +27,24 @@ Erwartete Ausgabe:
 {
   "persona_id": "ExamplePersona_02",
   "day_index": 4,
-  "contextual_pa_probability": 0.34,
+  "contextual_pa_probability": 0.57,
   "activity_if_performed": {
-    "duration_min": 30,
-    "rationale_short": "Der günstige Kontext erhöht die niedrige Ausgangswahrscheinlichkeit etwas, rechtfertigt aber keine hohe PA-Wahrscheinlichkeit.",
-    "diary_entry": "Am Nachmittag habe ich das gute Wetter für ungefähr 30 Minuten Bewegung genutzt."
+    "start_hour": 17,
+    "duration_min": 45,
+    "activity_option": null,
+    "rationale_short": "Freie Zeit, ausreichende Energie und gute Erreichbarkeit erhöhen die PA-Wahrscheinlichkeit moderat gegenüber dem Prior.",
+    "diary_entry": "Am frühen Abend habe ich das freie Zeitfenster genutzt und war ungefähr 45 Minuten körperlich aktiv."
   },
   "no_activity_if_skipped": {
-    "rationale_short": "Die niedrige psychologische PA-Tendenz bleibt trotz freier Zeit und gutem Wetter relevant.",
-    "diary_entry": "Ich hatte zwar Zeit, habe mich heute aber nicht zu zusätzlicher Bewegung aufgerafft."
+    "rationale_short": "Der freie Abend ermöglicht PA, erklärt aber nicht, warum sie heute ausbleibt.",
+    "diary_entry": "Der Abend war frei, und ich habe heute keine zusätzliche körperliche Aktivität gemacht."
   }
 }
 ```
 
-### Beispiel 3: Barrieren senken einen hohen Prior
+### Beispiel 3: Barrieren senken einen hohen psychologischen Prior
 
-Input-Situation: `behavior_policy.extra_activity = 0.72`. Dichter Arbeitstag, niedrige Energie und ungünstiges Wetter.
+Input-Situation: `behavior_policy.extra_activity = 0.74`, `behavior_policy.skip_activity = 0.26`. Die Person hat eine hohe psychologische PA-Tendenz. Der Tageskontext enthält nur einen `downtime`-Block von 20:00 bis 21:00, niedrige Energie, nasses Wetter und schlechte Erreichbarkeit des Aktivitätsorts. PA bleibt möglich, aber nur kurz und weniger wahrscheinlich.
 
 Erwartete Ausgabe:
 
@@ -54,15 +52,17 @@ Erwartete Ausgabe:
 {
   "persona_id": "ExamplePersona_03",
   "day_index": 8,
-  "contextual_pa_probability": 0.41,
+  "contextual_pa_probability": 0.39,
   "activity_if_performed": {
-    "duration_min": 25,
-    "rationale_short": "Trotz hoher psychologischer Bereitschaft sprechen Zeitknappheit und niedrige Energie nur für eine kurze Aktivität.",
-    "diary_entry": "Am Abend war ich noch ungefähr 25 Minuten körperlich aktiv."
+    "start_hour": 20,
+    "duration_min": 30,
+    "activity_option": null,
+    "rationale_short": "Der hohe psychologische Prior bleibt relevant, wird aber durch niedrige Energie, späte freie Zeit, Regen und ungünstige Erreichbarkeit deutlich abgeschwächt.",
+    "diary_entry": "Nach dem langen Tag war ich am Abend etwa 30 Minuten körperlich aktiv."
   },
   "no_activity_if_skipped": {
-    "rationale_short": "Der volle Tag und die niedrige Energie können die grundsätzlich hohe PA-Tendenz an diesem Tag überwiegen.",
-    "diary_entry": "Nach dem langen Tag war ich zu müde und habe heute keine zusätzliche körperliche Aktivität gemacht."
+    "rationale_short": "Die Barrieren können die grundsätzlich hohe PA-Tendenz an diesem Tag überwiegen.",
+    "diary_entry": "Nach dem langen Tag war es am Abend nass, und ich habe keine zusätzliche körperliche Aktivität gemacht."
   }
 }
 ```

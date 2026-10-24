@@ -41,6 +41,83 @@ Für jedes Item der psychologischen Konstrukte:
   * Intrinsic Motivation [0-4]: Question 1-12
   * Motivational Competence [1-5]: Question 1-4
 
+## T1-Codebuch-Itembedeutungen
+
+Die folgenden Itembedeutungen stammen aus dem T1-Codebuch. Sie sind Codebuchbeschreibungen, keine verifizierten wortgetreuen Originalitems. Nutze sie, um die `question_id`s der acht unten genannten Konstrukte inhaltlich eindeutig zu bewerten. Behalte Itemanzahlen, Skalenbereiche, JSON-Schlüssel und `question_id`-Format unverändert. Die bestehende Operationalisierung von `intrinsic_motivation` bleibt unverändert.
+
+### Automaticity [1-7]
+
+Bewerte automatische Initiierung körperlicher Aktivität, nicht die automatische Ausführung der Aktivität selbst.
+
+* `automaticity_q1` / Habit1: The decision to be physically active occurs automatically.
+* `automaticity_q2` / Habit2: The decision to be physically active occurs without consciously remembering it.
+* `automaticity_q3` / Habit3: The decision to be physically active occurs without thinking about it.
+* `automaticity_q4` / Habit4: Initiation of the decision to be physically active occurs before conscious awareness.
+
+### PA-specific Self-Control [1-5]
+
+Unterscheide Selbstkontrolle von Motivation und Intention.
+
+* `pa_specific_self_control_q1` / VolSelf1: Tendency to carry out planned physical activity.
+* `pa_specific_self_control_q2` / VolSelf2: Ability to keep the intention to be active in mind without being easily distracted.
+* `pa_specific_self_control_q3` / VolSelf3: Discipline in implementing the intention to become more physically active.
+
+### Action Planning [1-6]
+
+Die Items beziehen sich auf die nächsten zwei Wochen. Action Planning ist nicht dasselbe wie die tatsächlich erfolgte Aktivität. In empirischer v1.2 gibt es keine automatisch eingeplanten PA-Blöcke im Schedule; daraus darf nicht automatisch fehlende längerfristige Planung abgeleitet werden.
+
+* `action_planning_q1` / ActionPlan1: Having a plan for which type of physical activity to perform.
+* `action_planning_q2` / ActionPlan2: Having a plan for where to perform physical activity.
+* `action_planning_q3` / ActionPlan3: Having a plan for which days of the week to perform physical activity.
+* `action_planning_q4` / ActionPlan4: Having a plan for how long to perform physical activity.
+
+### Intention [1-7]
+
+Die Items beziehen sich auf körperliche Aktivität an den meisten Tagen der kommenden Woche. Unterscheide Intention von beobachteter Durchführung und Action Planning.
+
+* `intention_q1` / Intention1: Perceived likelihood of being physically active.
+* `intention_q2` / Intention2: Intended effort to be physically active.
+* `intention_q3` / Intention3: Intention or plan to be physically active.
+
+### Perceived Behavioral Control [1-7]
+
+Die gemeinsame Aggregation zu einem Konstrukt bleibt bestehen. Unterscheide inhaltlich zwischen Fähigkeit/Möglichkeit und Kontrollierbarkeit.
+
+* `perceived_behavioral_control_q1` / Control1: Perceived possibility of being physically active on many days during the coming week.
+* `perceived_behavioral_control_q2` / Control2: Perceived feasibility of being physically active if desired.
+* `perceived_behavioral_control_q3` / Control3: Perceived amount of personal control over being physically active.
+* `perceived_behavioral_control_q4` / Control4: Perception that being physically active mainly depends on oneself.
+
+### Attitude Toward the Behavior [1-7]
+
+Bewerte körperliche Aktivität in der kommenden Woche. Hohe Itemwerte repräsentieren jeweils den positiven Pol.
+
+* `attitude_toward_the_behavior_q1` / Att1: Harmful versus beneficial.
+* `attitude_toward_the_behavior_q2` / Att2: Unpleasant versus pleasant.
+* `attitude_toward_the_behavior_q3` / Att3: Bad versus good.
+* `attitude_toward_the_behavior_q4` / Att4: Useless versus valuable.
+* `attitude_toward_the_behavior_q5` / Att5: Unenjoyable versus enjoyable.
+
+### Subjective Norm [1-7]
+
+Die gemeinsame Aggregation der sechs Items bleibt bestehen. Unterscheide inhaltlich zwischen Erwartungen anderer Personen und beobachtetem Verhalten anderer Personen. Ohne Hinweise auf andere Personen verwende `score = null`.
+
+* `subjective_norm_q1` / Norm1: Perceived expectations of important others regarding being physically active.
+* `subjective_norm_q2` / Norm2: Perception that regular physical activity is expected from oneself.
+* `subjective_norm_q3` / Norm3: Perceived support from valued others for being physically active.
+* `subjective_norm_q4` / Norm4: Perception that most important others are physically active.
+* `subjective_norm_q5` / Norm5: Perception that valued others are physically active.
+* `subjective_norm_q6` / Norm6: Perception that similar others are physically active.
+
+### Motivational Competence [1-5]
+
+Motivational Competence beschreibt die Kompetenz, passende Aktivitäten auszuwählen. Sie ist nicht identisch mit allgemeiner Motivation oder intrinsischer Freude.
+
+* `motivational_competence_q1` / MotivComp1: Ability to choose a suitable physical activity from different options.
+* `motivational_competence_q2` / MotivComp2: Ability to recognize whether an activity fits one's personal preferences and needs.
+* `motivational_competence_q3` / MotivComp3: Clarity about which activity characteristics are personally important for enjoyment.
+* `motivational_competence_q4` / MotivComp4: Ability to understand and distinguish characteristics of different physical activities.
+
 * berechne anschließend den Durchschnitt `score` für alle Konstrukte mit ihren zugehörigen Items
 
 * stelle `evidence_spans` bereit
@@ -93,14 +170,18 @@ Verwechsle auf keinen Fall:
 * eine erfolgreiche Aktivität ≠ automatisch hohe Werte in allen Konstrukten
 * eine ausgelassene Aktivität ≠ automatisch niedrige Werte in allen Konstrukten
 * ein Tagebucheintrag ohne PA ≠ niedrige Intention, niedrige Selbstkontrolle, negative Einstellung oder niedrige intrinsische Motivation, sofern dies nicht direkt im Tagebuch steht
+* fehlende Freizeit ≠ niedrige PA-spezifische Selbstkontrolle
 * Müdigkeit oder Stress stützen niedrige wahrgenommene Verhaltenskontrolle nur, wenn das Tagebuch sie klar als Barrieren für PA beschreibt
 * das Fehlen einer geplanten Aktivität ist kein Beleg für niedrige Handlungsplanung, sofern das Tagebuch nicht direkt schlechte oder gescheiterte Planung ausdrückt
+* eine einzelne erfolgreiche PA ≠ Automaticity
+* Subjective Norm benötigt Hinweise auf andere Personen, deren Erwartungen, Unterstützung oder Verhalten
 
 ## IBCM relevante Evidenz
 
 Nutze ausschließlich den aktuellen simulierten Tagebucheintrag, vorherige simulierte Tagebucheinträge desselben Simulation Runs und vorherige psychologische Werte. Vorherige Einträge und Werte sind nur unterstützender Kontext für zeitliche Kontinuität und niemals Ersatz für direkte Evidenz im aktuellen simulierten Tagebucheintrag.
 
 Wenn der aktuelle simulierte Tagebucheintrag keinen direkten Beleg für ein Konstrukt liefert, setze `score = null` für die Items dieses Konstrukts. Ein Tag ohne PA ist für sich allein kein Beleg für niedrige Werte. Insbesondere gilt: Keine PA heute ≠ niedrige Intention, niedrige Selbstkontrolle, negative Einstellung oder niedrige intrinsische Motivation.
+Verändere nur die Konstrukte, für die der Tagebucheintrag tatsächlich konstruktspezifische Evidenz liefert. Alltagsereignisse, Kontextbarrieren und tatsächliches Verhalten sind von psychologischen Interpretationen getrennt zu bewerten.
 
 ## Output Format
 

@@ -94,6 +94,7 @@ EXPECTED_PA_DECISION_FIELDS_EMPIRICAL_V1_2 = frozenset(
         "day_index",
         "decision_code",
         "decision_label",
+        "start_hour",
         "duration_min",
         "rationale_short",
         "diary_entry",
@@ -104,12 +105,15 @@ DETERMINISTIC_PA_DECISION_METADATA_FIELDS = frozenset(
         "activity_performed",
         "diary_entry_generated_for_simulation",
         "contextual_pa_probability",
+        "effective_pa_probability",
         "behavior_policy_pa_prior",
         "decision_sampling_seed",
         "decision_sampling_random_value",
         "sampled_decision_label",
         "sampled_decision_probability",
         "llm2_contextual_assessment",
+        "contextual_response",
+        "pa_time_allocation",
     }
 )
 
@@ -139,6 +143,7 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "day_index",
     "decision_code",
     "decision_label",
+    "start_hour",
     "duration_min",
     "intensity",
     "activity_done",
@@ -151,6 +156,15 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "valid_decision_categories",
     "decision_source",
     "behavior_policy",
+    "behavior_policy_pa_prior",
+    "contextual_pa_probability",
+    "effective_pa_probability",
+    "decision_sampling_seed",
+    "decision_sampling_random_value",
+    "sampled_decision_probability",
+    "pa_time_allocation",
+    "llm2_contextual_assessment",
+    "contextual_response",
     "previous_psychological_constructs",
     "updated_psychological_constructs",
     "diary_entry",
@@ -853,6 +867,7 @@ def validate_pa_decision_output(
         "diary_entry": diary_entry,
     }
     if empirical_pa_v1_2:
+        start_hour = core_payload["start_hour"]
         raw_duration = core_payload["duration_min"]
         if isinstance(raw_duration, bool) or not isinstance(raw_duration, (int, float)):
             raise ValueError("duration_min must be numeric in empirical PA v1.2.")
@@ -865,15 +880,24 @@ def validate_pa_decision_output(
                 raise ValueError(
                     "skip_activity requires duration_min=0 in empirical PA v1.2."
                 )
+            if start_hour is not None:
+                raise ValueError(
+                    "skip_activity requires start_hour=null in empirical PA v1.2."
+                )
         elif expected_label == "extra_activity":
             if not 1 <= duration_min <= 240:
                 raise ValueError(
                     "Performed PA requires duration_min between 1 and 240 in empirical PA v1.2."
                 )
+            if isinstance(start_hour, bool) or not isinstance(start_hour, int):
+                raise ValueError("Performed PA requires integer start_hour in empirical PA v1.2.")
+            if not 0 <= start_hour <= 23:
+                raise ValueError("start_hour must be between 0 and 23 in empirical PA v1.2.")
         else:
             raise ValueError(
                 "Empirical PA v1.2 only supports skip_activity or extra_activity."
             )
+        validated["start_hour"] = start_hour
         validated["duration_min"] = duration_min
 
     return add_pa_decision_metadata(validated)
@@ -1217,6 +1241,7 @@ def write_daily_decision_log_row(
         "day_index": int(day_index),
         "decision_code": int(pa_decision["decision_code"]),
         "decision_label": str(pa_decision["decision_label"]),
+        "start_hour": pa_decision.get("start_hour", ""),
         "duration_min": pa_decision.get("duration_min", ""),
         "intensity": pa_decision.get("intensity", ""),
         "activity_done": bool(activity_done),
@@ -1238,6 +1263,17 @@ def write_daily_decision_log_row(
             decision_metadata["valid_decision_categories"]
         ),
         "decision_source": str(decision_metadata["decision_source"]),
+        "behavior_policy_pa_prior": pa_decision.get("behavior_policy_pa_prior", ""),
+        "contextual_pa_probability": pa_decision.get("contextual_pa_probability", ""),
+        "effective_pa_probability": pa_decision.get("effective_pa_probability", ""),
+        "decision_sampling_seed": pa_decision.get("decision_sampling_seed", ""),
+        "decision_sampling_random_value": pa_decision.get("decision_sampling_random_value", ""),
+        "sampled_decision_probability": pa_decision.get("sampled_decision_probability", ""),
+        "pa_time_allocation": _json_log_value(pa_decision.get("pa_time_allocation")),
+        "llm2_contextual_assessment": _json_log_value(
+            pa_decision.get("llm2_contextual_assessment")
+        ),
+        "contextual_response": _json_log_value(pa_decision.get("contextual_response")),
         "previous_psychological_constructs": _json_log_value(
             dict(previous_psychological_constructs)
         ),
@@ -1288,6 +1324,7 @@ def build_closed_loop_update(
     return {
         "activity_done": activity_done,
         "activity_performed": activity_done,
+        "start_hour": pa_decision.get("start_hour"),
         "duration_min": pa_decision.get("duration_min"),
         "diary_entry_generated_for_simulation": DIARY_ENTRY_GENERATED_FOR_SIMULATION,
         "previous_psychological_constructs": previous_constructs,

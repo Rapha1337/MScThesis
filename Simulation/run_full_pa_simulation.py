@@ -38,6 +38,14 @@ from empirical_pa_v1_2 import (  # noqa: E402
     ACTION_PLANNING_MEAN,
     ACTION_PLANNING_SD,
 )
+from empirical_pa_v1_2_stochastic import (  # noqa: E402
+    NO_DOWNTIME_DIARY_ENTRY,
+    NO_DOWNTIME_REASON,
+    NO_DOWNTIME_RATIONALE,
+    availability_trace,
+    contextual_flexibility_trace,
+    downtime_blocks,
+)
 from psychological_state import (  # noqa: E402
     BACKEND_CONSTRUCT_RANGES,
     build_psychological_state,
@@ -161,6 +169,7 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "calendar_date",
     "decision_code",
     "decision_label",
+    "start_hour",
     "duration_min",
     "intensity",
     "activity_done",
@@ -196,9 +205,13 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "action_planning_modifier",
     "behavior_policy_pa_prior",
     "contextual_pa_probability",
+    "effective_pa_probability",
     "decision_sampling_seed",
     "decision_sampling_random_value",
     "sampled_decision_probability",
+    "pa_time_allocation",
+    "llm2_contextual_assessment",
+    "contextual_response",
     "previous_psychological_constructs",
     "updated_psychological_constructs",
     "diary_entry",
@@ -986,7 +999,90 @@ def _dry_pa_decision_runner(pa_decision_input: Mapping[str, Any], **kwargs: Any)
         },
     }
     if empirical_v1_2:
-        result["duration_min"] = 45 if decision_label == "extra_activity" else 0
+        blocks = downtime_blocks(hourly_context)
+        activity_branch = (
+            {
+                "start_hour": int(blocks[0]["start_hour"]),
+                "duration_min": 45,
+                "activity_option": None,
+                "rationale_short": "Dry-run LLM2 selected a feasible downtime slot for possible PA.",
+                "diary_entry": "Dry-run: I used an open part of the day for some extra movement.",
+            }
+            if blocks
+            else None
+        )
+        contextual_probability = float(behavior_policy.get("extra_activity", 0.0))
+        assessment = {
+            "persona_id": result["persona_id"],
+            "day_index": result["day_index"],
+            "contextual_pa_probability": contextual_probability,
+            "activity_if_performed": activity_branch,
+            "no_activity_if_skipped": {
+                "rationale_short": rationale,
+                "diary_entry": diary,
+            },
+        }
+        time_trace = availability_trace(assessment, pa_decision_input=pa_decision_input)
+        effective_probability = (
+            contextual_probability if time_trace["time_allocation_feasible"] else 0.0
+        )
+        if decision_label == "extra_activity" and effective_probability == 0.0:
+            decision_label = "skip_activity"
+            decision_code = 0
+            result["decision_label"] = decision_label
+            result["decision_code"] = decision_code
+            rationale = NO_DOWNTIME_RATIONALE
+            diary = NO_DOWNTIME_DIARY_ENTRY
+            result["rationale_short"] = rationale
+            result["diary_entry"] = diary
+            assessment["no_activity_if_skipped"] = {
+                "rationale_short": rationale,
+                "diary_entry": diary,
+            }
+        elif time_trace["infeasibility_reason"] == NO_DOWNTIME_REASON:
+            rationale = NO_DOWNTIME_RATIONALE
+            diary = NO_DOWNTIME_DIARY_ENTRY
+            result["rationale_short"] = rationale
+            result["diary_entry"] = diary
+            assessment["no_activity_if_skipped"] = {
+                "rationale_short": rationale,
+                "diary_entry": diary,
+            }
+        result["start_hour"] = (
+            int(activity_branch["start_hour"]) if decision_label == "extra_activity" and activity_branch else None
+        )
+        result["duration_min"] = (
+            int(activity_branch["duration_min"]) if decision_label == "extra_activity" and activity_branch else 0
+        )
+        result.update({
+            "contextual_pa_probability": contextual_probability,
+            "effective_pa_probability": effective_probability,
+            "behavior_policy_pa_prior": contextual_probability,
+            "sampled_decision_label": decision_label,
+            "sampled_decision_probability": (
+                effective_probability
+                if decision_label == "extra_activity"
+                else 1.0 - effective_probability
+            ),
+            "pa_time_allocation": time_trace,
+            "llm2_contextual_assessment": assessment,
+        })
+        flexibility = contextual_flexibility_trace(
+            pa_decision_input=pa_decision_input, activity=activity_branch,
+        )
+        result["llm2_contextual_assessment"] = {
+            **assessment, "contextual_flexibility": flexibility,
+        }
+        result["contextual_response"] = {
+            "activity_performed": decision_label == "extra_activity",
+            "used_option": None,
+            "option_support_status": "unknown" if decision_label == "extra_activity" else None,
+            "barriers_present": list(dict.fromkeys(
+                item["category"] for item in flexibility["contextual_barriers"]
+            )),
+            "potentially_mitigated_barriers": [],
+            "adaptation_reference": "none_no_preplanned_pa",
+        }
     return result
 
 def _context_summary(llm_context: Mapping[str, Any]) -> dict[str, Any]:
@@ -1026,6 +1122,7 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         "calendar_date": record["calendar_date"],
         "decision_code": int(pa_decision["decision_code"]),
         "decision_label": str(pa_decision["decision_label"]),
+        "start_hour": pa_decision.get("start_hour", ""),
         "duration_min": pa_decision.get("duration_min", ""),
         "intensity": pa_decision.get("intensity", ""),
         "activity_done": bool(closed_loop["activity_done"]),
@@ -1095,9 +1192,15 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         ),
         "behavior_policy_pa_prior": pa_decision.get("behavior_policy_pa_prior"),
         "contextual_pa_probability": pa_decision.get("contextual_pa_probability"),
+        "effective_pa_probability": pa_decision.get("effective_pa_probability"),
         "decision_sampling_seed": pa_decision.get("decision_sampling_seed"),
         "decision_sampling_random_value": pa_decision.get("decision_sampling_random_value"),
         "sampled_decision_probability": pa_decision.get("sampled_decision_probability"),
+        "pa_time_allocation": _json_log_value(pa_decision.get("pa_time_allocation")),
+        "llm2_contextual_assessment": _json_log_value(
+            pa_decision.get("llm2_contextual_assessment")
+        ),
+        "contextual_response": _json_log_value(pa_decision.get("contextual_response")),
         "decision_context_has_planned_pa": bool(
             record.get("decision_context_has_planned_pa")
         ),
@@ -1310,7 +1413,7 @@ def _build_simulation_run_manifest(
                 else "not provided; LLM1 is the sole processor of raw normalized constructs before LLM2 and passes four behavior_policy probabilities."
             ),
             "activity_dose_fields": (
-                ["duration_min"] if config.empirical_pa_v1_2 else []
+                ["start_hour", "duration_min"] if config.empirical_pa_v1_2 else []
             ),
             "weekday_convention": "Internal weekday is 0=Monday through 6=Sunday; LLM-facing context also includes weekday_name.",
             "phase_representation": "Internal phase may be holiday for lower-structure vacation blocks; LLM-facing phase_llm translates this as vacation_period. Public holidays require separate event variables.",
