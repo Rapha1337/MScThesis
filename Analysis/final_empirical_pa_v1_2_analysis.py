@@ -37,6 +37,7 @@ try:
         wilson,
     )
     from .t1_medoid_pa_validation_v1_2 import daily_rows_from_trace
+    from .empirical_context_binary_v1_2 import is_technical_fallback
 except ImportError:  # Direct script invocation.
     from empirical_context_binary_v1_2 import (
         binary_class,
@@ -45,6 +46,7 @@ except ImportError:  # Direct script invocation.
         wilson,
     )
     from t1_medoid_pa_validation_v1_2 import daily_rows_from_trace
+    from empirical_context_binary_v1_2 import is_technical_fallback
 
 
 SOURCE_FILES = (
@@ -71,6 +73,16 @@ REFERENCE_SOFTWARE_VERSIONS = {
 
 def source_hashes(root: Path) -> dict[str, str]:
     return {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in SOURCE_FILES}
+
+
+def _outcome_eligible_mask(frame: pd.DataFrame) -> pd.Series:
+    if "technical_fallback" not in frame.columns:
+        return pd.Series(True, index=frame.index)
+    return ~frame["technical_fallback"].fillna(False).astype(bool)
+
+
+def _numeric_or_nan(value: Any) -> float:
+    return math.nan if value is None else float(value)
 
 
 def software_provenance() -> dict[str, Any]:
@@ -164,9 +176,12 @@ def load_analysis_data(roots: dict[int, Path]) -> tuple[pd.DataFrame, pd.DataFra
             day_index = int(record["day_index"])
             validated = validation_lookup.loc[(persona_id, day_index)]
             decision = record["pa_decision"]
-            performed = bool(result["activity_performed"])
-            if performed != bool(validated["activity_performed"]):
+            technical_fallback = bool(result["technical_fallback"])
+            performed = result["activity_performed"]
+            if not technical_fallback and performed != bool(validated["activity_performed"]):
                 raise ValueError("Context and validation routines disagree on PA outcome")
+            if technical_fallback != bool(validated["technical_fallback"]):
+                raise ValueError("Context and validation routines disagree on fallback status")
             if int(decision["duration_min"]) != int(validated["duration_min"]):
                 raise ValueError("Context and validation routines disagree on PA duration")
             row = {
@@ -176,12 +191,19 @@ def load_analysis_data(roots: dict[int, Path]) -> tuple[pd.DataFrame, pd.DataFra
                 "binary_context_class": result["binary_context_class"],
                 "final_context_score": float(result["final_context_score"]),
                 "no_downtime": int(result["downtime_length"]) == 0,
-                "activity_performed": int(performed),
+                "activity_performed": None if technical_fallback else int(performed),
+                "technical_fallback": technical_fallback,
                 "duration_min": int(validated["duration_min"]),
                 "pa_minutes": float(validated["pa_minutes"]),
-                "behavior_policy_pa_prior": float(decision["behavior_policy_pa_prior"]),
-                "contextual_pa_probability": float(decision["contextual_pa_probability"]),
-                "effective_pa_probability": float(decision["effective_pa_probability"]),
+                "behavior_policy_pa_prior": _numeric_or_nan(
+                    decision.get("behavior_policy_pa_prior")
+                ),
+                "contextual_pa_probability": _numeric_or_nan(
+                    decision.get("contextual_pa_probability")
+                ),
+                "effective_pa_probability": _numeric_or_nan(
+                    decision.get("effective_pa_probability")
+                ),
             }
             row["context_shift"] = row["contextual_pa_probability"] - row["behavior_policy_pa_prior"]
             row["feasibility_shift"] = row["effective_pa_probability"] - row["contextual_pa_probability"]
@@ -192,23 +214,48 @@ def load_analysis_data(roots: dict[int, Path]) -> tuple[pd.DataFrame, pd.DataFra
 
         for persona_id, group in validation.groupby("persona_id", sort=True):
             meta = empirical.loc[empirical["persona_id"].eq(persona_id)].iloc[0]
-            active = group["activity_performed"].astype(bool)
+            observed = ~group["technical_fallback"].astype(bool)
+            observed_group = group.loc[observed]
+            active = observed_group["activity_performed"].astype(bool)
+            observed_days = len(observed_group)
+            pa_days = int(active.sum())
             agreement_frames.append(pd.DataFrame([{
                 "seed": int(seed),
                 "medoid": aliases[persona_id],
                 "t1_mvpa_hours_week": float(meta["empirical_mvpa_hours_week"]),
                 "t1_total_pa_hours_week": float(meta["empirical_total_pa_hours_week"]),
-                "simulated_pa_hours_week": float(group["pa_minutes"].sum()) / 60 / 90 * 7,
-                "pa_days": int(active.sum()),
-                "mean_duration_min_pa_day": float(group.loc[active, "duration_min"].mean()),
+                "simulated_pa_hours_week": (
+                    float(observed_group["pa_minutes"].sum()) / 60 / observed_days * 7
+                    if observed_days
+                    else math.nan
+                ),
+                "simulated_days": len(group),
+                "pa_rate_denominator_days": observed_days,
+                "technical_fallback_days": int((~observed).sum()),
+                "technical_fallback_proportion": (
+                    int((~observed).sum()) / len(group) if len(group) else math.nan
+                ),
+                "pa_days": pa_days,
+                "pa_proportion": pa_days / observed_days if observed_days else math.nan,
+                "mean_duration_min_pa_day": (
+                    float(observed_group.loc[active, "duration_min"].mean())
+                    if pa_days
+                    else math.nan
+                ),
             }]))
 
     daily = pd.concat(daily_frames, ignore_index=True)
     agreement = pd.concat(agreement_frames, ignore_index=True)
     if len(daily) != 720 or daily[["seed", "medoid", "day_index"]].duplicated().any():
         raise ValueError("Expected exactly 720 unique seed-medoid-days")
-    if daily[list(STAGE_COLUMNS)].isna().any().any():
+    required_probability_columns = [
+        column for column in STAGE_COLUMNS if column != "effective_pa_probability"
+    ]
+    if daily[required_probability_columns].isna().any().any():
         raise ValueError("Missing PA probability in source trace")
+    eligible = _outcome_eligible_mask(daily)
+    if daily.loc[eligible, "effective_pa_probability"].isna().any():
+        raise ValueError("Missing effective PA probability for a non-fallback day")
     if set(daily["binary_context_class"]) != set(CONTEXT_ORDER):
         raise ValueError("Expected both binary context categories")
     if sum(daily["no_downtime"]) != 131:
@@ -232,24 +279,37 @@ def context_pa_summary(daily: pd.DataFrame) -> pd.DataFrame:
         for context in CONTEXT_ORDER:
             subset = frame[frame["binary_context_class"].eq(context)]
             n = len(subset)
-            pa_days = int(subset["activity_performed"].sum())
-            low, high = wilson(pa_days, n)
+            eligible = _outcome_eligible_mask(subset)
+            eligible_subset = subset.loc[eligible]
+            pa_days = int(eligible_subset["activity_performed"].fillna(0).sum())
+            fallback_days = n - len(eligible_subset)
+            denominator = len(eligible_subset)
+            low, high = wilson(pa_days, denominator)
             rows.append({
                 "seed": seed,
                 "medoid": medoid,
                 "context": context,
                 "person_days": n,
+                "pa_rate_denominator_days": denominator,
                 "pa_days": pa_days,
-                "pa_proportion": pa_days / n if n else math.nan,
+                "pa_proportion": pa_days / denominator if denominator else math.nan,
                 "wilson95_low": low,
                 "wilson95_high": high,
                 "no_downtime_days": int(subset["no_downtime"].sum()),
+                "technical_fallback_days": fallback_days,
+                "technical_fallback_proportion": (
+                    fallback_days / n if n else math.nan
+                ),
             })
     return pd.DataFrame(rows)
 
 
 def gee_context_model(daily: pd.DataFrame) -> pd.DataFrame:
-    data = daily.copy()
+    total_days = len(daily)
+    fallback_days = int((~_outcome_eligible_mask(daily)).sum())
+    data = daily.loc[_outcome_eligible_mask(daily)].copy()
+    if data.empty:
+        raise ValueError("No PA outcomes are available after excluding technical fallbacks.")
     data["seed"] = data["seed"].astype(str)
     data["seed_medoid"] = data["seed"] + "_" + data["medoid"]
     formula = 'activity_performed ~ C(binary_context_class, Treatment(reference="non_supportive")) + C(seed)'
@@ -282,6 +342,11 @@ def gee_context_model(daily: pd.DataFrame) -> pd.DataFrame:
                 "clusters": clusters,
                 "degrees_freedom": degrees_freedom,
                 "observations": len(data),
+                "simulated_days": total_days,
+                "technical_fallback_days": fallback_days,
+                "technical_fallback_proportion": (
+                    fallback_days / total_days if total_days else math.nan
+                ),
                 "contrast": interpretation,
                 "log_odds": estimate,
                 "standard_error": standard_error,
@@ -353,10 +418,24 @@ def probability_summary(daily: pd.DataFrame) -> pd.DataFrame:
     )
     rows: list[dict[str, Any]] = []
     for seed, context, frame in groups:
-        row: dict[str, Any] = {"seed": seed, "context": context, "person_days": len(frame)}
-        intervals, clusters, replicates = cluster_bootstrap_mean_cis(frame, metrics)
+        eligible = _outcome_eligible_mask(frame)
+        observed = frame.loc[eligible].copy()
+        fallback_days = len(frame) - len(observed)
+        row: dict[str, Any] = {
+            "seed": seed,
+            "context": context,
+            "person_days": len(frame),
+            "probability_summary_days": len(observed),
+            "technical_fallback_days": fallback_days,
+            "technical_fallback_proportion": (
+                fallback_days / len(frame) if len(frame) else math.nan
+            ),
+        }
+        intervals, clusters, replicates = cluster_bootstrap_mean_cis(observed, metrics)
         for metric in metrics:
-            row[f"mean_{metric}"] = float(frame[metric].mean())
+            row[f"mean_{metric}"] = (
+                float(observed[metric].mean()) if len(observed) else math.nan
+            )
             low, high = intervals[metric]
             row[f"ci95_low_{metric}"] = low
             row[f"ci95_high_{metric}"] = high
@@ -382,10 +461,21 @@ def agreement_summary(agreement: pd.DataFrame) -> pd.DataFrame:
             ("T1_MVPA", "t1_mvpa_hours_week"),
             ("T1_total_PA", "t1_total_pa_hours_week"),
         ):
-            errors = frame["simulated_pa_hours_week"] - frame[column]
+            complete = frame[[column, "simulated_pa_hours_week"]].dropna()
+            errors = complete["simulated_pa_hours_week"] - complete[column]
             n = len(errors)
-            half = stats.t.ppf(0.975, n - 1) * errors.std(ddof=1) / math.sqrt(n)
-            correlation = stats.spearmanr(frame[column], frame["simulated_pa_hours_week"]).statistic
+            half = (
+                stats.t.ppf(0.975, n - 1) * errors.std(ddof=1) / math.sqrt(n)
+                if n > 1
+                else math.nan
+            )
+            correlation = (
+                stats.spearmanr(
+                    complete[column], complete["simulated_pa_hours_week"]
+                ).statistic
+                if n > 1
+                else math.nan
+            )
             rows.append({
                 "seed": seed,
                 "reference": reference,
@@ -405,8 +495,28 @@ def public_simulation_summary(agreement: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for seed, frame in agreement.groupby("seed", sort=True):
         pa_days = int(frame["pa_days"].sum())
-        weighted_duration = float(
-            np.average(frame["mean_duration_min_pa_day"], weights=frame["pa_days"])
+        total_days = (
+            int(frame["simulated_days"].sum())
+            if "simulated_days" in frame
+            else 0
+        )
+        fallback_days = (
+            int(frame["technical_fallback_days"].sum())
+            if "technical_fallback_days" in frame
+            else 0
+        )
+        pa_denominator = (
+            int(frame["pa_rate_denominator_days"].sum())
+            if "pa_rate_denominator_days" in frame
+            else (total_days if total_days else math.nan)
+        )
+        weighted_duration = (
+            float(np.average(
+                frame["mean_duration_min_pa_day"].fillna(0),
+                weights=frame["pa_days"],
+            ))
+            if pa_days
+            else math.nan
         )
         rows.append({
             "seed": int(seed),
@@ -414,6 +524,17 @@ def public_simulation_summary(agreement: pd.DataFrame) -> pd.DataFrame:
             "mean_simulated_pa_hours_week": float(frame["simulated_pa_hours_week"].mean()),
             "sd_simulated_pa_hours_week": float(frame["simulated_pa_hours_week"].std(ddof=1)),
             "total_pa_days": pa_days,
+            "simulated_days": total_days,
+            "pa_rate_denominator_days": pa_denominator,
+            "technical_fallback_days": fallback_days,
+            "technical_fallback_proportion": (
+                fallback_days / total_days if total_days else math.nan
+            ),
+            "pa_proportion": (
+                pa_days / pa_denominator
+                if pd.notna(pa_denominator) and pa_denominator > 0
+                else math.nan
+            ),
             "mean_duration_min_pa_day": weighted_duration,
         })
     return pd.DataFrame(rows)
@@ -439,8 +560,11 @@ def _save_context_figure(summary: pd.DataFrame, path: Path) -> None:
         axis.set_xticks((0, 1), ("Unterstützend", "Nicht unterstützend"))
         axis.set_ylim(-0.03, 1.03)
         axis.grid(axis="y", alpha=0.25)
-    axes[0].set_ylabel("PA-Anteil pro Personentag")
-    fig.suptitle("PA nach binärem Tageskontext\nGrosse Punkte: Seed-Aggregat mit 95%-Wilson-KI; kleine Punkte: Medoids")
+    axes[0].set_ylabel("PA-Anteil unter auswertbaren Personentagen")
+    fig.suptitle(
+        "PA nach binärem Tageskontext\n"
+        "Technische Fallbacks aus PA-Raten ausgeschlossen; separat in Tabellen ausgewiesen"
+    )
     fig.tight_layout()
     fig.savefig(path, dpi=180, bbox_inches="tight")
     plt.close(fig)
@@ -465,7 +589,10 @@ def _save_probability_figure(summary: pd.DataFrame, path: Path) -> None:
         axis.grid(axis="y", alpha=0.25)
     axes[0].set_ylabel("Mittlere PA-Wahrscheinlichkeit")
     axes[-1].legend(frameon=False)
-    fig.suptitle("Wahrscheinlichkeitsverlauf nach Kontext\n95%-Medoid-Cluster-Bootstrap-Intervalle")
+    fig.suptitle(
+        "Wahrscheinlichkeitsverlauf nach Kontext\n"
+        "Nur Tage ohne technischen Fallback; 95%-Medoid-Cluster-Bootstrap-Intervalle"
+    )
     fig.tight_layout()
     fig.savefig(path, dpi=180, bbox_inches="tight")
     plt.close(fig)
@@ -536,7 +663,9 @@ def build_report(
     overall = context[(context["seed"].eq("all")) & context["medoid"].eq("all")]
     context_model = gee[(gee["model"].eq("primary_medoid_cluster_bias_reduced")) & gee["contrast"].eq("supportive_vs_non_supportive")].iloc[0]
     probability_display = probabilities[[
-        "seed", "context", "person_days", "mean_behavior_policy_pa_prior",
+        "seed", "context", "person_days", "probability_summary_days",
+        "technical_fallback_days", "technical_fallback_proportion",
+        "mean_behavior_policy_pa_prior",
         "mean_contextual_pa_probability", "mean_effective_pa_probability",
         "mean_context_shift", "mean_feasibility_shift", "mean_total_probability_shift",
     ]]
@@ -551,6 +680,13 @@ def build_report(
         "non_supportive. Simulationsmechanismus, Wahrscheinlichkeiten, Entscheidungen, Dauern und "
         "Kontextklassifikator bleiben unverändert.",
         "",
+        "Technische Fallback-Tage haben ein fehlendes PA-Outcome: Sie bleiben in der Zahl "
+        "simulierter Tage und den Fallback-Qualitätskennzahlen enthalten, werden aber aus "
+        "PA-Zählern, PA-Ratennennern, Wahrscheinlichkeitsmitteln und H3-Modellen ausgeschlossen. "
+        "Reguläre Bernoulli-Skips sowie deterministische Skips ohne Downtime bleiben gültige "
+        "Nicht-PA-Entscheidungen. Fehlende Fallback-Marker in historischen Runs bedeuten "
+        "rückwärtskompatibel keinen Fallback. Fallback-Anteile verwenden alle simulierten Tage "
+        "der jeweiligen Kontext-/Persona-Kategorie als Nenner. "
         "Tagesanteile erhalten deskriptive 95%-Wilson-Intervalle. Das primäre Kontextmodell ist ein "
         "logistisches GEE mit austauschbarer Arbeitskorrelation, Medoid-Clustern, Seed-Adjustierung, "
         "bias-reduzierter Sandwich-Kovarianz und einer Small-Cluster-t-Referenz mit df = Cluster - 1. "
@@ -565,12 +701,22 @@ def build_report(
         "",
         "## PA-Häufigkeit nach binärem Kontext",
         "",
-        markdown_table(overall, ["context", "person_days", "pa_days", "pa_proportion", "wilson95_low", "wilson95_high", "no_downtime_days"],
-                       ["Kontext", "Tage", "PA-Tage", "PA-Anteil", "Wilson unten", "Wilson oben", "Ohne Downtime"]),
+        markdown_table(overall, [
+            "context", "person_days", "pa_rate_denominator_days", "pa_days",
+            "pa_proportion", "wilson95_low", "wilson95_high", "no_downtime_days",
+            "technical_fallback_days", "technical_fallback_proportion",
+        ], [
+            "Kontext", "Simulierte Tage", "PA-Nenner", "PA-Tage", "PA-Anteil",
+            "Wilson unten", "Wilson oben", "Ohne Downtime", "Technische Fallbacks",
+            "Fallback-Anteil",
+        ]),
         "",
         f"Das seed-adjustierte primäre GEE schätzt für supportive gegenüber non_supportive Tagen eine Odds Ratio "
         f"von {context_model['odds_ratio']:.2f} (95%-KI {context_model['ci95_low']:.2f}–"
-        f"{context_model['ci95_high']:.2f}, exploratives p={context_model['exploratory_p_value']:.3f}). "
+        f"{context_model['ci95_high']:.2f}, exploratives p={context_model['exploratory_p_value']:.3f}; "
+        f"{context_model['observations']} auswertbare Personentage von "
+        f"{context_model['simulated_days']}, {context_model['technical_fallback_days']} technische "
+        "Fallbacks). "
         "Die sehr kleine Zahl unabhängiger Medoid-Cluster begrenzt die Verlässlichkeit dieses Intervalls.",
         "",
         "Vollständige Kontextzahlen pro Seed und Medoid stehen in `tables/01_context_pa.csv`, die "
@@ -581,8 +727,12 @@ def build_report(
         "## Verlauf der PA-Wahrscheinlichkeit",
         "",
         markdown_table(probability_display, list(probability_display.columns),
-                       ["Seed", "Kontext", "Tage", "Prior", "Kontextuell", "Effektiv", "Kontext-Prior", "Effektiv-kontextuell", "Effektiv-Prior"]),
+                       ["Seed", "Kontext", "Simulierte Tage", "Auswertbare Tage",
+                        "Technische Fallbacks", "Fallback-Anteil", "Prior", "Kontextuell",
+                        "Effektiv", "Kontext-Prior", "Effektiv-kontextuell", "Effektiv-Prior"]),
         "",
+        "Wahrscheinlichkeitsmittel und Intervalle beruhen auf auswertbaren Tagen; technische "
+        "Fallbacks mit `effective_pa_probability = null` werden nicht als 0 behandelt. "
         "Die kontextuelle Stufe trennt supportive von non_supportive Tagen. Die effektive Stufe berücksichtigt "
         "zusätzlich die strukturelle Durchführbarkeit; ihre Reduktion konzentriert sich auf non_supportive Tage, "
         "einschliesslich der erhaltenen Beobachtungen ohne Downtime. Cluster-Bootstrap-Intervalle für jeden "
@@ -602,7 +752,10 @@ def build_report(
         "und nicht exportiert. Die folgende Simulationstabelle ist über alle vier Medoids je Seed aggregiert.",
         "",
         markdown_table(public_simulation, list(public_simulation.columns),
-                       ["Seed", "Medoids", "Mittlere simulierte h/W", "SD simulierte h/W", "PA-Tage", "Mittlere Dauer min"]),
+                       ["Seed", "Medoids", "Mittlere simulierte h/W", "SD simulierte h/W",
+                        "PA-Tage", "Simulierte Tage", "PA-Nenner",
+                        "Technische Fallbacks", "Fallback-Anteil", "PA-Anteil",
+                        "Mittlere Dauer min"]),
         "",
         markdown_table(agreement_stats, list(agreement_stats.columns),
                        ["Seed", "Referenz", "M", "Mittlerer Bias", "Bias-KI unten", "Bias-KI oben", "MAE", "RMSE", "Spearman rho"]),

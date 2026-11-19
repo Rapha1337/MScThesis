@@ -198,19 +198,48 @@ def load_scenario(name: str, input_path: Path, work_dir: Path) -> ScenarioData:
     daily = pd.read_csv(root / "daily_decision_log.csv")
     daily["calendar_date"] = pd.to_datetime(daily["calendar_date"])
     daily["planned"] = parse_bool_series(daily["was_physical_activity_planned_today"])
+    technical_fallback = pd.Series(False, index=daily.index, dtype=bool)
+    if "technical_fallback" in daily.columns:
+        technical_fallback |= parse_bool_series(daily["technical_fallback"]).fillna(False)
+    if "decision_origin" in daily.columns:
+        technical_fallback |= daily["decision_origin"].eq(
+            "technical_validation_fallback"
+        ).fillna(False)
+    trace = read_json(root / "full_simulation_trace.json")
+    trace_fallbacks = {
+        (str(record["persona_id"]), int(record["day_index"]))
+        for record in trace.get("records", [])
+        if record.get("pa_decision", {}).get("technical_fallback") is True
+        or record.get("pa_decision", {}).get("decision_origin")
+        == "technical_validation_fallback"
+    }
+    if trace_fallbacks:
+        trace_fallback_mask = pd.Series(
+            [
+                (str(row["persona_id"]), int(row["day_index"])) in trace_fallbacks
+                for _, row in daily.iterrows()
+            ],
+            index=daily.index,
+            dtype=bool,
+        )
+        technical_fallback |= trace_fallback_mask
+    daily["technical_fallback_bool"] = technical_fallback
     if "activity_performed" in daily.columns:
-        daily["activity_performed_bool"] = parse_bool_series(daily["activity_performed"])
+        daily["activity_performed_bool"] = parse_bool_series(
+            daily["activity_performed"]
+        ).astype("boolean")
     else:
         daily["activity_performed_bool"] = daily["decision_label"].isin(
             ["do_planned_activity", "adapt_activity", "extra_activity"]
-        )
+        ).astype("boolean")
+    daily.loc[technical_fallback, "activity_performed_bool"] = pd.NA
 
     return ScenarioData(
         name=name,
         root=root,
         daily=daily,
         longitudinal=pd.read_csv(root / "longitudinal_constructs.csv"),
-        trace=read_json(root / "full_simulation_trace.json"),
+        trace=trace,
         run_config=read_json(root / "run_config.json"),
         manifest=read_json(root / "simulation_run_manifest.json"),
         persona_metadata=read_json(root / "persona_metadata.json"),
@@ -225,6 +254,12 @@ def validate_scenario(scenario: ScenarioData) -> dict[str, Any]:
     extra = sorted(day_indices - expected)
     duplicates = int(daily.duplicated(["persona_id", "day_index"]).sum())
     trace_records = len(scenario.trace.get("records", []))
+    fallback_days = int(
+        daily.get(
+            "technical_fallback_bool",
+            pd.Series(False, index=daily.index),
+        ).fillna(False).astype(bool).sum()
+    )
 
     return {
         "scenario": scenario.name,
@@ -234,6 +269,10 @@ def validate_scenario(scenario: ScenarioData) -> dict[str, Any]:
         "missing_day_indices": json.dumps(missing),
         "extra_day_indices": json.dumps(extra),
         "duplicate_persona_days": duplicates,
+        "technical_fallback_days": fallback_days,
+        "technical_fallback_proportion": (
+            fallback_days / len(daily) if len(daily) else np.nan
+        ),
         "run_status": scenario.manifest.get("run_status"),
         "complete_365_day_run": (
             len(daily) == 365
@@ -529,16 +568,31 @@ def tabulate_decisions(frame: pd.DataFrame, group_cols: list[str]) -> pd.DataFra
 
         row = {column: value for column, value in zip(group_cols, group_values)}
         row["n_days"] = len(group)
+        if "technical_fallback_bool" in group.columns:
+            fallback = group["technical_fallback_bool"].fillna(False).astype(bool)
+        else:
+            fallback = pd.Series(False, index=group.index, dtype=bool)
+        eligible = group.loc[~fallback]
+        fallback_count = int(fallback.sum())
+        row["analysis_days"] = len(eligible)
+        row["technical_fallback_days"] = fallback_count
+        row["technical_fallback_proportion"] = (
+            fallback_count / len(group) if len(group) else np.nan
+        )
 
         for category in DECISION_CATEGORIES:
-            n = int((group["decision_label"] == category).sum())
+            n = int((eligible["decision_label"] == category).sum())
             row[f"{category}_n"] = n
-            row[f"{category}_pct"] = 100 * n / len(group) if len(group) else np.nan
+            row[f"{category}_pct"] = (
+                100 * n / len(eligible) if len(eligible) else np.nan
+            )
 
-        row["activity_performed_n"] = int(group["activity_performed_bool"].sum())
+        row["activity_performed_n"] = int(
+            eligible["activity_performed_bool"].fillna(False).sum()
+        )
         row["activity_performed_pct"] = (
-            100 * row["activity_performed_n"] / len(group)
-            if len(group)
+            100 * row["activity_performed_n"] / len(eligible)
+            if len(eligible)
             else np.nan
         )
 
@@ -571,11 +625,16 @@ def decision_policy_diagnostics(scenario: ScenarioData) -> pd.DataFrame:
                 "phase": records_by_day[int(row["day_index"])].get("phase"),
                 "planned": bool(row["planned"]),
                 "decision_label": row["decision_label"],
+                "technical_fallback": bool(row.get("technical_fallback_bool", False)),
                 "llm1_top_valid": ranked[0][0] if ranked else None,
                 "llm1_top_probability": ranked[0][1] if ranked else np.nan,
                 "llm1_second_probability": ranked[1][1] if len(ranked) > 1 else np.nan,
                 "llm1_margin": ranked[0][1] - ranked[1][1] if len(ranked) > 1 else np.nan,
-                "llm2_override": row["decision_label"] != ranked[0][0] if ranked else False,
+                "llm2_override": (
+                    row["decision_label"] != ranked[0][0]
+                    if ranked and not bool(row.get("technical_fallback_bool", False))
+                    else np.nan if bool(row.get("technical_fallback_bool", False)) else False
+                ),
             }
         )
 
@@ -590,8 +649,16 @@ def rate_difference(
     outcome: str,
     day_label: str,
 ) -> dict[str, Any]:
-    a = df[(df["scenario"] == scenario_a) & day_filter(df)]
-    b = df[(df["scenario"] == scenario_b) & day_filter(df)]
+    eligible = (
+        ~df["technical_fallback_bool"].fillna(False).astype(bool)
+        if "technical_fallback_bool" in df.columns
+        else pd.Series(True, index=df.index)
+    )
+    selected = day_filter(df) & eligible
+    a = df[(df["scenario"] == scenario_a) & selected]
+    b = df[(df["scenario"] == scenario_b) & selected]
+    all_a = df[(df["scenario"] == scenario_a) & day_filter(df)]
+    all_b = df[(df["scenario"] == scenario_b) & day_filter(df)]
 
     pa = (a["decision_label"] == outcome).mean() if len(a) else np.nan
     pb = (b["decision_label"] == outcome).mean() if len(b) else np.nan
@@ -601,8 +668,12 @@ def rate_difference(
         "day_set": day_label,
         "outcome": outcome,
         "n_a": int(len(a)),
+        "simulated_days_a": int(len(all_a)),
+        "technical_fallback_days_a": int(len(all_a) - len(a)),
         "rate_a_pct": 100 * pa,
         "n_b": int(len(b)),
+        "simulated_days_b": int(len(all_b)),
+        "technical_fallback_days_b": int(len(all_b) - len(b)),
         "rate_b_pct": 100 * pb,
         "risk_difference_percentage_points": 100 * (pb - pa),
         "risk_ratio": (pb / pa) if pa > 0 else np.inf,
@@ -698,7 +769,7 @@ def add_proportion_confidence_intervals(
         upper_values: list[float] = []
         for _, row in result.iterrows():
             count = int(row[f"{category}_n"])
-            n_days = int(row["n_days"])
+            n_days = int(row["analysis_days"] if "analysis_days" in row else row["n_days"])
             if n_days <= 0:
                 lower_values.append(np.nan)
                 upper_values.append(np.nan)
@@ -1465,8 +1536,13 @@ def pairwise_binary_posthoc(
 def calculate_h3_h4_inferential_tests(
     scenario_day_all: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    unplanned = scenario_day_all[~scenario_day_all["planned"]].copy()
-    planned = scenario_day_all[scenario_day_all["planned"]].copy()
+    if "technical_fallback_bool" in scenario_day_all.columns:
+        eligible = ~scenario_day_all["technical_fallback_bool"].fillna(False).astype(bool)
+    else:
+        eligible = pd.Series(True, index=scenario_day_all.index)
+    observed = scenario_day_all.loc[eligible]
+    unplanned = observed[~observed["planned"]].copy()
+    planned = observed[observed["planned"]].copy()
 
     tests = [
         paired_weekly_binary_test(
@@ -1494,7 +1570,7 @@ def calculate_h3_h4_inferential_tests(
             "H4_planned_adapt_by_scenario",
         ),
         paired_weekly_binary_test(
-            scenario_day_all,
+            observed,
             "scenario",
             "Supportive",
             "Hindering",
@@ -1786,7 +1862,7 @@ def write_figures(
     ax = decision_counts.plot(kind="bar", figsize=(12, 6))
     ax.set_title("")
     ax.set_xlabel("Scenario and day type")
-    ax.set_ylabel("Number of days")
+    ax.set_ylabel("Outcome counts (technical fallbacks excluded)")
     ax.tick_params(axis="x", rotation=25)
     ax.grid(axis="y", alpha=0.25)
     ax.set_axisbelow(True)
@@ -1828,9 +1904,17 @@ def write_figures(
             capsize=3,
         )
     ax.set_xticks(x)
-    ax.set_xticklabels([CONTEXT_DISPLAY[value] for value in CONTEXT_ORDER])
+    ax.set_xticklabels([
+        (
+            f"{CONTEXT_DISPLAY[value]}\n"
+            f"n={int(h3_plot.loc[value, 'analysis_days'])}; "
+            f"TF={int(h3_plot.loc[value, 'technical_fallback_days'])}/"
+            f"{int(h3_plot.loc[value, 'n_days'])}"
+        )
+        for value in CONTEXT_ORDER
+    ])
     ax.set_xlabel("Classified Daily Context")
-    ax.set_ylabel("Percentage of days with no planned PA [%]")
+    ax.set_ylabel("Percentage of evaluable days with no planned PA [%]")
     ax.set_ylim(0, 100)
     ax.grid(axis="y", alpha=0.25)
     ax.set_axisbelow(True)
@@ -2005,6 +2089,7 @@ def write_docs(
 2. H3 and H4 report all decision categories:
    - H3: planned and unplanned days are analysed separately.
    - H4: planned PA days are analysed using adaptation and skipping as hindering-consistent outcomes.
+   - Explicit technical fallback days remain in total-day and quality counts but are excluded from PA outcome percentages and inferential comparisons; historical runs without fallback markers remain unchanged.
 
 3. Statistical reporting includes:
    - descriptive frequencies and percentages;

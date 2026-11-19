@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
+import os
 import random
+import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
@@ -45,6 +49,7 @@ from empirical_pa_v1_2_stochastic import (  # noqa: E402
     availability_trace,
     contextual_flexibility_trace,
     downtime_blocks,
+    enforce_downtime_invariant,
 )
 from psychological_state import (  # noqa: E402
     BACKEND_CONSTRUCT_RANGES,
@@ -209,6 +214,11 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "decision_sampling_seed",
     "decision_sampling_random_value",
     "sampled_decision_probability",
+    "decision_origin",
+    "technical_fallback",
+    "technical_fallback_reason",
+    "llm2_validation_attempt_count",
+    "llm2_validation_retry_count",
     "pa_time_allocation",
     "llm2_contextual_assessment",
     "contextual_response",
@@ -228,6 +238,8 @@ LONGITUDINAL_CONSTRUCT_COLUMNS: tuple[str, ...] = (
     "delta",
     "decision_label",
     "activity_done",
+    "decision_origin",
+    "technical_fallback",
 )
 
 
@@ -1111,6 +1123,195 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> Path:
     return path
 
 
+def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(
+                json.dumps(_json_ready(payload), ensure_ascii=False, indent=2) + "\n"
+            )
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        json.loads(temporary_path.read_text(encoding="utf-8"))
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
+    return path
+
+
+def _sha256_file(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _git_provenance() -> dict[str, Any]:
+    try:
+        commit = subprocess.run(
+            ["git", "-C", str(ROOT_DIR), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        all_status = subprocess.run(
+            ["git", "-C", str(ROOT_DIR), "status", "--porcelain"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        simulation_status = subprocess.run(
+            ["git", "-C", str(ROOT_DIR), "status", "--porcelain", "--", "Simulation"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        return {
+            "git_commit": commit,
+            "worktree_dirty": bool(all_status.strip()),
+            "simulation_code_dirty": bool(simulation_status.strip()),
+            "error": None,
+        }
+    except (OSError, subprocess.CalledProcessError) as exc:
+        return {
+            "git_commit": None,
+            "worktree_dirty": None,
+            "simulation_code_dirty": None,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def _run_provenance(config: FullSimulationConfig) -> dict[str, Any]:
+    llm1_prompt = (
+        EMPIRICAL_V1_2_BEHAVIOR_PROMPT_PATH
+        if config.empirical_pa_v1_2
+        else SIMULATION_DIR / "BehaviorProbability_Prompt.md"
+    )
+    llm2_prompt = (
+        EMPIRICAL_V1_2_PA_DECISION_PROMPT_PATH
+        if config.empirical_pa_v1_2
+        else SIMULATION_DIR / "PADecision_Prompt.md"
+    )
+    fewshot_prompt = (
+        EMPIRICAL_V1_2_PA_DECISION_FEWSHOT_PATH
+        if config.empirical_pa_v1_2
+        else SIMULATION_DIR / "PADecision_FewShot.md"
+    )
+    prompt_paths = {
+        "llm1": llm1_prompt,
+        "llm2": llm2_prompt,
+        "few_shot": fewshot_prompt,
+        "state_assessment": SIMULATION_DIR / "AssessmentModel_Prompt.md",
+    }
+    prompt_hashes = {
+        name: (_sha256_file(path) if not config.dry_run else None)
+        for name, path in prompt_paths.items()
+    }
+    source_files = (
+        "agent_context_export.py",
+        "empirical_pa_v1_2.py",
+        "empirical_pa_v1_2_stochastic.py",
+        "empirical_personas.py",
+        "resource_usage.py",
+        "run_behavior_probability_estimation.py",
+        "run_full_pa_simulation.py",
+        "run_llm_pa_decision.py",
+        "schedule_model_student.py",
+        "simulation_runner.py",
+        "state_assessment.py",
+        "year_structure.py",
+    )
+    source_digest = hashlib.sha256()
+    for relative_path in source_files:
+        path = SIMULATION_DIR / relative_path
+        source_digest.update(relative_path.encode("utf-8"))
+        source_digest.update(b"\0")
+        source_digest.update(path.read_bytes())
+        source_digest.update(b"\0")
+    return {
+        **_git_provenance(),
+        "simulation_source_sha256": source_digest.hexdigest(),
+        "prompt_sha256": prompt_hashes,
+        "persona_input_sha256": (
+            _sha256_file(config.persona_input_file)
+            if config.persona_input_file is not None
+            else None
+        ),
+        "seed_derivation": {
+            "persona_seed": "random.Random(base_seed).randint(0, 2**31 - 1), in persona input order",
+            "psychological_seed": f"persona_seed + {PSYCHOLOGICAL_SEED_OFFSET}",
+            "daily_environment_seed": "base_seed + day_index",
+            "pa_bernoulli_seed": (
+                "persona_seed + 20000033 + day_index (private random.Random instance)"
+            ),
+            "llm_seed": config.llm_seed,
+        },
+        "prompt_hash_scope": (
+            "SHA-256 of prompt source files used to build the configured system prompts; null in dry-run."
+        ),
+    }
+
+
+def _resource_total_from_jsonl(path: Path) -> dict[str, float] | None:
+    if not path.is_file():
+        return None
+    total_rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as file:
+        for line in file:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if row.get("paper_id") == "TOTAL":
+                total_rows.append(row)
+    if not total_rows:
+        return None
+    row = total_rows[-1]
+    numeric_fields = (
+        "tokens_total",
+        "prompt_tokens",
+        "response_tokens",
+        "embedding_tokens",
+        "total_runtime_seconds",
+        "paper_seconds_total",
+        "paper_count",
+        "codecarbon_emissions_kg",
+        "codecarbon_energy_kwh",
+    )
+    return {
+        key: float(row[key])
+        for key in numeric_fields
+        if isinstance(row.get(key), (int, float))
+        and not isinstance(row.get(key), bool)
+    }
+
+
+def _sum_resource_totals(
+    previous: Mapping[str, Any] | None,
+    current: Mapping[str, Any] | None,
+) -> dict[str, float] | None:
+    if previous is None and current is None:
+        return None
+    keys = set(previous or {}) | set(current or {})
+    return {
+        key: float((previous or {}).get(key, 0.0)) + float((current or {}).get(key, 0.0))
+        for key in sorted(keys)
+    }
+
+
 def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     should_write_header = not path.exists() or path.stat().st_size == 0
@@ -1196,6 +1397,11 @@ def _write_daily_log_row(path: Path, record: Mapping[str, Any]) -> None:
         "decision_sampling_seed": pa_decision.get("decision_sampling_seed"),
         "decision_sampling_random_value": pa_decision.get("decision_sampling_random_value"),
         "sampled_decision_probability": pa_decision.get("sampled_decision_probability"),
+        "decision_origin": pa_decision.get("decision_origin"),
+        "technical_fallback": bool(pa_decision.get("technical_fallback", False)),
+        "technical_fallback_reason": pa_decision.get("technical_fallback_reason"),
+        "llm2_validation_attempt_count": pa_decision.get("llm2_validation_attempt_count"),
+        "llm2_validation_retry_count": pa_decision.get("llm2_validation_retry_count"),
         "pa_time_allocation": _json_log_value(pa_decision.get("pa_time_allocation")),
         "llm2_contextual_assessment": _json_log_value(
             pa_decision.get("llm2_contextual_assessment")
@@ -1249,6 +1455,12 @@ def _write_longitudinal_construct_rows(path: Path, record: Mapping[str, Any]) ->
                     "delta": value_after - value_before,
                     "decision_label": str(pa_decision["decision_label"]),
                     "activity_done": activity_done,
+                    "decision_origin": str(
+                        pa_decision.get("decision_origin", "legacy_or_unspecified")
+                    ),
+                    "technical_fallback": bool(
+                        pa_decision.get("technical_fallback", False)
+                    ),
                 }
             )
 
@@ -1326,14 +1538,56 @@ def _build_simulation_run_manifest(
     output_files: Mapping[str, str],
     state_assessment_call_count: int,
     state_assessment_dry_run_count: int,
+    records: Sequence[Mapping[str, Any]] = (),
+    failed_day_llm2_retry_count: int = 0,
+    resume_count: int = 0,
+    resumed_from_run_id: str | None = None,
+    run_history: Sequence[Mapping[str, Any]] = (),
+    cumulative_resource_usage: Mapping[str, Any] | None = None,
+    provenance: Mapping[str, Any] | None = None,
     error: BaseException | None = None,
 ) -> dict[str, Any]:
+    decisions = [
+        record.get("pa_decision", {})
+        for record in records
+        if isinstance(record.get("pa_decision"), Mapping)
+    ]
+    validation_retry_count = sum(
+        int(decision.get("llm2_validation_retry_count") or 0)
+        for decision in decisions
+    ) + int(failed_day_llm2_retry_count)
+    technical_fallback_count = sum(
+        bool(decision.get("technical_fallback", False))
+        for decision in decisions
+    )
+    provenance_payload = dict(provenance or _run_provenance(config))
     return {
         "run_id": run_id,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "run_status": run_status,
         "error_type": type(error).__name__ if error is not None else None,
         "error_message": str(error)[:500] if error is not None else None,
+        "execution": {
+            "resume_count": int(resume_count),
+            "resumed_from_run_id": resumed_from_run_id,
+            "run_history": [dict(item) for item in run_history],
+            "validation_retry_count": validation_retry_count,
+            "failed_day_validation_retry_count": int(failed_day_llm2_retry_count),
+            "technical_fallback_count": technical_fallback_count,
+            "technical_fallback_policy": (
+                "Technical fallback days are not Bernoulli outcomes and must be analyzed "
+                "separately or excluded from primary PA outcome analyses."
+            ),
+        },
+        "resource_usage": {
+            "cumulative": (
+                dict(cumulative_resource_usage)
+                if cumulative_resource_usage is not None
+                else None
+            ),
+            "cumulative_includes_completed_resume_segments": int(resume_count) > 0,
+        },
+        "provenance": provenance_payload,
         "simulation": {
             "dry_run": config.dry_run,
             "n_personas": config.n_personas,
@@ -1349,6 +1603,22 @@ def _build_simulation_run_manifest(
             "llm1": config.model,
             "llm2": config.model,
             "state_assessment": config.model,
+        },
+        "model_parameters": {
+            "temperature": config.temperature,
+            "top_p": config.top_p,
+            "seed": config.llm_seed,
+            "llm1_max_tokens": config.llm1_max_tokens,
+            "llm2_max_tokens": config.llm2_max_tokens,
+            "state_assessment_max_tokens": config.state_assessment_max_tokens,
+            "state_assessment_json_mode": config.state_assessment_json_mode,
+        },
+        "persona_initialization": {
+            "input_sha256": provenance_payload.get("persona_input_sha256"),
+            "seed_derivation": provenance_payload.get("seed_derivation", {}).get(
+                "persona_seed"
+            ),
+            "input_row_order_preserved": True,
         },
         "psychological_construct_update_strategy": "smoothed_bounded",
         "psychological_construct_update_alpha": PSYCHOLOGICAL_CONSTRUCT_UPDATE_ALPHA,
@@ -1462,6 +1732,13 @@ def _write_simulation_run_manifest(
     output_files: Mapping[str, str],
     state_assessment_call_count: int,
     state_assessment_dry_run_count: int,
+    records: Sequence[Mapping[str, Any]] = (),
+    failed_day_llm2_retry_count: int = 0,
+    resume_count: int = 0,
+    resumed_from_run_id: str | None = None,
+    run_history: Sequence[Mapping[str, Any]] = (),
+    cumulative_resource_usage: Mapping[str, Any] | None = None,
+    provenance: Mapping[str, Any] | None = None,
     error: BaseException | None = None,
 ) -> Path:
     return _write_json(
@@ -1473,6 +1750,13 @@ def _write_simulation_run_manifest(
             output_files=output_files,
             state_assessment_call_count=state_assessment_call_count,
             state_assessment_dry_run_count=state_assessment_dry_run_count,
+            records=records,
+            failed_day_llm2_retry_count=failed_day_llm2_retry_count,
+            resume_count=resume_count,
+            resumed_from_run_id=resumed_from_run_id,
+            run_history=run_history,
+            cumulative_resource_usage=cumulative_resource_usage,
+            provenance=provenance,
             error=error,
         ),
     )
@@ -1503,6 +1787,7 @@ def _run_config_comparison_payload(config: FullSimulationConfig, daily_log_path:
             str(config.persona_input_file) if config.persona_input_file is not None else None
         ),
         "empirical_pa_v1_2": bool(config.empirical_pa_v1_2),
+        "provenance": _run_provenance(config),
     }
 
 
@@ -1568,12 +1853,26 @@ def _write_checkpoint(
     next_day_index: int,
     state_assessment_call_count: int,
     state_assessment_dry_run_count: int,
+    run_id: str | None = None,
+    resume_count: int = 0,
+    resumed_from_run_id: str | None = None,
+    run_history: Sequence[Mapping[str, Any]] = (),
+    cumulative_resource_usage: Mapping[str, Any] | None = None,
 ) -> None:
-    _write_json(
+    _write_json_atomic(
         _checkpoint_path(config),
         {
             "checkpoint_version": 1,
             "updated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "run_id": run_id,
+            "resume_count": int(resume_count),
+            "resumed_from_run_id": resumed_from_run_id,
+            "run_history": [dict(item) for item in run_history],
+            "cumulative_resource_usage": (
+                dict(cumulative_resource_usage)
+                if cumulative_resource_usage is not None
+                else None
+            ),
             "run_configuration": _run_config_comparison_payload(config, daily_log_path),
             "next_persona_index": next_persona_index,
             "next_day_index": next_day_index,
@@ -1591,6 +1890,14 @@ def _write_checkpoint(
             ],
             "state_assessment_call_count": state_assessment_call_count,
             "state_assessment_dry_run_count": state_assessment_dry_run_count,
+            "llm2_validation_retry_count": sum(
+                int(record.get("pa_decision", {}).get("llm2_validation_retry_count") or 0)
+                for record in records
+            ),
+            "technical_fallback_count": sum(
+                bool(record.get("pa_decision", {}).get("technical_fallback", False))
+                for record in records
+            ),
             "compact_contexts": list(compact_contexts),
             "records": list(records),
         },
@@ -1625,6 +1932,18 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
     persona_metadata_path = config.output_dir / "persona_metadata.json"
     resource_usage_path = config.output_dir / RESOURCE_USAGE_FILENAME
     manifest_path = config.output_dir / SIMULATION_RUN_MANIFEST_FILENAME
+    provenance = _run_provenance(config)
+    previous_manifest: dict[str, Any] = {}
+    cumulative_resource_before: Mapping[str, Any] | None = None
+    if config.resume and manifest_path.is_file():
+        previous_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        prior_resource = previous_manifest.get("resource_usage")
+        if isinstance(prior_resource, Mapping):
+            candidate = prior_resource.get("cumulative")
+            if isinstance(candidate, Mapping):
+                cumulative_resource_before = dict(candidate)
+    if config.resume and cumulative_resource_before is None:
+        cumulative_resource_before = _resource_total_from_jsonl(resource_usage_path)
 
     # Avoid appending to stale run outputs for deterministic reruns in the same directory.
     if not config.resume:
@@ -1659,11 +1978,23 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
             str(config.persona_input_file) if config.persona_input_file is not None else None
         ),
         "empirical_pa_v1_2": bool(config.empirical_pa_v1_2),
+        "provenance": provenance,
     }
     if not config.resume:
         _write_json(config.output_dir / "run_config.json", run_config_payload)
 
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    run_started_at_utc = datetime.now(timezone.utc).isoformat()
+    resume_count = 0
+    resumed_from_run_id: str | None = None
+    run_history: list[dict[str, Any]] = [
+        {
+            "run_id": run_id,
+            "status": "in_progress",
+            "resume": bool(config.resume),
+            "started_at_utc": run_started_at_utc,
+        }
+    ]
     output_files = _known_output_files(
         daily_log_path=daily_log_path,
         longitudinal_path=longitudinal_path,
@@ -1679,6 +2010,8 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
     records: list[dict[str, Any]] = []
     state_assessment_call_count = 0
     state_assessment_dry_run_count = 0
+    failed_day_llm2_retry_count = 0
+    run_start_record_count = 0
     resource_tracker = ResourceUsageEngine(
         resource_log_path=resource_usage_path,
         enable_tracking=config.enable_resource_tracking,
@@ -1736,7 +2069,61 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
         start_day_index = 0
         if config.resume:
             checkpoint = _load_resume_checkpoint(config, daily_log_path)
+            resume_count = int(checkpoint.get("resume_count") or 0) + 1
+            resumed_from_run_id = checkpoint.get("run_id") or previous_manifest.get("run_id")
+            run_history = [
+                dict(item)
+                for item in checkpoint.get("run_history", [])
+                if isinstance(item, Mapping)
+            ]
+            if run_history and run_history[-1].get("status") == "in_progress":
+                checkpoint_run_id = checkpoint.get("run_id")
+                matching_manifest = (
+                    previous_manifest
+                    if previous_manifest.get("run_id") == checkpoint_run_id
+                    else {}
+                )
+                previous_run = next(
+                    (
+                        item
+                        for item in matching_manifest.get("execution", {}).get(
+                            "run_history", []
+                        )
+                        if isinstance(item, Mapping)
+                        and item.get("run_id") == checkpoint_run_id
+                    ),
+                    {},
+                )
+                previous_execution = matching_manifest.get("execution", {})
+                previous_status = matching_manifest.get(
+                    "run_status", "interrupted"
+                )
+                run_history[-1]["status"] = previous_status
+                run_history[-1]["error_type"] = matching_manifest.get("error_type")
+                run_history[-1]["error_message"] = matching_manifest.get(
+                    "error_message"
+                )
+                run_history[-1]["finished_at_utc"] = previous_run.get(
+                    "finished_at_utc"
+                )
+                run_history[-1]["failed_day_validation_retry_count"] = (
+                    previous_run.get(
+                        "failed_day_validation_retry_count",
+                        previous_execution.get(
+                            "failed_day_validation_retry_count", 0
+                        ),
+                    )
+                )
+            run_history.append(
+                {
+                    "run_id": run_id,
+                    "status": "in_progress",
+                    "resume": True,
+                    "started_at_utc": run_started_at_utc,
+                }
+            )
             records = list(checkpoint.get("records") or [])
+            run_start_record_count = len(records)
             _assert_no_duplicate_persona_days(records)
             compact_contexts = list(checkpoint.get("compact_contexts") or [])
             previous_diary_entries_by_persona = {
@@ -1798,18 +2185,36 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 # LLM3 receives only a bounded rolling window; the full diary
                 # history remains in previous_diary_entries and checkpoints.
                 previous_diary_entries_context = previous_diary_entries[-PREVIOUS_DIARY_CONTEXT_WINDOW:]
+                guarded_decision = enforce_downtime_invariant(
+                    pipeline_record["pa_decision"],
+                    pa_decision_input={
+                        "persona_id": state.persona_id,
+                        "day_index": int(day_index),
+                        "behavior_policy": pipeline_record["behavior_policy"],
+                        "daily_context": {
+                            "hourly_context_24h": llm_context["hourly_context_24h"]
+                        },
+                    },
+                ) if config.empirical_pa_v1_2 else dict(pipeline_record["pa_decision"])
+                if guarded_decision != pipeline_record["pa_decision"]:
+                    pipeline_record["pa_decision"] = guarded_decision
+                    closed_loop_update.update(
+                        {
+                            "activity_done": False,
+                            "activity_performed": False,
+                            "start_hour": None,
+                            "duration_min": 0,
+                        }
+                    )
+                final_decision_label = str(pipeline_record["pa_decision"]["decision_label"])
                 assessment = run_state_assessment(
                     persona_id=state.persona_id,
                     day_index=day_index,
                     previous_normalized_values=constructs_before,
-                    current_simulated_diary_entry=str(
-                        pipeline_record["pa_decision"]["diary_entry"]
-                    ),
+                    current_simulated_diary_entry=str(pipeline_record["pa_decision"]["diary_entry"]),
                     previous_diary_entries=previous_diary_entries_context,
                     previous_diary_entries_total_available_count=len(previous_diary_entries),
-                    current_decision_label=str(
-                        pipeline_record["pa_decision"]["decision_label"]
-                    ),
+                    current_decision_label=final_decision_label,
                     was_physical_activity_planned_today=planned_activity_for_day is not None,
                     planned_physical_activity_summary=planned_activity_for_day,
                     prompt_template=state_assessment_prompt,
@@ -2014,6 +2419,11 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                     next_day_index=next_day_index,
                     state_assessment_call_count=state_assessment_call_count,
                     state_assessment_dry_run_count=state_assessment_dry_run_count,
+                    run_id=run_id,
+                    resume_count=resume_count,
+                    resumed_from_run_id=resumed_from_run_id,
+                    run_history=run_history,
+                    cumulative_resource_usage=cumulative_resource_before,
                 )
 
         contexts_payload = {
@@ -2050,9 +2460,42 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
     except Exception as exc:
         run_status = "failed"
         run_error = exc
+        failed_day_llm2_retry_count = int(
+            getattr(exc, "llm2_validation_retry_count", 0) or 0
+        )
         raise
     finally:
         try:
+            resource_tracker.stop_run(
+                total_runtime_seconds=time.perf_counter() - run_started,
+                paper_count=max(len(records) - run_start_record_count, 0) * 3,
+                run_status=run_status,
+                error_type=type(run_error).__name__ if run_error is not None else None,
+                error_message=str(run_error)[:500] if run_error is not None else None,
+                output_files=output_files,
+            )
+            current_resource_usage = (
+                _resource_total_from_jsonl(resource_usage_path)
+                if config.enable_resource_tracking
+                else None
+            )
+            cumulative_resource_usage = _sum_resource_totals(
+                cumulative_resource_before,
+                current_resource_usage,
+            )
+            for entry in run_history:
+                if entry.get("run_id") == run_id:
+                    entry["status"] = run_status
+                    entry["finished_at_utc"] = datetime.now(timezone.utc).isoformat()
+                    entry["error_type"] = (
+                        type(run_error).__name__ if run_error is not None else None
+                    )
+                    entry["error_message"] = (
+                        str(run_error)[:500] if run_error is not None else None
+                    )
+                    entry["failed_day_validation_retry_count"] = (
+                        failed_day_llm2_retry_count
+                    )
             _write_simulation_run_manifest(
                 manifest_path,
                 config=config,
@@ -2061,15 +2504,14 @@ def run_full_simulation(config: FullSimulationConfig) -> dict[str, Any]:
                 output_files=output_files,
                 state_assessment_call_count=state_assessment_call_count,
                 state_assessment_dry_run_count=state_assessment_dry_run_count,
+                records=records,
+                failed_day_llm2_retry_count=failed_day_llm2_retry_count,
+                resume_count=resume_count,
+                resumed_from_run_id=resumed_from_run_id,
+                run_history=run_history,
+                cumulative_resource_usage=cumulative_resource_usage,
+                provenance=provenance,
                 error=run_error,
-            )
-            resource_tracker.stop_run(
-                total_runtime_seconds=time.perf_counter() - run_started,
-                paper_count=len(records) * 3,
-                run_status=run_status,
-                error_type=type(run_error).__name__ if run_error is not None else None,
-                error_message=str(run_error)[:500] if run_error is not None else None,
-                output_files=output_files,
             )
         except Exception as finalization_exc:
             if run_error is None:

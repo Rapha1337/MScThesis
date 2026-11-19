@@ -1761,14 +1761,18 @@ def test_empirical_v1_2_no_downtime_has_no_realized_option() -> None:
     assert result["contextual_response"]["adaptation_reference"] == "none_no_preplanned_pa"
 
 
-def test_empirical_v1_2_rejects_fictive_option_without_downtime() -> None:
+def test_empirical_v1_2_ignores_invalid_activity_proposal_without_downtime() -> None:
     from empirical_pa_v1_2_stochastic import sample_final_decision
 
     pa_input = _empirical_pa_input(["work"] * 24)
-    with pytest.raises(ValueError, match="must be null when no downtime"):
-        sample_final_decision(
-            _assessment(start_hour=17, duration_min=30), pa_decision_input=pa_input,
-        )
+    result = sample_final_decision(
+        _assessment(start_hour=17, duration_min=30), pa_decision_input=pa_input,
+    )
+    assert result["decision_label"] == "skip_activity"
+    assert result["effective_pa_probability"] == 0.0
+    assert result["contextual_response"]["activity_performed"] is False
+    assert result["pa_time_allocation"]["infeasibility_reason"] == "no_downtime_block_available"
+    assert result["technical_fallback"] is False
 
 
 def test_empirical_v1_2_spontaneous_pa_stays_binary_without_plan() -> None:
@@ -2108,9 +2112,165 @@ def test_empirical_v1_2_impossible_duration_with_available_downtime_triggers_ret
     )
 
     assert len(calls) == 2
+    correction = calls[1]["messages"][-1]["content"]
+    assert "failed validation" in correction
+    assert "available blocks" in correction
+    assert "Do not combine separate blocks" in correction
     assert result["decision_label"] == "extra_activity"
     assert result["start_hour"] == 10
     assert result["duration_min"] == 45
+    assert result["decision_origin"] == "bernoulli_sample"
+    assert result["llm2_validation_retry_count"] == 1
+
+
+def test_empirical_v1_2_no_downtime_skips_without_valid_activity_branch(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import run_llm_pa_decision as module
+
+    pa_input = _empirical_pa_input(["work"] * 24)
+    assessment = _assessment(start_hour=10, duration_min=45)
+    assessment.pop("activity_if_performed")
+    calls: list[dict] = []
+
+    class _FakeResponse:
+        usage = {"completion_tokens": 1, "prompt_tokens": 1, "total_tokens": 2}
+
+        def __init__(self) -> None:
+            self.choices = [
+                type(
+                    "Choice",
+                    (),
+                    {
+                        "finish_reason": "stop",
+                        "message": type(
+                            "Message", (), {"content": json.dumps(assessment)}
+                        )(),
+                    },
+                )()
+            ]
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return _FakeResponse()
+
+    client = type(
+        "Client",
+        (),
+        {"chat": type("Chat", (), {"completions": _FakeCompletions()})()},
+    )()
+    monkeypatch.setattr(module, "get_client", lambda: client)
+
+    result = module.run_pa_decision_llm(
+        pa_input,
+        system_prompt="system",
+        output_dir=tmp_path,
+    )
+
+    assert len(calls) == 1
+    assert result["decision_label"] == "skip_activity"
+    assert result["effective_pa_probability"] == 0.0
+    assert result["activity_performed"] is False
+    assert result["decision_origin"] == "bernoulli_sample"
+    assert result["technical_fallback"] is False
+
+
+def test_repeated_invalid_time_allocation_returns_explicit_technical_skip(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    import run_llm_pa_decision as module
+
+    activity_types = ["work"] * 24
+    activity_types[10] = "downtime"
+    pa_input = _empirical_pa_input(activity_types)
+    invalid = json.dumps(_assessment(start_hour=10, duration_min=90, probability=0.6))
+    calls: list[dict] = []
+
+    class _FakeResponse:
+        usage = {"completion_tokens": 1, "prompt_tokens": 1, "total_tokens": 2}
+
+        def __init__(self) -> None:
+            self.choices = [
+                type(
+                    "Choice",
+                    (),
+                    {
+                        "finish_reason": "stop",
+                        "message": type("Message", (), {"content": invalid})(),
+                    },
+                )()
+            ]
+
+    class _FakeCompletions:
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return _FakeResponse()
+
+    client = type(
+        "Client",
+        (),
+        {"chat": type("Chat", (), {"completions": _FakeCompletions()})()},
+    )()
+    monkeypatch.setattr(module, "get_client", lambda: client)
+
+    result = module.run_pa_decision_llm(
+        pa_input,
+        system_prompt="system",
+        output_dir=tmp_path,
+    )
+
+    assert len(calls) == 2
+    assert result["decision_label"] == "skip_activity"
+    assert result["activity_performed"] is False
+    assert result["decision_origin"] == "technical_validation_fallback"
+    assert result["technical_fallback"] is True
+    assert "does not fit" in result["technical_fallback_reason"]
+    assert result["contextual_pa_probability"] == 0.6
+    assert result["effective_pa_probability"] is None
+    assert result["sampled_decision_label"] is None
+    assert result["llm2_validation_attempt_count"] == 2
+    assert result["llm2_validation_retry_count"] == 1
+    assert result["pa_time_allocation"]["infeasibility_reason"] == "technical_validation_error"
+
+
+def test_final_downtime_invariant_downgrades_invalid_performed_decision() -> None:
+    from empirical_pa_v1_2_stochastic import enforce_downtime_invariant
+
+    activity_types = ["work"] * 24
+    activity_types[10] = "downtime"
+    pa_input = _empirical_pa_input(activity_types)
+    invalid_decision = {
+        **_assessment(start_hour=10, duration_min=90),
+        "decision_code": 3,
+        "decision_label": "extra_activity",
+        "start_hour": 10,
+        "duration_min": 90,
+        "activity_performed": True,
+        "effective_pa_probability": 0.5,
+    }
+
+    result = enforce_downtime_invariant(invalid_decision, pa_decision_input=pa_input)
+
+    assert result["decision_label"] == "skip_activity"
+    assert result["activity_performed"] is False
+    assert result["technical_fallback"] is True
+    assert result["decision_origin"] == "technical_validation_fallback"
+
+
+def test_final_downtime_invariant_preserves_valid_performed_decision() -> None:
+    from empirical_pa_v1_2_stochastic import enforce_downtime_invariant
+
+    activity_types = ["work"] * 24
+    activity_types[10] = "downtime"
+    pa_input = _empirical_pa_input(activity_types)
+    result = _sample_empirical(activity_types, _assessment(start_hour=10, duration_min=45))
+    guarded = enforce_downtime_invariant(result, pa_decision_input=pa_input)
+
+    assert guarded == result
+    assert guarded["contextual_response"]["activity_performed"] is True
 
 
 def test_empirical_v1_2_forced_inactivity_diary_is_used_for_pipeline_record(

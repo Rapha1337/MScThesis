@@ -32,7 +32,11 @@ from empirical_pa_v1_2 import (  # noqa: E402
     neutralize_action_planning_for_llm1,
 )
 from empirical_pa_v1_2_stochastic import (  # noqa: E402
+    InvalidTimeAllocationError,
+    downtime_blocks,
+    enforce_downtime_invariant,
     sample_final_decision as sample_empirical_v1_2_final_decision,
+    technical_fallback_skip,
     validate_contextual_assessment as validate_empirical_v1_2_contextual_assessment,
 )
 from run_behavior_probability_estimation import (  # noqa: E402
@@ -114,8 +118,21 @@ DETERMINISTIC_PA_DECISION_METADATA_FIELDS = frozenset(
         "llm2_contextual_assessment",
         "contextual_response",
         "pa_time_allocation",
+        "decision_origin",
+        "technical_fallback",
+        "technical_fallback_reason",
+        "llm2_validation_attempt_count",
+        "llm2_validation_retry_count",
     }
 )
+
+
+class LLM2ValidationFailure(ValueError):
+    def __init__(self, message: str, *, attempt_count: int) -> None:
+        super().__init__(message)
+        self.llm2_validation_attempt_count = int(attempt_count)
+        self.llm2_validation_retry_count = max(int(attempt_count) - 1, 0)
+
 
 DAILY_CONTEXT_FIELDS: tuple[str, ...] = (
     "persona_id",
@@ -163,6 +180,11 @@ DAILY_DECISION_LOG_COLUMNS: tuple[str, ...] = (
     "decision_sampling_random_value",
     "sampled_decision_probability",
     "pa_time_allocation",
+    "decision_origin",
+    "technical_fallback",
+    "technical_fallback_reason",
+    "llm2_validation_attempt_count",
+    "llm2_validation_retry_count",
     "llm2_contextual_assessment",
     "contextual_response",
     "previous_psychological_constructs",
@@ -1006,6 +1028,9 @@ def run_pa_decision_llm(
     total_tokens = 0
     total_call_seconds = 0.0
     token_sources: set[str] = set()
+    correction_messages: list[dict[str, str]] | None = None
+    last_valid_assessment: dict[str, Any] | None = None
+    allocation_correction_attempted = False
 
     for attempt in range(1, LLM2_VALIDATION_MAX_ATTEMPTS + 1):
         attempt_suffix = (
@@ -1018,18 +1043,13 @@ def run_pa_decision_llm(
             flush=True,
         )
         call_started = time.perf_counter()
+        messages = correction_messages or [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
         response = get_client().chat.completions.create(
             model=model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": system_prompt,
-                },
-                {
-                    "role": "user",
-                    "content": user_prompt,
-                },
-            ],
+            messages=messages,
             temperature=temperature,
             top_p=top_p,
             max_tokens=max_tokens,
@@ -1070,13 +1090,27 @@ def run_pa_decision_llm(
 
         try:
             if pa_decision_input.get("empirical_pa_v1_2"):
+                daily_context = pa_decision_input.get("daily_context")
+                if not isinstance(daily_context, Mapping):
+                    raise ValueError("Empirical v1.2 requires daily_context.")
+                no_downtime = not downtime_blocks(
+                    daily_context.get("hourly_context_24h")
+                )
                 contextual_assessment = validate_empirical_v1_2_contextual_assessment(
                     parse_pa_decision_json(content),
                     expected_persona_id=persona_id,
                     expected_day_index=day_index,
+                    ignore_activity_if_unavailable=no_downtime,
                 )
+                last_valid_assessment = contextual_assessment
                 sampled_result = sample_empirical_v1_2_final_decision(
                     contextual_assessment,
+                    pa_decision_input=pa_decision_input,
+                )
+                sampled_result["llm2_validation_attempt_count"] = attempt
+                sampled_result["llm2_validation_retry_count"] = attempt - 1
+                sampled_result = enforce_downtime_invariant(
+                    sampled_result,
                     pa_decision_input=pa_decision_input,
                 )
                 result = validate_pa_decision_output(
@@ -1109,6 +1143,8 @@ def run_pa_decision_llm(
                 if len(token_sources) == 1
                 else "mixed:" + ",".join(sorted(token_sources))
             )
+            result.setdefault("llm2_validation_attempt_count", attempt)
+            result.setdefault("llm2_validation_retry_count", attempt - 1)
             result["_resource_usage"] = {
                 "prompt_tokens": total_prompt_tokens,
                 "response_tokens": total_response_tokens,
@@ -1118,6 +1154,71 @@ def run_pa_decision_llm(
             }
             return result
         except ValueError as exc:
+            if (
+                pa_decision_input.get("empirical_pa_v1_2")
+                and isinstance(exc, InvalidTimeAllocationError)
+                and last_valid_assessment is not None
+            ):
+                if not allocation_correction_attempted:
+                    allocation_correction_attempted = True
+                    correction_messages = [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                        {"role": "assistant", "content": content},
+                        {
+                            "role": "user",
+                            "content": (
+                                "Your proposed PA time allocation failed validation: "
+                                f"{exc} Correct only the allocation so the entire activity "
+                                "fits inside one of the listed contiguous downtime blocks. "
+                                "Do not combine separate blocks. Preserve the contextual "
+                                "probability and return the complete JSON object."
+                            ),
+                        },
+                    ]
+                    print(
+                        f"Ungültige LLM2-Zeitplanung für {persona_id}/day {day_index}; "
+                        "ein gezielter Korrekturversuch.",
+                        flush=True,
+                    )
+                    continue
+                result = technical_fallback_skip(
+                    last_valid_assessment,
+                    pa_decision_input=pa_decision_input,
+                    error=str(exc),
+                    validation_attempt_count=attempt,
+                )
+                result["_resource_usage"] = {
+                    "prompt_tokens": total_prompt_tokens,
+                    "response_tokens": total_response_tokens,
+                    "tokens_total": total_tokens,
+                    "token_source": (
+                        next(iter(token_sources))
+                        if len(token_sources) == 1
+                        else "mixed:" + ",".join(sorted(token_sources))
+                    ),
+                    "paper_seconds": total_call_seconds,
+                }
+                return result
+            if allocation_correction_attempted and last_valid_assessment is not None:
+                result = technical_fallback_skip(
+                    last_valid_assessment,
+                    pa_decision_input=pa_decision_input,
+                    error=f"Targeted time-allocation correction failed: {exc}",
+                    validation_attempt_count=attempt,
+                )
+                result["_resource_usage"] = {
+                    "prompt_tokens": total_prompt_tokens,
+                    "response_tokens": total_response_tokens,
+                    "tokens_total": total_tokens,
+                    "token_source": (
+                        next(iter(token_sources))
+                        if len(token_sources) == 1
+                        else "mixed:" + ",".join(sorted(token_sources))
+                    ),
+                    "paper_seconds": total_call_seconds,
+                }
+                return result
             if attempt < LLM2_VALIDATION_MAX_ATTEMPTS:
                 print(
                     f"Ungültiger LLM2-JSON-/Schema-Output für {persona_id}/day "
@@ -1133,10 +1234,11 @@ def run_pa_decision_llm(
                 output_dir=output_dir,
                 verbose_llm_debug=verbose_llm_debug,
             )
-            raise ValueError(
+            raise LLM2ValidationFailure(
                 f"Ungültiger LLM2-JSON-Output für {persona_id} nach "
                 f"{LLM2_VALIDATION_MAX_ATTEMPTS} Versuchen: {exc}. "
-                f"Raw response gespeichert unter: {debug_path}"
+                f"Raw response gespeichert unter: {debug_path}",
+                attempt_count=attempt,
             ) from exc
 
 
@@ -1270,6 +1372,11 @@ def write_daily_decision_log_row(
         "decision_sampling_random_value": pa_decision.get("decision_sampling_random_value", ""),
         "sampled_decision_probability": pa_decision.get("sampled_decision_probability", ""),
         "pa_time_allocation": _json_log_value(pa_decision.get("pa_time_allocation")),
+        "decision_origin": pa_decision.get("decision_origin", ""),
+        "technical_fallback": bool(pa_decision.get("technical_fallback", False)),
+        "technical_fallback_reason": pa_decision.get("technical_fallback_reason", ""),
+        "llm2_validation_attempt_count": pa_decision.get("llm2_validation_attempt_count", ""),
+        "llm2_validation_retry_count": pa_decision.get("llm2_validation_retry_count", ""),
         "llm2_contextual_assessment": _json_log_value(
             pa_decision.get("llm2_contextual_assessment")
         ),
@@ -1509,6 +1616,10 @@ def run_pipeline_for_context(
             for key in DETERMINISTIC_PA_DECISION_METADATA_FIELDS
             if key in pa_decision_before_validation
         })
+        pa_decision = enforce_downtime_invariant(
+            pa_decision,
+            pa_decision_input=pa_decision_input,
+        )
 
     pa_decision_output_path = save_agent_pa_decision(
         persona_id,

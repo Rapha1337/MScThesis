@@ -57,6 +57,48 @@ def test_no_downtime_retained_in_primary_denominator():
     row = next(r for r in totals if r["seed"] == "all" and r["classification"] == "binary"
                and r["category"] == "non_supportive")
     assert (row["days"], row["pa_days"], row["no_downtime_days"]) == (1, 0, 1)
+    assert row["pa_rate_denominator_days"] == 1
+    assert row["technical_fallback_days"] == 0
+
+
+def test_fallback_is_missing_outcome_but_regular_no_downtime_skip_is_valid():
+    pairs = [
+        synthetic_day(0, downtime=True),  # ordinary Bernoulli skip
+        synthetic_day(1, downtime=False),  # deterministic no-downtime skip
+        synthetic_day(2, downtime=True),  # technical fallback
+    ]
+    fallback = pairs[2][0]["pa_decision"]
+    fallback.update(
+        technical_fallback=True,
+        decision_origin="technical_validation_fallback",
+        effective_pa_probability=None,
+        sampled_decision_label=None,
+        sampled_decision_probability=None,
+    )
+    records, contexts = map(list, zip(*pairs))
+
+    rows = classify_records(records, contexts, 14, {"synthetic_a": "M1"})
+    assert [row["activity_performed"] for row in rows] == [False, False, None]
+    assert [row["technical_fallback"] for row in rows] == [False, False, True]
+
+    summary = summarize(rows)
+    all_rows = [
+        row for row in summary
+        if row["seed"] == "all" and row["medoid"] == "all"
+        and row["classification"] == "binary"
+    ]
+    assert sum(row["days"] for row in all_rows) == 3
+    assert sum(row["pa_rate_denominator_days"] for row in all_rows) == 2
+    assert sum(row["pa_days"] for row in all_rows) == 0
+    assert sum(row["technical_fallback_days"] for row in all_rows) == 1
+    assert sum(row["technical_fallback_proportion"] * row["days"] for row in all_rows) == 1
+
+
+def test_missing_historical_fallback_markers_remain_regular_decisions():
+    record, context = synthetic_day()
+    result = classify(record, context)
+    assert result["technical_fallback"] is False
+    assert result["activity_performed"] is False
 
 
 @pytest.mark.parametrize("illness,score,old", [("low", 0, "mixed_neutral"),
@@ -157,6 +199,14 @@ def test_end_to_end_720_synthetic_observations(tmp_path, monkeypatch):
         for persona in range(4):
             for day in range(90):
                 record, context = synthetic_day(downtime=day % 2 == 0)
+                if seed == 14 and persona == 0 and day == 0:
+                    record["pa_decision"].update(
+                        technical_fallback=True,
+                        decision_origin="technical_validation_fallback",
+                        effective_pa_probability=None,
+                        sampled_decision_label=None,
+                        sampled_decision_probability=None,
+                    )
                 for row in (record, context):
                     row.update(persona_id=f"synthetic_private_{persona}", day_index=day)
                 records.append(record)
@@ -178,7 +228,12 @@ def test_end_to_end_720_synthetic_observations(tmp_path, monkeypatch):
     for scheme in ("old", "binary"):
         group = [r for r in table if r["seed"] == "all" and r["classification"] == scheme]
         assert sum(int(r["days"]) for r in group) == 720
+        assert sum(int(r["pa_rate_denominator_days"]) for r in group) == 719
+        assert sum(int(r["technical_fallback_days"]) for r in group) == 1
         assert sum(int(r["no_downtime_days"]) for r in group) == 360
+    report = (output / "report.md").read_text(encoding="utf-8")
+    assert "Technische Fallbacks" in report
+    assert "Fallback %" in report
     assert all("synthetic_private" not in file.read_text(encoding="utf-8") for file in output.iterdir())
     with pytest.raises(FileExistsError):
         main()

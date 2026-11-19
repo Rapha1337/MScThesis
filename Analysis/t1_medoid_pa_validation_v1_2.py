@@ -49,6 +49,7 @@ from run_full_pa_simulation import (  # noqa: E402
     FullSimulationConfig,
     run_full_simulation,
 )
+from empirical_context_binary_v1_2 import is_technical_fallback  # noqa: E402
 from t1_medoid_pa_validation import (  # noqa: E402
     HORIZONS,
     N_PERSONAS,
@@ -86,20 +87,30 @@ def daily_rows_from_trace(
         decision = dict(record["pa_decision"])
         decision_label = str(decision["decision_label"])
         duration_min = int(decision.get("duration_min", 0))
-        performed = bool(record["closed_loop_update"]["activity_done"])
+        technical_fallback = is_technical_fallback(decision)
+        performed_observed = bool(record["closed_loop_update"]["activity_done"])
 
-        if decision_label == "skip_activity":
-            if performed or duration_min != 0:
+        if technical_fallback:
+            if performed_observed:
+                raise ValueError("Technical fallback cannot have a performed PA outcome.")
+            performed = None
+        elif decision_label == "skip_activity":
+            if performed_observed or duration_min != 0:
                 raise ValueError("Invalid no-activity record in empirical PA v1.2.")
+            performed = False
         elif decision_label == "extra_activity":
-            if not performed or duration_min <= 0:
+            if not performed_observed or duration_min <= 0:
                 raise ValueError("Invalid performed-activity record in empirical PA v1.2.")
+            performed = True
         else:
             raise ValueError(
                 f"Empirical PA v1.2 received unsupported decision {decision_label!r}."
             )
 
-        pa_minutes = float(duration_min) if performed else 0.0
+        pa_minutes = (
+            float(duration_min) if performed is True
+            else (math.nan if technical_fallback else 0.0)
+        )
         calibration = record.get("empirical_pa_v1_2") or {}
         metadata = lookup[persona_id]
 
@@ -115,6 +126,7 @@ def daily_rows_from_trace(
                 "weekday": int(record["weekday"]),
                 "decision_label": decision_label,
                 "activity_performed": performed,
+                "technical_fallback": technical_fallback,
                 "duration_min": duration_min,
                 "pa_minutes": pa_minutes,
                 "action_planning_value": calibration.get("action_planning_value"),
@@ -163,10 +175,16 @@ def summarize_horizons(
                     f"{persona_id} must have exactly {horizon} unique days."
                 )
             meta = empirical.loc[empirical["persona_id"] == persona_id].iloc[0]
-            active = group["activity_performed"].astype(bool)
+            observed = ~group["technical_fallback"].astype(bool)
+            observed_days = int(observed.sum())
+            active = group.loc[observed, "activity_performed"].astype(bool)
             active_days = int(active.sum())
-            pa_minutes = float(group["pa_minutes"].sum())
-            simulated_pa_h_week = pa_minutes / 60.0 / horizon * 7.0
+            pa_minutes = float(group.loc[observed, "pa_minutes"].sum())
+            simulated_pa_h_week = (
+                pa_minutes / 60.0 / observed_days * 7.0
+                if observed_days
+                else math.nan
+            )
             empirical_mvpa = float(meta["empirical_mvpa_hours_week"])
             empirical_total_pa = float(meta["empirical_total_pa_hours_week"])
             mvpa_reference_error = simulated_pa_h_week - empirical_mvpa
@@ -187,10 +205,17 @@ def summarize_horizons(
                     "error_vs_empirical_total_pa_hours_week": total_pa_reference_error,
                     "absolute_error_vs_empirical_total_pa_hours_week": abs(total_pa_reference_error),
                     "active_days": active_days,
-                    "active_days_per_week": active_days / horizon * 7.0,
-                    "active_day_proportion": active_days / horizon,
+                    "pa_rate_denominator_days": observed_days,
+                    "technical_fallback_days": int((~observed).sum()),
+                    "technical_fallback_proportion": 1.0 - observed_days / horizon,
+                    "active_days_per_week": (
+                        active_days / observed_days * 7.0 if observed_days else math.nan
+                    ),
+                    "active_day_proportion": (
+                        active_days / observed_days if observed_days else math.nan
+                    ),
                     "mean_duration_min_active_day": (
-                        float(group.loc[active, "duration_min"].mean())
+                        float(group.loc[observed, "duration_min"].loc[active].mean())
                         if active_days
                         else 0.0
                     ),
@@ -198,25 +223,26 @@ def summarize_horizons(
                     "high_stress_days": int(group["phase"].eq("high_stress").sum()),
                     "holiday_days": int(group["phase"].eq("holiday").sum()),
                     "decision_count_activity": int(
-                        group["decision_label"].eq("extra_activity").sum()
+                        (group["decision_label"].eq("extra_activity") & observed).sum()
                     ),
                     "decision_count_no_activity": int(
-                        group["decision_label"].eq("skip_activity").sum()
+                        (group["decision_label"].eq("skip_activity") & observed).sum()
                     ),
+                    "simulated_days": int(horizon),
                     "mean_behavior_policy_pa_prior": float(
-                        group["behavior_policy_pa_prior"].dropna().mean()
-                    ) if group["behavior_policy_pa_prior"].notna().any() else math.nan,
+                        group.loc[observed, "behavior_policy_pa_prior"].dropna().mean()
+                    ) if group.loc[observed, "behavior_policy_pa_prior"].notna().any() else math.nan,
                     "mean_contextual_pa_probability": float(
-                        group["contextual_pa_probability"].dropna().mean()
-                    ) if group["contextual_pa_probability"].notna().any() else math.nan,
+                        group.loc[observed, "contextual_pa_probability"].dropna().mean()
+                    ) if group.loc[observed, "contextual_pa_probability"].notna().any() else math.nan,
                     "mean_context_probability_shift": float(
                         (
-                            group["contextual_pa_probability"]
-                            - group["behavior_policy_pa_prior"]
+                            group.loc[observed, "contextual_pa_probability"]
+                            - group.loc[observed, "behavior_policy_pa_prior"]
                         ).dropna().mean()
                     ) if (
-                        group["contextual_pa_probability"].notna()
-                        & group["behavior_policy_pa_prior"].notna()
+                        group.loc[observed, "contextual_pa_probability"].notna()
+                        & group.loc[observed, "behavior_policy_pa_prior"].notna()
                     ).any() else math.nan,
                 }
             )
@@ -392,6 +418,11 @@ def build_report(
             "empirical_total_pa_hours_week",
             "simulated_pa_hours_week",
             "error_vs_empirical_mvpa_hours_week",
+            "simulated_days",
+            "pa_rate_denominator_days",
+            "technical_fallback_days",
+            "technical_fallback_proportion",
+            "pa_days",
             "active_days_per_week",
             "mean_duration_min_active_day",
             "normal_days",
@@ -410,6 +441,11 @@ def build_report(
             "self-reported baseline behavior, whereas the simulation evolves over time. "
             "LLM-generated duration is a structured simulation output, not an objective "
             "activity measurement. No additional intensity classification is imposed. "
+            "Technical fallback days remain in total simulated days and are reported separately "
+            "per persona and horizon; they are excluded from PA outcome numerators, denominators, "
+            "duration estimates and T1 correspondence comparisons. Regular and no-downtime skips "
+            "remain observed non-PA outcomes. Historical runs without fallback markers are treated "
+            "as having no recorded technical fallbacks. "
             "The action-planning calibration is a model "
             "mapping choice informed by the T1 association rather than a directly "
             "estimated daily transition probability. The cross-sectional T1 coefficient "

@@ -35,6 +35,14 @@ def binary_class(score: object) -> str:
     return "supportive" if score > 0 else "non_supportive"
 
 
+def is_technical_fallback(decision: dict) -> bool:
+    """Recognize explicit fallback markers while keeping historical records valid."""
+    return (
+        decision.get("technical_fallback") is True
+        or decision.get("decision_origin") == "technical_validation_fallback"
+    )
+
+
 def classify_records(records: list[dict], contexts: list[dict], seed: int,
                      aliases: dict[str, str]) -> list[dict]:
     """Join one-to-one; preserve each source decision payload without mutation."""
@@ -62,15 +70,20 @@ def classify_records(records: list[dict], contexts: list[dict], seed: int,
             raise ValueError(f"Seed {seed}, {aliases[record['persona_id']]}, "
                              f"day {record['day_index']}: {exc}") from exc
         decision = record["pa_decision"]
+        technical_fallback = is_technical_fallback(decision)
         performed = record["closed_loop_update"]["activity_done"]
         duration = decision["duration_min"]
         if not isinstance(performed, bool) or decision["decision_label"] not in ("skip_activity", "extra_activity"):
             raise ValueError("Invalid empirical activity decision")
         if (decision["decision_label"] == "extra_activity") != performed or (duration > 0) != performed:
             raise ValueError("Inconsistent activity outcome/duration")
+        if technical_fallback and performed:
+            raise ValueError("Technical fallback cannot have a performed PA outcome")
         rows.append({"seed": seed, "medoid": aliases[record["persona_id"]],
                      "day_index": record["day_index"], **result,
-                     "binary_context_class": label, "activity_performed": performed,
+                     "binary_context_class": label,
+                     "activity_performed": None if technical_fallback else performed,
+                     "technical_fallback": technical_fallback,
                      "source_pa_decision": decision})
     return rows
 
@@ -101,14 +114,23 @@ def summarize(rows: list[dict]) -> list[dict]:
                 raise ValueError("Unexpected context class")
             for label in classes:
                 subset = [r for r in group if r[column] == label]
-                n = len(subset)
-                pa = sum(r["activity_performed"] for r in subset)
-                low, high = wilson(pa, n)
+                fallback_count = sum(bool(r.get("technical_fallback", False)) for r in subset)
+                eligible = [
+                    row for row in subset
+                    if not bool(row.get("technical_fallback", False))
+                ]
+                pa = sum(bool(r["activity_performed"]) for r in eligible)
+                low, high = wilson(pa, len(eligible))
                 output.append(dict(seed=seed, medoid=medoid, classification=scheme,
-                                   category=label, days=n, pa_days=pa,
-                                   pa_proportion=pa/n if n else None,
+                                   category=label, days=len(subset),
+                                   pa_rate_denominator_days=len(eligible), pa_days=pa,
+                                   pa_proportion=pa/len(eligible) if eligible else None,
                                    wilson95_low=low, wilson95_high=high,
-                                   no_downtime_days=sum(r["downtime_length"] == 0 for r in subset)))
+                                   no_downtime_days=sum(r["downtime_length"] == 0 for r in subset),
+                                   technical_fallback_days=fallback_count,
+                                   technical_fallback_proportion=(
+                                       fallback_count / len(subset) if subset else None
+                                   )))
     return output
 
 
@@ -150,16 +172,27 @@ def write_report(path: Path, table: list[dict], rows: list[dict]) -> None:
                          for s in (14, 96)) + ".", "",
              "M1–M4 sind stabile Aliase nach sortierter Simulations-Persona-ID; "
              "dieselben vier IDs wurden über beide Seeds geprüft. Keine T1-Kennungen exportiert.", "",
-             "PA-Anteil = PA-Tage / alle Tage der jeweiligen Kategorie. "
+             "Technische Fallbacks sind fehlende PA-Outcomes: Sie bleiben in der Zahl "
+             "simulierter Tage, werden aber aus PA-Zähler und PA-Ratennenner ausgeschlossen. "
+             "Der Fallback-Anteil nutzt alle simulierten Tage der jeweiligen Kategorie. "
+             "Reguläre Skips, einschliesslich Skips ohne Downtime, bleiben gültige Nicht-PA-Outcomes. "
+             "PA-Anteil = PA-Tage / auswertbare Tage der jeweiligen Kategorie. "
              "95%-Wilson-Intervalle sind deskriptiv; leere Kategorien: —.", "",
-             "| Seed | Medoid | Schema | Kategorie | Tage | PA-Tage | PA % | Wilson 95 % | Ohne Downtime |",
-             "|---|---|---|---|---:|---:|---:|---|---:|"]
+             "| Seed | Medoid | Schema | Kategorie | Simulierte Tage | PA-Nenner | PA-Tage | PA % | "
+             "Wilson 95 % | Ohne Downtime | Technische Fallbacks | Fallback % |",
+             "|---|---|---|---|---:|---:|---:|---:|---|---:|---:|---:|"]
     for row in table:
         pct = "—" if row["pa_proportion"] is None else f"{100*row['pa_proportion']:.1f}"
         ci = "—" if row["wilson95_low"] is None else f"{100*row['wilson95_low']:.1f}–{100*row['wilson95_high']:.1f}"
+        fallback_pct = (
+            "—" if row["technical_fallback_proportion"] is None
+            else f"{100*row['technical_fallback_proportion']:.1f}"
+        )
         category = "neutral" if row["category"] == "mixed_neutral" else row["category"]
         lines.append(f"| {row['seed']} | {row['medoid']} | {row['classification']} | {category} | "
-                     f"{row['days']} | {row['pa_days']} | {pct} | {ci} | {row['no_downtime_days']} |")
+                     f"{row['days']} | {row['pa_rate_denominator_days']} | {row['pa_days']} | "
+                     f"{pct} | {ci} | {row['no_downtime_days']} | "
+                     f"{row['technical_fallback_days']} | {fallback_pct} |")
     lines += ["", "Methodische Einschränkungen: Wiederholte Tage innerhalb einer Persona und "
               "zeitliche Abhängigkeiten werden durch Wilson-Intervalle nicht modelliert. Vier Medoids "
               "und zwei Seeds erlauben keine Bevölkerungsinferenz. Der Laufordner für Seed 96 ist als "
