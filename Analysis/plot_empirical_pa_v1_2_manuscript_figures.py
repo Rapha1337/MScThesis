@@ -166,16 +166,29 @@ def fig6(context: pd.DataFrame):
     sparse=[]
     for ix, (label, seed, medoid) in enumerate(groups):
         n_total = 0
+        simulated_total = 0
+        fallback_total = 0
         for category in ['supportive','non_supportive']:
             if seed is None:
                 rows = context[(context.seed.astype(str)!='all') & (context.medoid==medoid) & (context.context==category)]
                 if len(rows) != len(seeds):
                     raise ValueError(f'Incomplete per-seed rows for medoid {medoid}, {category}')
-                n = int(rows.person_days.sum()); k = int(rows.pa_days.sum())
+                denominator_column = (
+                    "pa_rate_denominator_days"
+                    if "pa_rate_denominator_days" in rows
+                    else "person_days"
+                )
+                n = int(rows[denominator_column].sum()); k = int(rows.pa_days.sum())
+                simulated_total += int(rows.person_days.sum())
+                if "technical_fallback_days" in rows:
+                    fallback_total += int(rows.technical_fallback_days.sum())
                 lb, ub = wilson(k,n)
             else:
                 row = _find_one(context, seed=seed, medoid=medoid, context=category)
-                n, k = int(row.person_days), int(row.pa_days)
+                n = int(row.get("pa_rate_denominator_days", row.person_days))
+                k = int(row.pa_days)
+                simulated_total += int(row.person_days)
+                fallback_total += int(row.get("technical_fallback_days", 0))
                 lb, ub = float(row.wilson95_low), float(row.wilson95_high)
             n_total += n
             rates[category].append(100*k/n if n else np.nan)
@@ -183,7 +196,9 @@ def fig6(context: pd.DataFrame):
             hi[category].append(100*ub)
             if category == 'non_supportive' and n < 5:
                 sparse.append(f'{label}: n={n}')
-        labels.append(f'{label} ({n_total} days)')
+        labels.append(
+            f'{label} (n={n_total}/{simulated_total}; TF={fallback_total})'
+        )
         ys.append(len(groups)-1-ix)
 
     fig,ax=plt.subplots(figsize=(12.8,7.9))
@@ -220,7 +235,9 @@ def fig7(probability: pd.DataFrame):
     x=np.arange(3,dtype=float)
     for idx, (label, category) in enumerate(settings):
         row = _find_one(probability,seed='all',context=category)
-        n=int(row.person_days)
+        n=int(row.get('probability_summary_days', row.person_days))
+        total=int(row.person_days)
+        fallback=int(row.get('technical_fallback_days', 0))
         values=np.array([float(row[f'mean_{c}']) for c in columns])*100
         low=np.array([float(row[f'ci95_low_{c}']) for c in columns])*100
         high=np.array([float(row[f'ci95_high_{c}']) for c in columns])*100
@@ -229,7 +246,8 @@ def fig7(probability: pd.DataFrame):
         offset=[-.12,0,.12][idx]
         ax.errorbar(x+offset,values,yerr=[values-low,high-values],
                     marker=['D','o','s'][idx],linestyle='-',linewidth=1.7,
-                    markersize=7.5,capsize=4,label=f'{label} (n={n})')
+                    markersize=7.5,capsize=4,
+                    label=f'{label} (n={n}/{total}; TF={fallback})')
         for j in range(3):
             ax.annotate(f'{values[j]:.1f}%',(x[j]+offset,values[j]),
                         xytext=(5,8 if idx==1 else -18 if idx==2 else 0),

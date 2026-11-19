@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from Analysis.final_empirical_pa_v1_2_analysis import (
+    _numeric_or_nan,
     agreement_summary,
     build_report,
     cluster_bootstrap_ci,
@@ -14,6 +15,10 @@ from Analysis.final_empirical_pa_v1_2_analysis import (
     probability_summary,
     public_simulation_summary,
     software_provenance,
+)
+from Analysis.t1_medoid_pa_validation_v1_2 import (
+    daily_rows_from_trace,
+    summarize_horizons,
 )
 
 
@@ -55,6 +60,114 @@ def test_context_summary_conserves_every_synthetic_observation() -> None:
         for medoid in ("M1", "M2", "M3", "M4"):
             rows = summary[(summary["seed"] == seed) & (summary["medoid"] == medoid)]
             assert rows["person_days"].sum() == 12
+            assert rows["pa_rate_denominator_days"].sum() == 12
+
+
+def test_fallback_is_excluded_from_context_rate_models_and_probability_means() -> None:
+    daily = synthetic_daily()
+    daily["technical_fallback"] = False
+    fallback_index = daily.index[0]
+    daily.loc[fallback_index, "technical_fallback"] = True
+    daily.loc[fallback_index, "activity_performed"] = None
+    for column in (
+        "effective_pa_probability",
+        "feasibility_shift",
+        "total_probability_shift",
+    ):
+        daily.loc[fallback_index, column] = math.nan
+
+    context = context_pa_summary(daily)
+    all_supportive = context[
+        context["seed"].eq("all")
+        & context["medoid"].eq("all")
+        & context["context"].eq(daily.loc[fallback_index, "binary_context_class"])
+    ].iloc[0]
+    category_days = int(
+        daily["binary_context_class"].eq(daily.loc[fallback_index, "binary_context_class"]).sum()
+    )
+    assert all_supportive["person_days"] == category_days
+    assert all_supportive["pa_rate_denominator_days"] == category_days - 1
+    assert all_supportive["technical_fallback_days"] == 1
+    assert all_supportive["technical_fallback_proportion"] == pytest.approx(
+        1 / category_days
+    )
+
+    model = gee_context_model(daily)
+    assert set(model["observations"]) == {95}
+    assert set(model["technical_fallback_days"]) == {1}
+    probabilities = probability_summary(daily)
+    all_days = probabilities[
+        probabilities["seed"].eq("all") & probabilities["context"].eq("all")
+    ].iloc[0]
+    assert all_days["person_days"] == 96
+    assert all_days["probability_summary_days"] == 95
+    assert all_days["technical_fallback_days"] == 1
+    assert all_days["mean_effective_pa_probability"] == pytest.approx(
+        daily.loc[~daily["technical_fallback"], "effective_pa_probability"].mean()
+    )
+    assert math.isnan(_numeric_or_nan(None))
+
+
+def test_t1_flattening_keeps_fallback_outcome_missing_and_skips_observed() -> None:
+    records = []
+    empirical_rows = []
+    for persona in range(4):
+        persona_id = f"synthetic_persona_{persona}"
+        empirical_rows.append({
+            "persona_id": persona_id,
+            "cluster": persona,
+            "participant_id": f"synthetic_{persona}",
+            "occupation": "synthetic",
+            "empirical_mvpa_hours_week": 1.0,
+            "empirical_total_pa_hours_week": 2.0,
+        })
+        for day in range(90):
+            decision = {
+                "decision_label": "skip_activity",
+                "duration_min": 0,
+                "start_hour": None,
+            }
+            if day == 2:
+                decision.update(
+                    technical_fallback=True,
+                    decision_origin="technical_validation_fallback",
+                    effective_pa_probability=None,
+                )
+            records.append({
+                "persona_id": persona_id,
+                "day_index": day,
+                "calendar_date": f"2026-01-{day % 28 + 1:02d}",
+                "week_index": day // 7,
+                "phase": "normal",
+                "weekday": day % 7,
+                "was_physical_activity_planned_today": False,
+                "planned_physical_activity": None,
+                "pa_decision": decision,
+                "closed_loop_update": {"activity_done": False},
+            })
+    empirical = pd.DataFrame(empirical_rows)
+
+    daily = daily_rows_from_trace({"records": records}, empirical)
+
+    persona_days = daily[daily["persona_id"].eq("synthetic_persona_0")].sort_values(
+        "day_index"
+    )
+    assert len(daily) == 360
+    assert persona_days["technical_fallback"].iloc[:3].tolist() == [False, False, True]
+    assert persona_days["activity_performed"].iloc[:2].tolist() == [False, False]
+    assert pd.isna(persona_days["activity_performed"].iloc[2])
+    assert persona_days["pa_minutes"].iloc[:2].tolist() == [0.0, 0.0]
+    assert pd.isna(persona_days["pa_minutes"].iloc[2])
+    horizon = summarize_horizons(daily, empirical)
+    first_persona = horizon[
+        horizon["persona_id"].eq("synthetic_persona_0")
+        & horizon["horizon_days"].eq(7)
+    ].iloc[0]
+    assert first_persona["simulated_days"] == 7
+    assert first_persona["pa_rate_denominator_days"] == 6
+    assert first_persona["technical_fallback_days"] == 1
+    assert first_persona["technical_fallback_proportion"] == pytest.approx(1 / 7)
+    assert first_persona["active_days"] == 0
 
 
 def test_cluster_bootstrap_resamples_complete_medoids_deterministically() -> None:

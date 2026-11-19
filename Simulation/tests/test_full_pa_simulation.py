@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 from datetime import date
 from pathlib import Path
@@ -997,6 +998,59 @@ def test_resumed_output_matches_uninterrupted_deterministic_dry_run(tmp_path: Pa
     assert comparable(resumed) == comparable(uninterrupted)
 
 
+def test_resume_marks_checkpoint_run_interrupted_when_manifest_is_stale(
+    tmp_path: Path,
+) -> None:
+    from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
+
+    output_dir = tmp_path / "stale_manifest_resume"
+    config = FullSimulationConfig(
+        n_personas=1,
+        n_days=1,
+        start_date=date(2026, 1, 1),
+        base_seed=137,
+        output_dir=output_dir,
+        model="gpt-oss-120b",
+        temperature=0,
+        llm1_max_tokens=2000,
+        llm2_max_tokens=1200,
+        dry_run=True,
+        include_full_hourly_context=True,
+        enable_resource_tracking=False,
+        enable_codecarbon=False,
+    )
+    run_full_simulation(config)
+
+    checkpoint_path = output_dir / "full_simulation_checkpoint.json"
+    checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    interrupted_run_id = "synthetic-interrupted-resume"
+    checkpoint["run_id"] = interrupted_run_id
+    checkpoint["resume_count"] = 1
+    checkpoint["run_history"].append({
+        "run_id": interrupted_run_id,
+        "status": "in_progress",
+        "resume": True,
+    })
+    checkpoint_path.write_text(json.dumps(checkpoint), encoding="utf-8")
+
+    resumed = run_full_simulation(
+        FullSimulationConfig(**{**config.__dict__, "resume": True})
+    )
+    manifest = json.loads(
+        (output_dir / "simulation_run_manifest.json").read_text(encoding="utf-8")
+    )
+    interrupted = next(
+        item
+        for item in manifest["execution"]["run_history"]
+        if item["run_id"] == interrupted_run_id
+    )
+
+    assert len(resumed["records"]) == 1
+    assert interrupted["status"] == "interrupted"
+    assert interrupted["finished_at_utc"] is None
+    assert manifest["execution"]["resumed_from_run_id"] == interrupted_run_id
+
+
 def test_state_assessment_uses_last_seven_previous_diary_entries_only(tmp_path: Path, monkeypatch) -> None:
     import run_full_pa_simulation as module
     from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
@@ -1322,3 +1376,205 @@ def test_empirical_pa_v1_2_dry_run_without_downtime_is_consistent() -> None:
     assert result["contextual_response"]["barriers_present"] == ["no_downtime"]
     assert result["contextual_response"]["potentially_mitigated_barriers"] == []
     assert "kein freies Zeitfenster" in result["diary_entry"]
+
+
+def test_manifest_records_code_prompt_and_persona_fingerprints(tmp_path: Path) -> None:
+    import run_full_pa_simulation as module
+    from run_full_pa_simulation import FullSimulationConfig
+
+    persona_file, _ = _write_synthetic_persona_csv(tmp_path)
+    config = FullSimulationConfig(
+        n_personas=4,
+        n_days=3,
+        start_date=date(2027, 1, 1),
+        base_seed=48271,
+        output_dir=tmp_path / "fingerprints",
+        model="gpt-oss-120b",
+        temperature=0,
+        llm1_max_tokens=10000,
+        llm2_max_tokens=10000,
+        dry_run=False,
+        include_full_hourly_context=True,
+        persona_input_file=persona_file,
+        empirical_pa_v1_2=True,
+        enable_resource_tracking=False,
+        enable_codecarbon=False,
+    )
+
+    provenance = module._run_provenance(config)
+
+    assert provenance["git_commit"]
+    assert len(provenance["simulation_source_sha256"]) == 64
+    assert provenance["persona_input_sha256"] == hashlib.sha256(
+        persona_file.read_bytes()
+    ).hexdigest()
+    assert provenance["prompt_sha256"]["llm1"] == hashlib.sha256(
+        module.EMPIRICAL_V1_2_BEHAVIOR_PROMPT_PATH.read_bytes()
+    ).hexdigest()
+    assert provenance["prompt_sha256"]["llm2"] == hashlib.sha256(
+        module.EMPIRICAL_V1_2_PA_DECISION_PROMPT_PATH.read_bytes()
+    ).hexdigest()
+    assert provenance["prompt_sha256"]["few_shot"] == hashlib.sha256(
+        module.EMPIRICAL_V1_2_PA_DECISION_FEWSHOT_PATH.read_bytes()
+    ).hexdigest()
+    assert provenance["prompt_sha256"]["state_assessment"] == hashlib.sha256(
+        (module.SIMULATION_DIR / "AssessmentModel_Prompt.md").read_bytes()
+    ).hexdigest()
+    assert "observed" not in json.dumps(provenance["persona_input_sha256"])
+    manifest = module._build_simulation_run_manifest(
+        config=config,
+        run_id="synthetic-run",
+        run_status="success",
+        output_files={},
+        state_assessment_call_count=0,
+        state_assessment_dry_run_count=0,
+        provenance=provenance,
+    )
+    assert manifest["model_parameters"] == {
+        "temperature": 0,
+        "top_p": config.top_p,
+        "seed": config.llm_seed,
+        "llm1_max_tokens": 10000,
+        "llm2_max_tokens": 10000,
+        "state_assessment_max_tokens": config.state_assessment_max_tokens,
+        "state_assessment_json_mode": False,
+    }
+    assert manifest["persona_initialization"]["input_sha256"] == provenance[
+        "persona_input_sha256"
+    ]
+
+
+def test_technical_fallback_is_distinct_in_trace_log_manifest_and_checkpoint(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import run_full_pa_simulation as module
+    from run_full_pa_simulation import FullSimulationConfig, run_full_simulation
+
+    persona_file, _ = _write_synthetic_persona_csv(tmp_path)
+    output_dir = tmp_path / "technical_fallback"
+
+    def invalid_pipeline(llm_context, **kwargs):
+        del kwargs
+        assessment = {
+            "contextual_pa_probability": 0.7,
+            "activity_if_performed": {
+                "start_hour": 23,
+                "duration_min": 240,
+            },
+            "no_activity_if_skipped": {
+                "rationale_short": "Technical validation fallback.",
+                "diary_entry": "PA allocation failed final validation.",
+            },
+        }
+        decision = {
+            **assessment,
+            "persona_id": llm_context["persona_id"],
+            "day_index": llm_context["day_index"],
+            "decision_code": 3,
+            "decision_label": "extra_activity",
+            "start_hour": 23,
+            "duration_min": 240,
+            "activity_performed": True,
+            "effective_pa_probability": 0.7,
+            "llm2_contextual_assessment": assessment,
+            "decision_origin": "bernoulli_sample",
+            "technical_fallback": False,
+            "llm2_validation_attempt_count": 1,
+            "llm2_validation_retry_count": 0,
+        }
+        constructs = dict(
+            llm_context["psychological_state"]["values_normalized"]
+        )
+        return {
+            "behavior_policy": {"extra_activity": 0.7},
+            "behavior_policy_raw": {"extra_activity": 0.7},
+            "behavior_policy_before_empirical_calibration": {"extra_activity": 0.7},
+            "empirical_pa_v1_2": {"enabled": True},
+            "decision_context_has_planned_pa": False,
+            "valid_decision_categories": ["skip_activity", "extra_activity"],
+            "decision_source": "llm2_contextual_probability_seeded_sampling",
+            "pa_decision": decision,
+            "closed_loop_update": {
+                "activity_done": True,
+                "activity_performed": True,
+                "start_hour": 23,
+                "duration_min": 240,
+                "updated_psychological_constructs": constructs,
+            },
+            "output_files": {},
+        }
+
+    monkeypatch.setattr(module, "_run_pipeline", invalid_pipeline)
+    config = FullSimulationConfig(
+        n_personas=4,
+        n_days=1,
+        start_date=date(2027, 1, 1),
+        base_seed=48271,
+        output_dir=output_dir,
+        model="gpt-oss-120b",
+        temperature=0,
+        llm1_max_tokens=2000,
+        llm2_max_tokens=1200,
+        dry_run=True,
+        include_full_hourly_context=True,
+        persona_input_file=persona_file,
+        empirical_pa_v1_2=True,
+        enable_resource_tracking=False,
+        enable_codecarbon=False,
+    )
+
+    trace = run_full_simulation(config)
+
+    assert len(trace["records"]) == 4
+    assert all(
+        record["pa_decision"]["decision_label"] == "skip_activity"
+        and record["pa_decision"]["activity_performed"] is False
+        and record["pa_decision"]["technical_fallback"] is True
+        for record in trace["records"]
+    )
+    with (output_dir / "daily_decision_log.csv").open(
+        "r", encoding="utf-8", newline=""
+    ) as file:
+        rows = list(csv.DictReader(file))
+    assert len(rows) == 4
+    assert all(row["technical_fallback"] == "True" for row in rows)
+    assert all(
+        row["decision_origin"] == "technical_validation_fallback"
+        for row in rows
+    )
+    manifest = json.loads(
+        (output_dir / "simulation_run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["execution"]["technical_fallback_count"] == 4
+    assert "analyzed separately or excluded" in manifest["execution"][
+        "technical_fallback_policy"
+    ]
+    assert manifest["execution"]["run_history"][-1]["status"] == "success"
+    assert manifest["execution"]["run_history"][-1]["started_at_utc"]
+    assert manifest["execution"]["run_history"][-1]["finished_at_utc"]
+    checkpoint = json.loads(
+        (output_dir / "full_simulation_checkpoint.json").read_text(encoding="utf-8")
+    )
+    assert checkpoint["technical_fallback_count"] == 4
+    assert checkpoint["llm2_validation_retry_count"] == 0
+
+
+def test_checkpoint_atomic_write_preserves_previous_file_on_replace_failure(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import run_full_pa_simulation as module
+
+    target = tmp_path / "checkpoint.json"
+    target.write_text('{"previous": true}\n', encoding="utf-8")
+
+    def fail_replace(source, destination):
+        raise OSError("synthetic replace failure")
+
+    monkeypatch.setattr(module.os, "replace", fail_replace)
+    with pytest.raises(OSError, match="synthetic replace failure"):
+        module._write_json_atomic(target, {"new": True})
+
+    assert json.loads(target.read_text(encoding="utf-8")) == {"previous": True}
+    assert list(tmp_path.glob(".checkpoint.json.*.tmp")) == []

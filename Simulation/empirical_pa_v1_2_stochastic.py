@@ -44,10 +44,14 @@ def validate_contextual_assessment(
     *,
     expected_persona_id: str,
     expected_day_index: int,
+    ignore_activity_if_unavailable: bool = False,
 ) -> dict[str, Any]:
     """Validate LLM2's contextual probability assessment before sampling."""
     actual_fields = set(payload)
-    if actual_fields != EXPECTED_CONTEXTUAL_FIELDS:
+    allowed_fields = {EXPECTED_CONTEXTUAL_FIELDS}
+    if ignore_activity_if_unavailable:
+        allowed_fields.add(EXPECTED_CONTEXTUAL_FIELDS - {"activity_if_performed"})
+    if frozenset(actual_fields) not in allowed_fields:
         missing = sorted(EXPECTED_CONTEXTUAL_FIELDS - actual_fields)
         extra = sorted(actual_fields - EXPECTED_CONTEXTUAL_FIELDS)
         raise ValueError(
@@ -75,9 +79,9 @@ def validate_contextual_assessment(
     if not math.isfinite(probability) or not 0.0 <= probability <= 1.0:
         raise ValueError("contextual_pa_probability must be finite and within [0, 1].")
 
-    activity = payload["activity_if_performed"]
+    activity = payload.get("activity_if_performed")
     validated_activity: dict[str, Any] | None
-    if activity is None:
+    if ignore_activity_if_unavailable or activity is None:
         validated_activity = None
     else:
         if not isinstance(activity, Mapping):
@@ -397,6 +401,10 @@ def _positive_number(value: Any) -> bool:
     return _nonnegative_number(value) and value > 0
 
 
+class InvalidTimeAllocationError(ValueError):
+    """LLM2 proposed a valid-shaped activity that does not fit downtime."""
+
+
 def sample_final_decision(
     assessment: Mapping[str, Any],
     *,
@@ -405,19 +413,22 @@ def sample_final_decision(
     """Sample a reproducible final binary PA outcome from contextual probability."""
     persona_id = str(pa_decision_input["persona_id"])
     day_index = int(pa_decision_input["day_index"])
+    daily_context = pa_decision_input.get("daily_context")
+    if not isinstance(daily_context, Mapping):
+        raise ValueError("Empirical v1.2 sampling requires daily_context.")
+    available_blocks = downtime_blocks(daily_context.get("hourly_context_24h"))
     validated = validate_contextual_assessment(
         assessment,
         expected_persona_id=persona_id,
         expected_day_index=day_index,
+        ignore_activity_if_unavailable=not available_blocks,
     )
     probability = float(validated["contextual_pa_probability"])
     time_trace = availability_trace(validated, pa_decision_input=pa_decision_input)
-    if time_trace["infeasibility_reason"] == NO_DOWNTIME_REASON and validated["activity_if_performed"] is not None:
-        raise ValueError("activity_if_performed must be null when no downtime block is available.")
     if time_trace["infeasibility_reason"] == INVALID_TIME_ALLOCATION_REASON:
-        raise ValueError(
+        raise InvalidTimeAllocationError(
             "activity_if_performed.start_hour/duration_min does not fit an available "
-            "downtime block."
+            f"downtime block; available blocks: {time_trace['available_downtime_blocks']!r}."
         )
     flexibility = contextual_flexibility_trace(
         pa_decision_input=pa_decision_input, activity=validated["activity_if_performed"],
@@ -505,4 +516,130 @@ def sample_final_decision(
         "llm2_contextual_assessment": {**validated, "contextual_flexibility": flexibility},
         "contextual_response": contextual_response,
         "pa_time_allocation": time_trace,
+        "decision_origin": "bernoulli_sample",
+        "technical_fallback": False,
+        "technical_fallback_reason": None,
     }
+
+
+def technical_fallback_skip(
+    assessment: Mapping[str, Any],
+    *,
+    pa_decision_input: Mapping[str, Any],
+    error: str,
+    validation_attempt_count: int,
+) -> dict[str, Any]:
+    """Record a non-sampled skip when an activity proposal could not be validated."""
+    daily_context = pa_decision_input.get("daily_context")
+    if not isinstance(daily_context, Mapping):
+        raise ValueError("Technical fallback requires daily_context.")
+    blocks = downtime_blocks(daily_context.get("hourly_context_24h"))
+    activity = assessment.get("activity_if_performed")
+    requested_start = activity.get("start_hour") if isinstance(activity, Mapping) else None
+    requested_duration = activity.get("duration_min") if isinstance(activity, Mapping) else None
+    skipped = assessment["no_activity_if_skipped"]
+    return {
+        "persona_id": str(pa_decision_input["persona_id"]),
+        "day_index": int(pa_decision_input["day_index"]),
+        "decision_code": 0,
+        "decision_label": "skip_activity",
+        "start_hour": None,
+        "duration_min": 0,
+        "rationale_short": str(skipped["rationale_short"]),
+        "diary_entry": str(skipped["diary_entry"]),
+        "activity_performed": False,
+        "diary_entry_generated_for_simulation": True,
+        "contextual_pa_probability": float(assessment["contextual_pa_probability"]),
+        "effective_pa_probability": None,
+        "behavior_policy_pa_prior": float(
+            pa_decision_input.get("behavior_policy", {}).get("extra_activity", 0.0)
+        ),
+        "decision_sampling_seed": None,
+        "decision_sampling_random_value": None,
+        "sampled_decision_label": None,
+        "sampled_decision_probability": None,
+        "llm2_contextual_assessment": dict(assessment),
+        "contextual_response": {
+            "activity_performed": False,
+            "used_option": None,
+            "option_support_status": None,
+            "barriers_present": [],
+            "potentially_mitigated_barriers": [],
+            "adaptation_reference": "none_no_preplanned_pa",
+        },
+        "pa_time_allocation": {
+            "available_downtime_blocks": blocks,
+            "requested_start_hour": requested_start,
+            "requested_duration_min": requested_duration,
+            "time_allocation_feasible": False,
+            "infeasibility_reason": "technical_validation_error",
+        },
+        "decision_origin": "technical_validation_fallback",
+        "technical_fallback": True,
+        "technical_fallback_reason": str(error),
+        "llm2_validation_attempt_count": int(validation_attempt_count),
+        "llm2_validation_retry_count": max(int(validation_attempt_count) - 1, 0),
+    }
+
+
+def enforce_downtime_invariant(
+    decision: Mapping[str, Any],
+    *,
+    pa_decision_input: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Downgrade any infeasible performed-PA decision to an explicit technical skip."""
+    if decision.get("activity_performed") is not True:
+        return dict(decision)
+    daily_context = pa_decision_input.get("daily_context")
+    if not isinstance(daily_context, Mapping):
+        raise ValueError("Downtime invariant requires daily_context.")
+    blocks = downtime_blocks(daily_context.get("hourly_context_24h"))
+    start_hour = decision.get("start_hour")
+    duration_min = decision.get("duration_min")
+    valid_start = isinstance(start_hour, int) and not isinstance(start_hour, bool)
+    valid_duration = isinstance(duration_min, int) and not isinstance(duration_min, bool)
+    feasible = (
+        valid_start
+        and valid_duration
+        and activity_fits_downtime_block(
+            start_hour=int(start_hour),
+            duration_min=int(duration_min),
+            available_blocks=blocks,
+        )
+    )
+    if feasible:
+        return dict(decision)
+    assessment = decision.get("llm2_contextual_assessment")
+    if not isinstance(assessment, Mapping):
+        assessment = {
+            "contextual_pa_probability": decision.get("contextual_pa_probability", 0.0),
+            "activity_if_performed": {
+                "start_hour": start_hour,
+                "duration_min": duration_min,
+            },
+            "no_activity_if_skipped": {
+                "rationale_short": "PA was not performed because its time allocation failed validation.",
+                "diary_entry": "PA was not performed because its time allocation failed validation.",
+            },
+        }
+    elif not isinstance(assessment.get("no_activity_if_skipped"), Mapping):
+        assessment = {
+            **assessment,
+            "no_activity_if_skipped": {
+                "rationale_short": "PA was not performed because its time allocation failed validation.",
+                "diary_entry": "PA was not performed because its time allocation failed validation.",
+            },
+        }
+    fallback = technical_fallback_skip(
+        assessment,
+        pa_decision_input=pa_decision_input,
+        error=(
+            "Final downtime invariant failed: performed PA requires integer start_hour "
+            "and duration_min wholly contained in one contiguous downtime block."
+        ),
+        validation_attempt_count=int(decision.get("llm2_validation_attempt_count", 1)),
+    )
+    fallback["llm2_validation_retry_count"] = int(
+        decision.get("llm2_validation_retry_count", 0)
+    )
+    return fallback
