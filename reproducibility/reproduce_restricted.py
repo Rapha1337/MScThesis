@@ -20,7 +20,7 @@ def main():
  # H1: daily observations reproduce all monthly and comparison tables, no weather simulation.
  d=pd.read_csv(P/'h1/data/simulated_daily_weather.csv'); assert len(d)==30*360 and d.seed.nunique()==30
  monthly=h1.aggregate_monthly(d); prior=pd.read_csv(P/'h1/data/simulated_monthly_weather.csv'); same(monthly,prior,'H1 monthly')
- ref=h1.load_reference(P/'h1/reference_climate_normals.csv'); comp=h1.monthly_comparison(monthly,ref)
+ ref=h1.load_reference(args.repo.resolve()/'data/h1/zollikofen_climate_normals_1991_2020.csv'); comp=h1.monthly_comparison(monthly,ref)
  same(comp,pd.read_csv(P/'h1/data/monthly_climate_comparison.csv'),'H1 comparison')
  same(h1.summary_metrics(comp),pd.read_csv(P/'h1/tables/h1_summary_metrics.csv'),'H1 summary')
  coverage=comp.groupby('variable',sort=True).agg(months_inside_95_interval=('reference_inside_95_interval','sum'),n_months=('month','count')).reset_index();coverage['coverage_fraction']=coverage.months_inside_95_interval/coverage.n_months

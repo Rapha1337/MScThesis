@@ -39,7 +39,7 @@ class WeatherOnlyBernMap:
         del mode; return (abs(target_lat-source_lat)+abs(target_lon-source_lon))/speed_kmh*60.0
 
 def load_reference(path: Path | None = None) -> pd.DataFrame:
-    df = pd.read_csv(path or ROOT/"Analysis/data/zollikofen_climate_normals_1991_2020.csv", comment="#")
+    df = pd.read_csv(path or ROOT/"data/h1/zollikofen_climate_normals_1991_2020.csv", comment="#")
     expected = {"month","month_number","reference_month_days","temperature_mean_c","precipitation_total_mm"}
     missing = expected - set(df.columns)
     if missing: raise ValueError(f"Reference data missing columns: {sorted(missing)}")
