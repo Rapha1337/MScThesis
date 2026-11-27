@@ -539,7 +539,7 @@ def _eight_day_results(scenario: str) -> list[dict]:
     )
     from state_assessment import ACTIVE_CONSTRUCTS, load_state_assessment_prompt
 
-    persona_id = "Synthetic_Kai6_Comparison"
+    persona_id = "Synthetic_Example_Comparison"
     policy = {
         "do_planned_activity": 0.0,
         "adapt_activity": 0.0,

@@ -1,0 +1,2 @@
+scope,n_pairs,mean_similarity_percent,sd_similarity_percent,min_similarity_percent,max_similarity_percent,mean_difference_percent,sd_difference_percent,min_difference_percent,max_difference_percent,sd_type
+all_within_run_annual_pairs,1900,78.55587887989203,1.5674439314589526,73.16849816849816,83.56227106227107,21.444121120107962,1.5674439314589526,16.437728937728934,26.831501831501836,population

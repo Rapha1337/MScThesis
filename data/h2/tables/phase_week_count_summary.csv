@@ -1,0 +1,4 @@
+phase,n_agents,mean_weeks,population_sd_weeks,minimum_weeks,maximum_weeks
+normal,200,29.46,1.009158064923429,28,32
+high_stress,200,7.06,1.125344391730816,6,10
+holiday,200,15.48,1.4316424134538623,12,18

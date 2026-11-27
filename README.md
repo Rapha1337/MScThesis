@@ -1,241 +1,42 @@
-# A Theory-Informed Agent-Based Model of Context-Dependent Physical Activity Decisions
+# Theory-informed physical activity simulation ? v1.2.0
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21341956.svg)](https://doi.org/10.5281/zenodo.21341956)
+This repository contains the final simulation source, prompts, synthetic regression tests and the locally reviewable H1 and H2 analysis data for a master's thesis. The agent-based model combines schedules, weather, accessibility, psychological state and a three-stage LLM decision/update process. The empirical PA v1.2 pathway uses held-out aggregate calibration; model decisions and nonrandomized simulated context associations should not be interpreted as causal effects. The nine H2 T1 marginals are aggregate statistics; the generator's correlation structure is an assumption, not an empirical T1 correlation matrix.
 
-This repository contains the agent-based simulation framework developed as part of a master's thesis at the Institute of Sport Science, University of Bern.
+## Layout
 
-The model provides a modular virtual environment for representing heterogeneous synthetic agents, daily contextual conditions, and context-dependent physical activity decisions. It was developed as a methodological foundation for the future virtual pretesting of mobile health interventions.
+- `Simulation/`: simulator, actual prompts and synthetic tests.
+- `Analysis/`: weather, H2 and H3 analysis code; `Analysis/h3_plan/` contains the original fixed analysis and validator.
+- `data/h1/`: 30 simulated weather years and aggregate tables.
+- `data/h2/`: synthetic H2 input records, hourly schedules, summaries and Figure 5.
+- `reproducibility/`: offline checks and the restricted-data analysis script.
+- `docs/H3_METHODS.md`: estimability, exploratory analyses, interpretation and disclosure limitations.
+- `DATA_DICTIONARY.md`: data provenance and definitions.
 
-## Project Overview
+## Installation
 
-The model combines:
-
-- heterogeneous synthetic agents
-- annual and weekly activity schedules
-- hourly environmental conditions
-- spatial accessibility
-- energy levels
-- psychological constructs
-- large-language-model-supported physical activity decisions
-- longitudinal psychological state updates
-
-The model is intended as a proof of concept. Version 1.1 can initialize representative personas from observed AIcoPA T1 profiles. This empirical parameterization does not constitute external validation and the model does not predict the behavior of real individuals.
-
-## Simulation Architecture
-
-The daily physical activity decision pipeline consists of three consecutive stages:
-
-1. **Behavior probability estimation**  
-   The first large-language-model-supported component estimates behavioral tendency probabilities from the agent's current psychological state.
-
-2. **Context-dependent physical activity decision**  
-   The second component combines the behavioral tendencies with the generated daily context and planned physical activity. It produces one final daily decision, a short rationale, and a diary entry.
-
-3. **Psychological state assessment**  
-   The third component assesses evidence contained in the diary entry and updates the agent's psychological constructs within a closed feedback loop.
-
-The possible daily decision categories are:
-
-- `do_planned_activity`
-- `adapt_activity`
-- `skip_activity`
-- `extra_activity`
-
-## Research Questions
-
-The accompanying thesis examined whether the model could:
-
-1. represent relevant environmental conditions;
-2. generate heterogeneous agents despite identical high-level persona inputs;
-3. produce decisions consistent with supportive contextual conditions; and
-4. produce decisions consistent with hindering contextual conditions.
-
-## Repository Structure
-
-```text
-MScThesis/
-├── Analysis/                    Final analysis and validation scripts
-├── Simulation/                  Agent-based simulation framework
-│   ├── constraints/             Contextual constraint components
-│   ├── tests/                   Simulation tests
-│   ├── BehaviorProbability_Prompt.md
-│   ├── PADecision_Prompt.md
-│   ├── AssessmentModel_Prompt.md
-│   ├── GUI_pa_simulation.py
-│   └── run_full_pa_simulation.py
-├── CITATION.cff                 Software citation metadata
-├── LICENSE                      GNU General Public License v3.0
-├── requirements.txt             Python dependencies
-└── README.md
-```
-
-Generated simulation and analysis outputs are not version-controlled.
-
-## Software Requirements
-
-The project was developed and analyzed using Python 3.11.
-
-Install the required Python packages from the repository root:
+Python 3.11. Create a virtual environment and install `requirements.txt` for the simulator and tests. These broad dependencies are not a lock file. For the offline reproduction checks, `requirements-reproduce.txt` records the tested analysis versions:
 
 ```powershell
-python -m pip install -r requirements.txt
+python -m venv .venv-repro
+.venv-repro/Scripts/python -m pip install -r requirements-reproduce.txt
+.venv-repro/Scripts/python reproducibility/verify_h1_simulated.py --repo . --output ../h1-reproduced
+.venv-repro/Scripts/python reproducibility/reproduce_h2.py --repo . --output ../h2-reproduced
 ```
 
-A valid API key for the OpenAI-compatible language model endpoint used by the University of Bern is required for full simulations involving the large-language-model-supported components.
+Each output directory must be new. These checks use stored generated results and do not generate agents, simulate, or make LLM calls. H1 checks 30 ? 360 generated weather days and their monthly and annual aggregation. H2 reconstructs all 1,900 within-seed comparisons from losslessly compressed schedules, checks phase counts and psychometric summaries, and reproduces Figure 5 with 5,000 seed-then-agent bootstrap replicates and the fixed bootstrap seed. PNG image pixels match the saved figure; image metadata can differ.
 
-The key must be provided through the following environment variable:
+## Running the model
 
-```text
-UNI_LLM_API_KEY
-```
-
-API keys and other credentials must not be committed to the repository.
-
-## Running the Simulation
-
-### Recommended: Graphical User Interface
-
-The simulation can be configured and started through the graphical user interface without manually entering the simulation parameters as terminal arguments.
-
-From the repository root, start the GUI with:
+`python Simulation/run_full_pa_simulation.py --help` shows all arguments without making a model call. A live run requires authorization, an LLM endpoint and key configured in the local environment, and an independently authorized complete persona input file. For illustration only, substitute your own approved input and output paths:
 
 ```powershell
-python Simulation/GUI_pa_simulation.py
+python Simulation/run_full_pa_simulation.py --n-personas 4 --n-days 90 --start-date 2027-01-01 --base-seed 654346558 --model gpt-oss-120b --temperature 0 --empirical-pa-v1-2 --persona-input-file <AUTHORIZED_PRIVATE_CSV> --output-dir <NEW_PRIVATE_OUTPUT_DIRECTORY>
 ```
 
-The GUI provides fields for the number of personas, number of days, start date, seeds, model parameters, weekly activity inputs, distances, output location, dry-run mode, and resource tracking. It validates the entered values and starts the full simulation using the selected configuration.
+The command may invoke a paid LLM service. The empirical input is not distributed. Do not commit person-level input or resulting traces. The H2 generator also accepts an explicit aggregate parameter file; running it is not required to reproduce the saved statistics.
 
-### Alternative: Command-Line Interface
+## Limits of reproduction
 
-For scripted or reproducible runs, the full simulation can also be started directly from the terminal:
+H1 final comparisons against historical MeteoSwiss reference data cannot be recalculated without a separately authorized reference extract; rights and provenance of all its columns have not been established. H2 is reproducible from the included synthetic records and aggregate parameters without T1 access or an LLM. H3 code and analysis methods are provided, but the day-level, medoid-level and pooled H3 outputs are omitted due to outstanding disclosure risk; neither original H3 validation nor the final H3 statistics and figures can be fully recomputed using only this tree. An authorized researcher may use `reproducibility/reproduce_restricted.py --repo . --data-dir <AUTHORIZED_DATA_DIRECTORY> --output <NEW_OUTPUT_DIRECTORY>` with separately controlled data. The script must not be used to publish those inputs. See `docs/H3_METHODS.md`.
 
-```powershell
-python Simulation/run_full_pa_simulation.py `
-  --n-personas 1 `
-  --n-days 365 `
-  --start-date 2026-01-01 `
-  --base-seed 137 `
-  --output-dir Simulation/output/example_run
-```
-
-The main configurable parameters include:
-
-- number of personas
-- number of simulated days
-- start date
-- base seed
-- weekly physical activity hours
-- weekly work, social, and care-work hours
-- distances to relevant points of interest
-- language model and generation parameters
-- output directory
-- checkpoint and resume behavior
-
-`--start-date` anchors the simulation's calendar date, real weekday, position
-in the 52-week annual `YearStructure`, and environmental month/season. ISO
-weeks 1–52 map to zero-based annual indices 0–51; the occasional ISO week 53
-is deterministically folded into index 51 to preserve the 52-week model.
-
-A simulation can be resumed from an existing checkpoint by adding:
-
-```powershell
---resume
-```
-
-A dry run without external language-model calls can be performed using:
-
-```powershell
---dry-run
-```
-
-### Empirical T1 Medoid Personas (Version 1.1)
-
-The primary T1 clustering analysis writes one observed PAM medoid per cluster to:
-
-```text
-Analysis/results_t1_persona_clustering/11_primary_medoid_personas.csv
-```
-
-Run the four empirical profiles with:
-
-```powershell
-python Simulation/run_full_pa_simulation.py `
-  --n-personas 4 `
-  --n-days 365 `
-  --start-date 2026-01-01 `
-  --base-seed 137 `
-  --persona-input-file Analysis/results_t1_persona_clustering/11_primary_medoid_personas.csv `
-  --output-dir Simulation/output/t1_medoids_v1_1
-```
-
-The empirical path uses each medoid's observed combination of:
-
-- normalized psychological construct values;
-- occupational status and weekly workload;
-- MVPA, social, and care-work hours;
-- normal, high-stress, and holiday weeks; and
-- distances to workplace/study, indoor activity, and outdoor activity.
-
-The reported daily routine variables are retained in persona metadata for traceability but are not currently used to place schedule blocks. Some medoid rows contain daily time reports that are not arithmetically compatible with the reported weekly workload. Primary obligations are therefore distributed from the weekly workload and occupation type. The legacy synthetic student initialization remains the default when `--persona-input-file` is omitted.
-
-## Running the Analyses
-
-### Environmental Validation
-
-```powershell
-python Analysis/h1_weather_validation.py
-```
-
-### Agent Heterogeneity
-
-```powershell
-python Analysis/h2_agent_heterogeneity.py
-```
-
-### Final H1-H4 Analysis
-
-```powershell
-python Analysis/final_h1_h4_analysis.py `
-  --h1-dir Analysis/outputs/h1_weather_final `
-  --h2-dir Analysis/outputs/h2_agent_heterogeneity_final `
-  --supportive Simulation/output/365x1_SupportiveScenario `
-  --hindering Simulation/output/365x1_HinderingScenario `
-  --output-dir Analysis/outputs/final_h1_h4 `
-  --overwrite
-```
-
-The final analysis script calculates the descriptive and inferential results reported in the thesis.
-
-## Testing
-
-Run the test suite from the repository root:
-
-```powershell
-python -m pytest
-```
-
-## Reproducibility
-
-Random seeds are used for the generation of agents, schedules, environmental conditions, and initial psychological states. Reusing the same configuration and seeds reproduces the deterministic simulation components.
-
-Outputs involving a large language model may additionally depend on the model endpoint, model version, and inference implementation available at the time of execution.
-
-## Citation
-
-Version 1.0.0 is archived on Zenodo:
-
-**Reinalter R. A Theory-Informed Agent-Based Model of Context-Dependent Physical Activity Decisions. Version 1.0.0. Zenodo. 2026. doi:10.5281/zenodo.21341956**
-
-https://doi.org/10.5281/zenodo.21341956
-
-Machine-readable citation metadata are provided in `CITATION.cff`.
-
-## License
-
-This project is licensed under the GNU General Public License v3.0. See the `LICENSE` file for details.
-
-## Author
-
-Raphael Reinalter  
-Institute of Sport Science  
-University of Bern, Switzerland
+The code is distributed under the unchanged GPL-3.0 license. The previous release DOI is 10.5281/zenodo.21341956; no v1.2.0 DOI has been assigned. Any MeteoSwiss open-data reuse requires verifying the exact product, version and applicable [terms](https://opendatadocs.meteoswiss.ch/general/terms-of-use).

@@ -1,26 +1,21 @@
-/Analysis/outputs/HEAD@
-
-# Python-generated files
+# Credentials and local settings
+.env
+.env.*
+.vscode/
+.venv*/
+# Python caches
 __pycache__/
 *.py[cod]
 .pytest_cache/
-@
-
-/analysis/outputs/
-
-# Generated / intermediate PA simulation outputs
-analysis/results_t1_medoid_pa_validation/
-analysis/results_t1_medoid_pa_validation_v1_2/
-analysis/results_t1_medoid_pa_validation_v1_2_7d_stochastic/
-analysis/results_t1_medoid_pa_validation_v1_2_7d_test/
-analysis/AIcoPA_T1_MedoidPAValidation_v1_2_final_20261001/simulation/
-codecarbon/
-
-# Keep empirical research inputs and generated participant outputs local
-/[Aa]nalysis/[Dd]ata/
-/[Aa]nalysis/[Aa][Ii][Cc][Oo][Pp][Aa]_[Tt]1*/
-/[Aa]nalysis/results_t1*/
-/[Ss]imulation/output/
-__pycache__/
-*.pyc
-*.pyo
+# Research inputs and simulation output
+/Analysis/outputs/
+/Analysis/data/
+/Analysis/AIcoPA_T1*/
+/Analysis/results_t1*/
+/Simulation/output/
+/H3_classified_daily_data.csv
+/codecarbon/
+# Local reports and scratch outputs
+/RELEASE_*AUDIT*.md
+/RELEASE_PRIVACY*.md
+/RELEASE_READINESS.md

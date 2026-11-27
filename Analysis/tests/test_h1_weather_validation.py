@@ -73,6 +73,7 @@ def test_relative_sunshine_uses_astronomical_daylight_hours() -> None:
     assert monthly.loc[0, "sunshine_pct"] == pytest.approx(100 * monthly.loc[0, "sunshine_native_30d_hours"] / expected)
 
 
+@pytest.mark.skipif(not (ROOT / "Analysis/data/zollikofen_climate_normals_1991_2020.csv").exists(), reason="Historical reference extract is not distributed")
 def test_monthly_precipitation_quantiles_across_years() -> None:
     monthly = pd.DataFrame({"month":[1,1,1],"precipitation_total_mm":[10.0,20.0,30.0]})
     ref = h1.load_reference()
@@ -83,6 +84,7 @@ def test_monthly_precipitation_quantiles_across_years() -> None:
     assert jan.loc[jan["quantile"] == 40, "simulated_mm"].iloc[0] == pytest.approx(18)
 
 
+@pytest.mark.skipif(not (ROOT / "Analysis/data/zollikofen_climate_normals_1991_2020.csv").exists(), reason="Historical reference extract is not distributed")
 def test_script_does_not_require_network_access(monkeypatch, tmp_path: Path) -> None:
     def fail_network(*args, **kwargs):
         raise AssertionError("network access attempted")

@@ -1,0 +1,53 @@
+{
+  "seed_method": "six independent OS-random candidate draws, with prespecified rejection of identical/overlapping daily environment and persona decision-seed ranges; no simulations or outcome screening",
+  "replications": [
+    {
+      "replication": 1,
+      "base_seed": 654346558,
+      "output_dir": "Simulation/output/h3_v12_rep01_seed654346558_90d",
+      "start_date": "2027-01-01",
+      "n_personas": 4,
+      "n_days": 90
+    },
+    {
+      "replication": 2,
+      "base_seed": 1673226082,
+      "output_dir": "Simulation/output/h3_v12_rep02_seed1673226082_90d",
+      "start_date": "2027-01-01",
+      "n_personas": 4,
+      "n_days": 90
+    },
+    {
+      "replication": 3,
+      "base_seed": 1299741803,
+      "output_dir": "Simulation/output/h3_v12_rep03_seed1299741803_90d",
+      "start_date": "2027-01-01",
+      "n_personas": 4,
+      "n_days": 90
+    },
+    {
+      "replication": 4,
+      "base_seed": 1008556024,
+      "output_dir": "Simulation/output/h3_v12_rep04_seed1008556024_90d",
+      "start_date": "2027-01-01",
+      "n_personas": 4,
+      "n_days": 90
+    },
+    {
+      "replication": 5,
+      "base_seed": 104602935,
+      "output_dir": "Simulation/output/h3_v12_rep05_seed104602935_90d",
+      "start_date": "2027-01-01",
+      "n_personas": 4,
+      "n_days": 90
+    },
+    {
+      "replication": 6,
+      "base_seed": 1934691509,
+      "output_dir": "Simulation/output/h3_v12_rep06_seed1934691509_90d",
+      "start_date": "2027-01-01",
+      "n_personas": 4,
+      "n_days": 90
+    }
+  ]
+}
